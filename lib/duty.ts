@@ -1,0 +1,69 @@
+import { addDays } from "./utils/date";
+
+function shuffle<T>(list: T[]): T[] {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function datesBetween(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  let d = startDate;
+  while (d <= endDate) {
+    dates.push(d);
+    d = addDays(d, 1);
+  }
+  return dates;
+}
+
+export interface DutyBlock {
+  userId: string;
+  dates: string[];
+}
+
+/** Splits a date range into equal (remainder-distributed) consecutive
+ * blocks across a randomly-ordered set of members — used for Shopping duty. */
+export function buildEqualBlocks(
+  startDate: string,
+  endDate: string,
+  memberIds: string[]
+): DutyBlock[] {
+  const dates = datesBetween(startDate, endDate);
+  const order = shuffle(memberIds);
+  const n = order.length;
+  if (n === 0) return [];
+  const base = Math.floor(dates.length / n);
+  let extra = dates.length % n;
+  let cursor = 0;
+
+  return order.map((userId) => {
+    const count = base + (extra > 0 ? 1 : 0);
+    if (extra > 0) extra--;
+    const blockDates = dates.slice(cursor, cursor + count);
+    cursor += count;
+    return { userId, dates: blockDates };
+  });
+}
+
+/** Splits a fixed number of days-per-member sequentially across a
+ * randomly-ordered set of members — used for Cleaning duty (no spin). */
+export function buildFixedBlocks(
+  startDate: string,
+  daysPerMember: number,
+  memberIds: string[]
+): DutyBlock[] {
+  const order = shuffle(memberIds);
+  let cursor = startDate;
+
+  return order.map((userId) => {
+    const blockDates: string[] = [];
+    for (let i = 0; i < daysPerMember; i++) {
+      blockDates.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    return { userId, dates: blockDates };
+  });
+}

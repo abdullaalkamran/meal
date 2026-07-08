@@ -1,0 +1,153 @@
+"use client";
+
+import { useState } from "react";
+import { Home, Sun, Wrench } from "lucide-react";
+import { useSession } from "@/lib/auth/SessionProvider";
+import { useBill } from "@/hooks/useBill";
+import { useToast } from "@/components/ui/Toast";
+import { Card } from "@/components/ui/Card";
+import { Icon } from "@/components/ui/Icon";
+import { PayBillSheet } from "@/components/student/PayBillSheet";
+import { formatBDT } from "@/lib/utils/currency";
+import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
+import type { BillSection } from "@/lib/data";
+
+const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun; tone: string }> = {
+  mealCost: { label: "Meal cost", icon: Sun, tone: "bg-orange-soft text-orange" },
+  serviceCharge: { label: "Service charge", icon: Wrench, tone: "bg-blue-soft text-blue" },
+  roomRent: { label: "Room rent", icon: Home, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]" },
+};
+
+const METHOD_TONE: Record<string, string> = {
+  bKash: "bg-primary-soft text-primary",
+  Nagad: "bg-orange-soft text-orange",
+  Card: "bg-blue-soft text-blue",
+  Cash: "bg-bg text-text-secondary",
+};
+
+export default function StudentBillPage() {
+  const { user, activeHostelId } = useSession();
+  const { bill, payments } = useBill(activeHostelId, user?.id, currentMonth());
+  const { toast } = useToast();
+  const [payOpen, setPayOpen] = useState(false);
+
+  if (!bill) {
+    return (
+      <div className="flex flex-col gap-5 pt-2">
+        <div className="text-[17.5px] font-extrabold tracking-tight">Bill</div>
+        <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
+          No bill generated for this month yet.
+        </Card>
+      </div>
+    );
+  }
+
+  const due = bill.grandTotal - bill.paid;
+
+  return (
+    <div className="flex flex-col gap-5 pt-2">
+      <div className="text-[17.5px] font-extrabold tracking-tight">{formatMonthLabel(bill.month)} Bill</div>
+
+      <div
+        className="rounded-card p-5 text-white"
+        style={{
+          background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))",
+        }}
+      >
+        <div className="text-[11.5px] font-bold text-white/70">Total payable</div>
+        <div className="mt-1 text-[22px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
+        <div className="mt-2 flex items-center gap-2.5">
+          <div className="text-[11.5px] font-bold text-white/80">Paid {formatBDT(bill.paid)}</div>
+          {due > 0 && (
+            <div className="rounded-pill bg-white/20 px-2.5 py-1 text-[10px] font-extrabold">
+              Due {formatBDT(due)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {bill.sections.map((section) => {
+        const meta = SECTION_META[section.label];
+        return (
+          <Card key={section.label}>
+            <div className="mb-2 flex items-center gap-2.5">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.tone}`}>
+                <Icon icon={meta.icon} size={15} />
+              </div>
+              <div className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold">{meta.label}</div>
+              <div className="text-[13.5px] font-extrabold">{formatBDT(section.total)}</div>
+            </div>
+            <div className="flex flex-col gap-1.5 pl-[42px]">
+              {section.items.map((item, i) => (
+                <div key={i} className="flex items-center justify-between text-[11px] font-semibold text-text-secondary">
+                  <div>{item.label}</div>
+                  <div>{formatBDT(item.amount)}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })}
+
+      <Card className="flex items-center justify-between">
+        <div className="text-[13.5px] font-extrabold">Total</div>
+        <div className="text-[15px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
+      </Card>
+
+      <div className="flex gap-2.5">
+        <button
+          type="button"
+          onClick={() => setPayOpen(true)}
+          disabled={due <= 0}
+          className="min-h-11 flex-1 cursor-pointer rounded-btn font-extrabold text-white disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
+        >
+          Pay now
+        </button>
+        <button
+          type="button"
+          onClick={() => toast("PDF export — coming in a later build phase")}
+          className="min-h-11 cursor-pointer rounded-btn border border-border px-6 font-extrabold"
+        >
+          PDF
+        </button>
+      </div>
+
+      <div>
+        <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          Payment history
+        </div>
+        <div className="flex flex-col gap-2">
+          {payments.length === 0 && (
+            <Card className="text-[11.5px] font-semibold text-text-secondary">No payments yet.</Card>
+          )}
+          {payments.map((p) => (
+            <Card key={p.id} className="flex items-center gap-3">
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[9.5px] font-extrabold ${METHOD_TONE[p.method]}`}
+              >
+                {p.method.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-extrabold">{formatBDT(p.amount)}</div>
+                <div className="text-[10px] font-semibold text-text-secondary">
+                  {new Date(p.paidAt).toLocaleDateString()}
+                  {p.reference ? ` · ${p.reference}` : ""}
+                </div>
+              </div>
+              <div
+                className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
+                  p.verified ? "bg-primary-soft text-primary" : "bg-orange-soft text-orange"
+                }`}
+              >
+                {p.verified ? "Verified" : "Pending"}
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      <PayBillSheet open={payOpen} onClose={() => setPayOpen(false)} bill={bill} />
+    </div>
+  );
+}
