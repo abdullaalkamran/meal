@@ -5,6 +5,7 @@ import {
   ChefHat,
   LayoutDashboard,
   Receipt,
+  ShoppingCart,
   User,
   Users,
   UtensilsCrossed,
@@ -18,6 +19,7 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   meals: UtensilsCrossed,
   bill: Receipt,
   more: User,
+  shopping: ShoppingCart,
   dashboard: LayoutDashboard,
   approvals: CheckCircle2,
   finance: Wallet,
@@ -26,4 +28,5 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   hostels: Building2,
   reports: BarChart3,
   cook: ChefHat,
+  salary: Wallet,
 };

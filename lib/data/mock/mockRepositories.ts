@@ -17,11 +17,12 @@ import type {
   Repositories,
   RoomRepository,
   ShoppingCostRepository,
+  ShortageRepository,
   SwapRepository,
   TransferRepository,
   UserRepository,
 } from "../repository";
-import type { MealDay, MealSlot } from "../types";
+import type { Bill, BillSection, MealDay, MealSlot } from "../types";
 import { nextId, store } from "./store";
 
 function emptyMealDay(hostelId: string, date: string): MealDay {
@@ -29,14 +30,20 @@ function emptyMealDay(hostelId: string, date: string): MealDay {
 }
 
 function ensureMealDay(hostelId: string, date: string): MealDay {
-  let day = store.data.mealDays.find(
-    (d) => d.hostelId === hostelId && d.date === date
-  );
-  if (!day) {
-    day = emptyMealDay(hostelId, date);
+  const idx = store.data.mealDays.findIndex((d) => d.hostelId === hostelId && d.date === date);
+  if (idx === -1) {
+    const day = emptyMealDay(hostelId, date);
     store.data.mealDays.push(day);
+    return day;
   }
-  return day;
+  // Replace with a shallow clone so subscribers keyed on object-reference
+  // equality (useMealDay's per-date subscription) see a real change once the
+  // caller mutates the returned entry and emits — mutating in place would
+  // leave the array holding the exact same reference React already has,
+  // which React's setState bails out on.
+  const cloned: MealDay = { ...store.data.mealDays[idx], entries: { ...store.data.mealDays[idx].entries } };
+  store.data.mealDays[idx] = cloned;
+  return cloned;
 }
 
 function ensureMealEntry(day: MealDay, userId: string) {
@@ -64,10 +71,14 @@ const users: UserRepository = {
     return store.data.users;
   },
   async updateUser(userId, patch) {
-    const u = store.data.users.find((x) => x.id === userId);
-    if (!u) return;
-    Object.assign(u, patch);
-    store.emit(`users:${u.hostelId}`);
+    const idx = store.data.users.findIndex((x) => x.id === userId);
+    if (idx === -1) return;
+    // Replace with a new object (not Object.assign-in-place) so subscribers
+    // keyed on reference equality — e.g. SessionProvider mirroring the
+    // logged-in user's own record — actually see the change.
+    const updated = { ...store.data.users[idx], ...patch };
+    store.data.users[idx] = updated;
+    store.emit(`users:${updated.hostelId}`);
   },
   subscribe(hostelId, cb) {
     const fire = () =>
@@ -147,6 +158,37 @@ const meals: MealRepository = {
     entry[meal].guestCount += count;
     store.emit(`mealDay:${hostelId}`);
   },
+  async setMemberMealsForRange(hostelId, userId, from, to, on) {
+    const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
+    let d = from;
+    while (d <= to) {
+      const day = ensureMealDay(hostelId, d);
+      const entry = ensureMealEntry(day, userId);
+      for (const slot of slots) entry[slot].on = on;
+      const next = new Date(`${d}T00:00:00Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      d = next.toISOString().slice(0, 10);
+    }
+
+    const idx = store.data.users.findIndex((u) => u.id === userId);
+    if (idx !== -1) {
+      const updated = { ...store.data.users[idx], mealsSuspended: !on };
+      store.data.users[idx] = updated;
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId,
+        title: on ? "Meals resumed" : "Meals turned off",
+        body: on
+          ? "Your meals have been turned back on by the manager."
+          : "Your meals have been turned off by the manager because your bill is unpaid. Pay your bill to resume your meals.",
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`users:${updated.hostelId}`);
+      store.emit(`notifications:${userId}`);
+    }
+    store.emit(`mealDay:${hostelId}`);
+  },
   subscribe(hostelId, cb) {
     // One hostel-wide topic (not per-date) so newly-created days are covered
     // too; the caller (hook) filters by date itself.
@@ -185,6 +227,9 @@ const menus: MenuRepository = {
 const ratings: RatingRepository = {
   async listForDate(hostelId, date) {
     return store.data.ratings.filter((r) => r.hostelId === hostelId && r.date === date);
+  },
+  async listByHostel(hostelId) {
+    return store.data.ratings.filter((r) => r.hostelId === hostelId);
   },
   async rate(rating) {
     const existing = store.data.ratings.find(
@@ -311,8 +356,8 @@ const swaps: SwapRepository = {
     if (status === "accepted") {
       const plan = store.data.dutyPlans.find((p) => p.id === swap.planId);
       if (plan) {
-        const fromBlock = plan.blocks.find((b) => b.userId === swap.fromUserId);
-        const toBlock = plan.blocks.find((b) => b.userId === swap.toUserId);
+        const fromBlock = plan.blocks.find((b) => b.userIds.includes(swap.fromUserId));
+        const toBlock = plan.blocks.find((b) => b.userIds.includes(swap.toUserId));
         if (fromBlock && toBlock) {
           const tmp = fromBlock.dates;
           fromBlock.dates = toBlock.dates;
@@ -341,6 +386,45 @@ const shoppingCosts: ShoppingCostRepository = {
       createdAt: new Date().toISOString(),
     });
     store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
+};
+
+const shortages: ShortageRepository = {
+  async listByHostel(hostelId) {
+    return store.data.shortageRequests.filter((s) => s.hostelId === hostelId);
+  },
+  async report(req) {
+    const created = {
+      ...req,
+      id: nextId("shortage"),
+      status: "pending" as const,
+      createdAt: new Date().toISOString(),
+    };
+    store.data.shortageRequests.push(created);
+    store.data.announcements.push({
+      id: nextId("ann"),
+      hostelId: req.hostelId,
+      kind: "shortage-alert",
+      title: "Shopping shortage reported",
+      body: `The cook reported missing items: ${req.items}`,
+      payload: { shortageId: created.id },
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`shortages:${req.hostelId}`);
+    store.emit(`announcements:${req.hostelId}`);
+  },
+  async resolve(id, resolvedBy) {
+    const s = store.data.shortageRequests.find((x) => x.id === id);
+    if (!s) return;
+    s.status = "resolved";
+    s.resolvedBy = resolvedBy;
+    s.resolvedAt = new Date().toISOString();
+    store.emit(`shortages:${s.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () => cb(store.data.shortageRequests.filter((s) => s.hostelId === hostelId));
+    fire();
+    return store.on(`shortages:${hostelId}`, fire);
   },
 };
 
@@ -381,6 +465,127 @@ const bills: BillRepository = {
       if (bill) bill.paid -= payment.amount;
     }
     if (bill) store.emit(`bill:${bill.userId}`);
+  },
+  async generateBills(hostelId, month, options) {
+    const hostel = store.data.hostels.find((h) => h.id === hostelId);
+    if (!hostel) return [];
+
+    const allBoarders = store.data.users.filter(
+      (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner"
+    );
+    const targetBoarders = options?.userIds?.length
+      ? allBoarders.filter((u) => options.userIds!.includes(u.id))
+      : allBoarders;
+    const rooms = store.data.rooms.filter((r) => r.hostelId === hostelId);
+    const [year, mon] = month.split("-").map(Number);
+    const daysInMonth = new Date(year, mon, 0).getDate();
+    const from = `${month}-01`;
+    const to = `${month}-${String(daysInMonth).padStart(2, "0")}`;
+    const monthDays = store.data.mealDays.filter(
+      (d) => d.hostelId === hostelId && d.date >= from && d.date <= to
+    );
+    const monthExpenses = store.data.expenses.filter(
+      (e) => e.hostelId === hostelId && e.date.startsWith(month)
+    );
+
+    const utilityExpenses = monthExpenses
+      .filter((e) => e.category === "Utilities")
+      .filter((e) => !options?.includeServiceExpenseIds || options.includeServiceExpenseIds.includes(e.id));
+    const salaryExpenseTotal = monthExpenses
+      .filter((e) => e.category === "Salary")
+      .reduce((sum, e) => sum + e.amount, 0);
+    // "Fixed" always uses the amount the manager entered for this run — no
+    // silent fallback to expense totals, so picking "Fixed" reliably behaves
+    // differently from "From expenses" even if no fixed amount was set.
+    const cookSalaryTotal =
+      options?.cookSalaryMode === "expense" ? salaryExpenseTotal : (options?.fixedCookSalaryAmount ?? 0);
+    // Shares are always split across every boarder in the hostel, even when
+    // only regenerating a subset — one member's bill shouldn't change just
+    // because we happened to regenerate it alone.
+    const boarderCount = allBoarders.length || 1;
+    const cookSalaryShare = cookSalaryTotal / boarderCount;
+
+    const prevDate = new Date(year, mon - 2, 1);
+    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
+    const bills: Bill[] = targetBoarders.map((u) => {
+      const room = rooms.find((r) => r.occupantIds.includes(u.id));
+      const seatRent = room?.seatRent ?? 0;
+
+      let ownMeals = 0;
+      let guestMeals = 0;
+      for (const day of monthDays) {
+        const entry = day.entries[u.id];
+        if (!entry) continue;
+        for (const slot of slots) {
+          if (entry[slot].on) {
+            ownMeals += 1;
+            guestMeals += entry[slot].guestCount;
+          }
+        }
+      }
+
+      const mealCostItems = [{ label: `${ownMeals} own meals`, amount: ownMeals * hostel.mealRate }];
+      if (guestMeals > 0) {
+        mealCostItems.push({
+          label: `${guestMeals} guest meal${guestMeals > 1 ? "s" : ""}`,
+          amount: guestMeals * hostel.mealRate,
+        });
+      }
+      const mealCostTotal = (ownMeals + guestMeals) * hostel.mealRate;
+
+      const serviceItems = utilityExpenses.map((e) => ({
+        label: `${e.note ?? e.category} share`,
+        amount: e.amount / boarderCount,
+      }));
+      const serviceTotal = serviceItems.reduce((sum, i) => sum + i.amount, 0);
+
+      const sections: BillSection[] = [
+        { label: "mealCost", items: mealCostItems, total: mealCostTotal },
+        {
+          label: "roomRent",
+          items: [{ label: room ? `Room ${room.number} (seat)` : "Unassigned", amount: seatRent }],
+          total: seatRent,
+        },
+        { label: "serviceCharge", items: serviceItems, total: serviceTotal },
+        {
+          label: "cookSalary",
+          items: [{ label: "Cook salary (equal share)", amount: cookSalaryShare }],
+          total: cookSalaryShare,
+        },
+      ];
+      const prevBill = store.data.bills.find(
+        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === prevMonth
+      );
+      const previousBalance = prevBill ? Math.max(prevBill.grandTotal - prevBill.paid, 0) : 0;
+      const grandTotal = sections.reduce((sum, s) => sum + s.total, 0) + previousBalance;
+
+      const existing = store.data.bills.find(
+        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === month
+      );
+
+      return {
+        id: existing?.id ?? nextId("bill"),
+        hostelId,
+        userId: u.id,
+        month,
+        mealsCount: ownMeals,
+        sections,
+        previousBalance,
+        grandTotal,
+        paid: existing?.paid ?? 0,
+        dueDate: options?.dueDate ?? existing?.dueDate,
+      };
+    });
+
+    const targetIds = new Set(targetBoarders.map((u) => u.id));
+    store.data.bills = store.data.bills
+      .filter((b) => !(b.hostelId === hostelId && b.month === month && targetIds.has(b.userId)))
+      .concat(bills);
+    store.emit(`bills:${hostelId}`);
+    for (const b of bills) store.emit(`bill:${b.userId}`);
+    return bills;
   },
   subscribe(userId, cb) {
     return store.on(`bill:${userId}`, () => {
@@ -580,6 +785,12 @@ const expenses: ExpenseRepository = {
     store.data.expenses.push({ ...expense, id: nextId("exp") });
     store.emit(`expenses:${expense.hostelId}`);
   },
+  async remove(id) {
+    const expense = store.data.expenses.find((e) => e.id === id);
+    if (!expense) return;
+    store.data.expenses = store.data.expenses.filter((e) => e.id !== id);
+    store.emit(`expenses:${expense.hostelId}`);
+  },
   subscribe(hostelId, cb) {
     const fire = () => cb(store.data.expenses.filter((e) => e.hostelId === hostelId));
     fire();
@@ -764,6 +975,7 @@ export const mockRepositories: Repositories = {
   duties,
   swaps,
   shoppingCosts,
+  shortages,
   bills,
   cookLeave,
   cookAttendance,

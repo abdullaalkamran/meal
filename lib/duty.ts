@@ -20,31 +20,38 @@ function datesBetween(startDate: string, endDate: string): string[] {
 }
 
 export interface DutyBlock {
-  userId: string;
+  userIds: string[];
   dates: string[];
 }
 
 /** Splits a date range into equal (remainder-distributed) consecutive
- * blocks across a randomly-ordered set of members — used for Shopping duty. */
+ * blocks across a randomly-ordered set of members — used for Shopping duty.
+ * groupSize 2 pairs members up as shopping companions (last group may be a
+ * lone member when the roster is odd); groupSize 1 is individual duty. */
 export function buildEqualBlocks(
   startDate: string,
   endDate: string,
-  memberIds: string[]
+  memberIds: string[],
+  groupSize: 1 | 2 = 1
 ): DutyBlock[] {
   const dates = datesBetween(startDate, endDate);
   const order = shuffle(memberIds);
-  const n = order.length;
+  const groups: string[][] = [];
+  for (let i = 0; i < order.length; i += groupSize) {
+    groups.push(order.slice(i, i + groupSize));
+  }
+  const n = groups.length;
   if (n === 0) return [];
   const base = Math.floor(dates.length / n);
   let extra = dates.length % n;
   let cursor = 0;
 
-  return order.map((userId) => {
+  return groups.map((userIds) => {
     const count = base + (extra > 0 ? 1 : 0);
     if (extra > 0) extra--;
     const blockDates = dates.slice(cursor, cursor + count);
     cursor += count;
-    return { userId, dates: blockDates };
+    return { userIds, dates: blockDates };
   });
 }
 
@@ -64,6 +71,6 @@ export function buildFixedBlocks(
       blockDates.push(cursor);
       cursor = addDays(cursor, 1);
     }
-    return { userId, dates: blockDates };
+    return { userIds: [userId], dates: blockDates };
   });
 }

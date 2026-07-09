@@ -11,6 +11,13 @@ import { generatePaymentReference } from "@/lib/utils/paymentReference";
 
 const METHODS: Payment["method"][] = ["bKash", "Nagad", "Card", "Cash"];
 
+const SENDER_LABEL: Record<Payment["method"], string> = {
+  bKash: "Your bKash number",
+  Nagad: "Your Nagad number",
+  Card: "Account / card number used",
+  Cash: "",
+};
+
 export function PayBillSheet({
   open,
   onClose,
@@ -24,19 +31,28 @@ export function PayBillSheet({
   const due = bill ? bill.grandTotal - bill.paid : 0;
   const [amount, setAmount] = useState(String(due));
   const [method, setMethod] = useState<Payment["method"]>("bKash");
+  const [senderNumber, setSenderNumber] = useState("");
+  const requiresSender = method !== "Cash";
 
   useEffect(() => {
-    if (open) queueMicrotask(() => setAmount(String(due)));
+    if (open) {
+      queueMicrotask(() => {
+        setAmount(String(due));
+        setSenderNumber("");
+      });
+    }
   }, [open, due]);
 
   const submit = async () => {
     if (!bill || !amount) return;
+    if (requiresSender && !senderNumber.trim()) return;
     await repo.bills.pay({
       billId: bill.id,
       amount: Number(amount),
       paidAt: new Date().toISOString(),
       method,
       reference: generatePaymentReference(method),
+      senderNumber: requiresSender ? senderNumber.trim() : undefined,
       verified: false,
     });
     toast("Payment submitted — pending verification");
@@ -65,7 +81,25 @@ export function PayBillSheet({
           </button>
         ))}
       </div>
-      <Button fullWidth onClick={submit} disabled={!amount || Number(amount) <= 0}>
+      {requiresSender && (
+        <>
+          <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">
+            {SENDER_LABEL[method].toUpperCase()}
+          </div>
+          <input
+            type="text"
+            value={senderNumber}
+            onChange={(e) => setSenderNumber(e.target.value)}
+            placeholder={method === "Card" ? "e.g. Account ending 4821" : "e.g. 01711-000000"}
+            className="mb-4 w-full rounded-btn border border-border px-3 py-2.5 text-[12px] font-bold"
+          />
+        </>
+      )}
+      <Button
+        fullWidth
+        onClick={submit}
+        disabled={!amount || Number(amount) <= 0 || (requiresSender && !senderNumber.trim())}
+      >
         Pay now · {formatBDT(Number(amount) || 0)}
       </Button>
       <div className="mt-3 text-center text-[10px] font-semibold text-text-secondary">

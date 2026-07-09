@@ -69,6 +69,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return repo.hostels.subscribe(activeHostelId, setHostel);
   }, [activeHostelId]);
 
+  // Mirrors the logged-in user's own record so changes made elsewhere (e.g.
+  // a manager suspending this student's meals) reach the session without
+  // requiring a re-login.
+  const userId = user?.id;
+  const userHomeHostelId = user?.hostelId;
+  useEffect(() => {
+    if (!userId || !userHomeHostelId) return;
+    return repo.users.subscribe(userHomeHostelId, (list) => {
+      const fresh = list.find((u) => u.id === userId);
+      if (fresh) setUser(fresh);
+    });
+  }, [userId, userHomeHostelId]);
+
   const login = useCallback(
     async (userId: string) => {
       const u = await repo.users.getUser(userId);

@@ -5,6 +5,7 @@ export type IconKey =
   | "meals"
   | "bill"
   | "more"
+  | "shopping"
   | "dashboard"
   | "approvals"
   | "finance"
@@ -12,7 +13,8 @@ export type IconKey =
   | "overview"
   | "hostels"
   | "reports"
-  | "cook";
+  | "cook"
+  | "salary";
 
 export interface NavItem {
   href: string;
@@ -29,6 +31,7 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
   student: [
     { href: "/student", label: "Home", iconKey: "home" },
     { href: "/student/meals", label: "Meals", iconKey: "meals" },
+    { href: "/student/shopping", label: "Shopping", iconKey: "shopping" },
     { href: "/student/bill", label: "Bill", iconKey: "bill" },
     { href: "/student/more", label: "More", iconKey: "more" },
   ],
@@ -45,5 +48,8 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/owner/reports", label: "Reports", iconKey: "reports" },
     { href: "/owner/more", label: "More", iconKey: "more" },
   ],
-  cook: [{ href: "/cook", label: "Dashboard", iconKey: "cook" }],
+  cook: [
+    { href: "/cook", label: "Dashboard", iconKey: "cook" },
+    { href: "/cook/salary", label: "Salary", iconKey: "salary" },
+  ],
 };

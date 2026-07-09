@@ -15,7 +15,9 @@ import type {
   Menu,
   Notification,
   Payment,
+  Rating,
   Room,
+  ShoppingCost,
   User,
 } from "../types";
 import type { Tables } from "./store";
@@ -34,6 +36,7 @@ export function buildSeed(): Tables {
       cookId: "u_cook_bright",
       mealRate: 95,
       kitchenLocation: "Room 101 · GF",
+      cookMonthlySalary: 12000,
       settings: {
         mealCutoff: [
           { meal: "breakfast", time: "21:00" },
@@ -54,6 +57,7 @@ export function buildSeed(): Tables {
       cookId: "u_cook_green",
       mealRate: 102,
       kitchenLocation: "Room G3 · GF",
+      cookMonthlySalary: 11500,
       settings: {
         mealCutoff: [
           { meal: "breakfast", time: "21:00" },
@@ -164,6 +168,7 @@ export function buildSeed(): Tables {
       number: "101",
       capacity: 3,
       occupantIds: ["u_student_1", "u_student_2"],
+      seatRent: 1800,
     },
     {
       id: "room_bright_103",
@@ -171,6 +176,7 @@ export function buildSeed(): Tables {
       number: "103",
       capacity: 2,
       occupantIds: ["u_student_3"],
+      seatRent: 2200,
     },
     {
       id: "room_bright_104",
@@ -178,6 +184,7 @@ export function buildSeed(): Tables {
       number: "104",
       capacity: 2,
       occupantIds: [],
+      seatRent: 2200,
     },
     {
       id: "room_bright_202",
@@ -185,6 +192,7 @@ export function buildSeed(): Tables {
       number: "202",
       capacity: 1,
       occupantIds: ["u_manager_bright"],
+      seatRent: 3500,
     },
     {
       id: "room_green_g1",
@@ -192,6 +200,7 @@ export function buildSeed(): Tables {
       number: "G1",
       capacity: 2,
       occupantIds: ["u_student_4"],
+      seatRent: 2000,
     },
     {
       id: "room_green_g2",
@@ -199,6 +208,7 @@ export function buildSeed(): Tables {
       number: "G2",
       capacity: 1,
       occupantIds: ["u_manager_green"],
+      seatRent: 3200,
     },
   ];
 
@@ -220,6 +230,53 @@ export function buildSeed(): Tables {
         ])
       ),
     },
+    // Past few days — matched to the Recent Shopping history below, so the
+    // shopping-responsible rate/leaderboard has real meal counts to divide by.
+    {
+      hostelId: "hostel_bright",
+      date: addDays(T, -3),
+      shoppingUserId: "u_student_3",
+      entries: Object.fromEntries(
+        brightBoarders.map((id, i) => [
+          id,
+          {
+            breakfast: { on: i !== 0, guestCount: 0 },
+            lunch: { on: true, guestCount: 0 },
+            dinner: { on: i !== 1, guestCount: id === "u_student_3" ? 1 : 0 },
+          },
+        ])
+      ),
+    },
+    {
+      hostelId: "hostel_bright",
+      date: addDays(T, -4),
+      shoppingUserId: "u_student_2",
+      entries: Object.fromEntries(
+        brightBoarders.map((id, i) => [
+          id,
+          {
+            breakfast: { on: i !== 0 && i !== 3, guestCount: 0 },
+            lunch: { on: i !== 3, guestCount: 0 },
+            dinner: { on: true, guestCount: 0 },
+          },
+        ])
+      ),
+    },
+    {
+      hostelId: "hostel_bright",
+      date: addDays(T, -5),
+      shoppingUserId: "u_student_1",
+      entries: Object.fromEntries(
+        brightBoarders.map((id) => [
+          id,
+          {
+            breakfast: { on: true, guestCount: 0 },
+            lunch: { on: true, guestCount: 0 },
+            dinner: { on: true, guestCount: 0 },
+          },
+        ])
+      ),
+    },
   ];
 
   const menus: Menu[] = [
@@ -234,6 +291,20 @@ export function buildSeed(): Tables {
     },
   ];
 
+  // Food-quality ratings for the same past days as the Recent Shopping
+  // history — lets the shopping leaderboard rank real cost-vs-quality data.
+  const ratings: Rating[] = [
+    { id: "rating_1", hostelId: "hostel_bright", userId: "u_student_1", date: addDays(T, -3), meal: "lunch", target: "menu", stars: 5 },
+    { id: "rating_2", hostelId: "hostel_bright", userId: "u_student_2", date: addDays(T, -3), meal: "dinner", target: "menu", stars: 4 },
+    { id: "rating_3", hostelId: "hostel_bright", userId: "u_manager_bright", date: addDays(T, -3), meal: "breakfast", target: "menu", stars: 5 },
+    { id: "rating_4", hostelId: "hostel_bright", userId: "u_student_1", date: addDays(T, -4), meal: "lunch", target: "menu", stars: 3 },
+    { id: "rating_5", hostelId: "hostel_bright", userId: "u_student_3", date: addDays(T, -4), meal: "dinner", target: "menu", stars: 3 },
+    { id: "rating_6", hostelId: "hostel_bright", userId: "u_manager_bright", date: addDays(T, -4), meal: "breakfast", target: "menu", stars: 4 },
+    { id: "rating_7", hostelId: "hostel_bright", userId: "u_student_2", date: addDays(T, -5), meal: "lunch", target: "menu", stars: 4 },
+    { id: "rating_8", hostelId: "hostel_bright", userId: "u_student_3", date: addDays(T, -5), meal: "dinner", target: "menu", stars: 4 },
+    { id: "rating_9", hostelId: "hostel_bright", userId: "u_manager_bright", date: addDays(T, -5), meal: "breakfast", target: "menu", stars: 4 },
+  ];
+
   const dutyPlans: DutyPlan[] = [
     {
       id: "duty_shop_1",
@@ -244,14 +315,13 @@ export function buildSeed(): Tables {
       endDate: addDays(T, 8),
       memberIds: ["u_student_1", "u_student_2", "u_student_3"],
       blocks: [
-        { userId: "u_student_1", dates: [T, addDays(T, 1), addDays(T, 2)] },
         {
-          userId: "u_student_2",
-          dates: [addDays(T, 3), addDays(T, 4), addDays(T, 5)],
+          userIds: ["u_student_1", "u_student_2"],
+          dates: [T, addDays(T, 1), addDays(T, 2), addDays(T, 3)],
         },
         {
-          userId: "u_student_3",
-          dates: [addDays(T, 6), addDays(T, 7), addDays(T, 8)],
+          userIds: ["u_student_3"],
+          dates: [addDays(T, 4), addDays(T, 5), addDays(T, 6), addDays(T, 7)],
         },
       ],
       spun: { u_student_1: true, u_student_2: true, u_student_3: false },
@@ -260,13 +330,43 @@ export function buildSeed(): Tables {
     },
   ];
 
+  const shoppingCosts: ShoppingCost[] = [
+    {
+      id: "shopcost_1",
+      hostelId: "hostel_bright",
+      userId: "u_student_3",
+      dates: [addDays(T, -3)],
+      amount: 2450,
+      items: "12",
+      createdAt: addDays(T, -3),
+    },
+    {
+      id: "shopcost_2",
+      hostelId: "hostel_bright",
+      userId: "u_student_2",
+      dates: [addDays(T, -4)],
+      amount: 1830,
+      items: "8",
+      createdAt: addDays(T, -4),
+    },
+    {
+      id: "shopcost_3",
+      hostelId: "hostel_bright",
+      userId: "u_student_1",
+      dates: [addDays(T, -5)],
+      amount: 3120,
+      items: "15",
+      createdAt: addDays(T, -5),
+    },
+  ];
+
   const swapRequests = [
     {
       id: "swap_1",
       hostelId: "hostel_bright",
       planId: "duty_shop_1",
-      fromUserId: "u_student_2",
-      toUserId: "u_student_1",
+      fromUserId: "u_student_1",
+      toUserId: "u_student_3",
       status: "pending" as const,
       createdAt: T,
     },
@@ -301,6 +401,32 @@ export function buildSeed(): Tables {
       reason: "Family emergency in the village",
       status: "pending",
       createdAt: T,
+    },
+    {
+      id: "cookleave_2",
+      hostelId: "hostel_bright",
+      cookId: "u_cook_bright",
+      dateFrom: addDays(T, -10),
+      dateTo: addDays(T, -9),
+      scope: "full-day",
+      reason: "Fever, saw a doctor",
+      status: "approved",
+      decidedBy: "u_manager_bright",
+      decidedAt: addDays(T, -10),
+      createdAt: addDays(T, -11),
+    },
+    {
+      id: "cookleave_3",
+      hostelId: "hostel_bright",
+      cookId: "u_cook_bright",
+      dateFrom: addDays(T, -20),
+      dateTo: addDays(T, -20),
+      scope: "full-day",
+      reason: "Eid preparation at home",
+      status: "approved",
+      decidedBy: "u_manager_bright",
+      decidedAt: addDays(T, -20),
+      createdAt: addDays(T, -21),
     },
   ];
 
@@ -371,6 +497,14 @@ export function buildSeed(): Tables {
       date: T,
       note: "Electricity bill",
     },
+    {
+      id: "exp_3",
+      hostelId: "hostel_bright",
+      category: "Salary",
+      amount: 7000,
+      date: T,
+      note: "Cook salary — partial advance",
+    },
   ];
 
   const bills: Bill[] = [
@@ -401,6 +535,7 @@ export function buildSeed(): Tables {
           total: 3500,
         },
       ],
+      previousBalance: 0,
       grandTotal: 9760,
       paid: 7000,
     },
@@ -473,12 +608,13 @@ export function buildSeed(): Tables {
     hostels,
     mealDays,
     menus,
-    ratings: [],
+    ratings,
     comments: [],
     reactions: [],
     dutyPlans,
     swapRequests,
-    shoppingCosts: [],
+    shoppingCosts,
+    shortageRequests: [],
     bills,
     payments,
     cookLeaveRequests,

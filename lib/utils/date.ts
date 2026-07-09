@@ -16,6 +16,18 @@ export function currentMonth(): string {
   return today().slice(0, 7); // YYYY-MM
 }
 
+export function previousMonth(monthStr: string): string {
+  const [year, month] = monthStr.split("-").map(Number);
+  const d = new Date(year, month - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function lastDayOfMonth(monthStr: string): string {
+  const [year, month] = monthStr.split("-").map(Number);
+  const last = new Date(year, month, 0).getDate();
+  return `${monthStr}-${String(last).padStart(2, "0")}`;
+}
+
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH = [
   "Jan",

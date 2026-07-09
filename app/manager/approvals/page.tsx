@@ -262,6 +262,7 @@ export default function ManagerApprovalsPage() {
                     </div>
                     <div className="text-[10px] font-semibold text-text-secondary">
                       {p.reference}
+                      {p.senderNumber ? ` · Sent from ${p.senderNumber}` : ""}
                     </div>
                   </div>
                   <Chip tone="orange" active>

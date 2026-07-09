@@ -55,7 +55,7 @@ export default function StudentHomePage() {
   const due = bill ? bill.grandTotal - bill.paid : 0;
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
-  const myBlock = myPlan?.blocks.find((b) => b.userId === user?.id);
+  const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
 
   return (
     <div className="flex flex-col gap-5 pt-2">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
   CheckCircle2,
@@ -33,6 +34,7 @@ const CATEGORY: Record<AnnouncementKind, CategoryMeta> = {
   "swap-denied": { tag: "Request", icon: ArrowLeftRight, color: "#F59E0B", soft: "bg-orange-soft" },
   "cook-leave-approved": { tag: "Notice", icon: Megaphone, color: "#4C7DF0", soft: "bg-blue-soft" },
   "cook-absence-resolved": { tag: "Notice", icon: Megaphone, color: "#EF4444", soft: "bg-danger-soft" },
+  "shortage-alert": { tag: "Urgent", icon: AlertTriangle, color: "#EF4444", soft: "bg-danger-soft" },
   general: { tag: "Notice", icon: Megaphone, color: "#4C7DF0", soft: "bg-blue-soft" },
 };
 
@@ -140,7 +142,8 @@ export function AnnouncementItem({
 
         {(announcement.kind === "spin-wheel-cta" ||
           announcement.kind === "swap-request" ||
-          announcement.kind === "swap-completed") && (
+          announcement.kind === "swap-completed" ||
+          announcement.kind === "shortage-alert") && (
           <Link
             href="/student/shopping"
             className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold"

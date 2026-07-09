@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Home, Sun, Wrench } from "lucide-react";
+import { ChefHat, Home, Sun, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useBill } from "@/hooks/useBill";
 import { useToast } from "@/components/ui/Toast";
@@ -9,13 +9,14 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
+import { currentMonth, formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
 import type { BillSection } from "@/lib/data";
 
 const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun; tone: string }> = {
   mealCost: { label: "Meal cost", icon: Sun, tone: "bg-orange-soft text-orange" },
   serviceCharge: { label: "Service charge", icon: Wrench, tone: "bg-blue-soft text-blue" },
   roomRent: { label: "Room rent", icon: Home, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]" },
+  cookSalary: { label: "Cook salary", icon: ChefHat, tone: "bg-primary-soft text-primary" },
 };
 
 const METHOD_TONE: Record<string, string> = {
@@ -56,15 +57,32 @@ export default function StudentBillPage() {
       >
         <div className="text-[11.5px] font-bold text-white/70">Total payable</div>
         <div className="mt-1 text-[22px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
-        <div className="mt-2 flex items-center gap-2.5">
+        <div className="mt-2 flex flex-wrap items-center gap-2.5">
           <div className="text-[11.5px] font-bold text-white/80">Paid {formatBDT(bill.paid)}</div>
           {due > 0 && (
             <div className="rounded-pill bg-white/20 px-2.5 py-1 text-[10px] font-extrabold">
               Due {formatBDT(due)}
             </div>
           )}
+          {bill.dueDate && due > 0 && (
+            <div className="rounded-pill bg-white/20 px-2.5 py-1 text-[10px] font-extrabold">
+              Pay by {formatShortDate(bill.dueDate)}
+            </div>
+          )}
         </div>
       </div>
+
+      {bill.previousBalance > 0 && (
+        <Card className="flex items-center justify-between border border-orange/30 bg-orange-soft">
+          <div>
+            <div className="text-[12.5px] font-extrabold text-orange">Previous balance</div>
+            <div className="text-[10px] font-semibold text-text-secondary">
+              Unpaid amount carried over from {formatMonthLabel(previousMonth(bill.month))}
+            </div>
+          </div>
+          <div className="text-[13.5px] font-extrabold text-orange">{formatBDT(bill.previousBalance)}</div>
+        </Card>
+      )}
 
       {bill.sections.map((section) => {
         const meta = SECTION_META[section.label];
@@ -133,6 +151,7 @@ export default function StudentBillPage() {
                 <div className="text-[10px] font-semibold text-text-secondary">
                   {new Date(p.paidAt).toLocaleDateString()}
                   {p.reference ? ` · ${p.reference}` : ""}
+                  {p.senderNumber ? ` · ${p.senderNumber}` : ""}
                 </div>
               </div>
               <div

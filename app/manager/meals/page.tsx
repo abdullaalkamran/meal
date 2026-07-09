@@ -23,8 +23,9 @@ export default function ManagerMealsPage() {
   const [membersOpen, setMembersOpen] = useState(true);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
 
-  // Cook is staff, not a boarder — excluded from meal-toggle rosters.
-  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook");
+  // Cook is staff and owner is cross-hostel management — neither is a boarder,
+  // so both are excluded from meal-toggle rosters.
+  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const { day } = useMealDay(activeHostelId, selectedDate);
   const plans = useDutyPlans(activeHostelId);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
@@ -176,10 +177,12 @@ export default function ManagerMealsPage() {
           <div className="mb-3 text-[13.5px] font-extrabold">Duty rotation</div>
           <div className="flex flex-col gap-2">
             {shoppingPlan.blocks.map((b) => {
-              const memberName = users.find((u) => u.id === b.userId)?.name ?? b.userId;
+              const memberName = b.userIds
+                .map((id) => users.find((u) => u.id === id)?.name ?? id)
+                .join(" + ");
               const isToday = b.dates.includes(today());
               return (
-                <div key={b.userId} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
+                <div key={b.userIds.join("-")} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
                   <div>
                     <div className="text-[10.5px] font-semibold text-text-secondary">{b.dates[0]}</div>
                     <div className="text-[11.5px] font-extrabold">{memberName}</div>

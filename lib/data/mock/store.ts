@@ -27,6 +27,7 @@ import type {
   Reaction,
   Room,
   ShoppingCost,
+  ShortageRequest,
   SwapRequest,
   User,
 } from "../types";
@@ -44,6 +45,7 @@ export interface Tables {
   dutyPlans: DutyPlan[];
   swapRequests: SwapRequest[];
   shoppingCosts: ShoppingCost[];
+  shortageRequests: ShortageRequest[];
   bills: Bill[];
   payments: Payment[];
   cookLeaveRequests: CookLeaveRequest[];
@@ -59,7 +61,7 @@ export interface Tables {
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 9;
 
 interface Persisted {
   version: number;

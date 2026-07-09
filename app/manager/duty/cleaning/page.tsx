@@ -28,7 +28,7 @@ export default function ManagerCleaningDutyPage() {
   const [daysPerMember, setDaysPerMember] = useState(3);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const eligible = users.filter((u) => u.role !== "cook");
+  const eligible = users.filter((u) => u.role !== "cook" && u.role !== "owner");
   const activePlan = plans.find((p) => p.type === "cleaning" && p.endDate >= today());
 
   const toggleMember = (id: string) => {
@@ -140,13 +140,13 @@ export default function ManagerCleaningDutyPage() {
           <div className="mb-3 text-[13.5px] font-extrabold">Rotation preview</div>
           <div className="flex flex-col gap-2">
             {activePlan.blocks.map((b) => {
-              const member = users.find((u) => u.id === b.userId);
+              const member = users.find((u) => u.id === b.userIds[0]);
               return (
                 <div
-                  key={b.userId}
+                  key={b.userIds[0]}
                   className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
                 >
-                  <div className="text-[12px] font-bold">{member?.name ?? b.userId}</div>
+                  <div className="text-[12px] font-bold">{member?.name ?? b.userIds[0]}</div>
                   <div className="text-[10.5px] font-semibold text-text-secondary">
                     {b.dates[0]} → {b.dates[b.dates.length - 1]}
                   </div>

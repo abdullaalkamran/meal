@@ -37,7 +37,7 @@ export default function StudentMorePage() {
 
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
-  const myBlock = myPlan?.blocks.find((b) => b.userId === user?.id);
+  const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
   const myTransfer = transfers.find((t) => t.userId === user?.id && t.stage !== "approved" && t.stage !== "denied");
   const unreadCount = notifications.filter((n) => !n.read).length;
 

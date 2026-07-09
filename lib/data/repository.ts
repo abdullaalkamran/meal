@@ -29,6 +29,7 @@ import type {
   Reaction,
   Room,
   ShoppingCost,
+  ShortageRequest,
   SwapRequest,
   User,
 } from "./types";
@@ -77,6 +78,18 @@ export interface MealRepository {
     meal: MealSlot,
     count: number
   ): Promise<void>;
+  /** Turns all meals on/off for one member across every day from `from`
+   * through `to` (inclusive) — used by the manager to suspend a member's
+   * meals for an unpaid bill. Also sets `User.mealsSuspended` (locking the
+   * member's own toggles while true) and sends them a notification
+   * explaining why. */
+  setMemberMealsForRange(
+    hostelId: string,
+    userId: string,
+    from: string,
+    to: string,
+    on: boolean
+  ): Promise<void>;
   subscribe(hostelId: string, cb: (day: MealDay) => void): Unsubscribe;
 }
 
@@ -88,6 +101,7 @@ export interface MenuRepository {
 
 export interface RatingRepository {
   listForDate(hostelId: string, date: string): Promise<Rating[]>;
+  listByHostel(hostelId: string): Promise<Rating[]>;
   rate(rating: Omit<Rating, "id">): Promise<void>;
   subscribe(hostelId: string, cb: (ratings: Rating[]) => void): Unsubscribe;
 }
@@ -121,6 +135,13 @@ export interface ShoppingCostRepository {
   submit(cost: Omit<ShoppingCost, "id" | "createdAt">): Promise<void>;
 }
 
+export interface ShortageRepository {
+  listByHostel(hostelId: string): Promise<ShortageRequest[]>;
+  report(req: Omit<ShortageRequest, "id" | "status" | "createdAt">): Promise<void>;
+  resolve(id: string, resolvedBy: string): Promise<void>;
+  subscribe(hostelId: string, cb: (list: ShortageRequest[]) => void): Unsubscribe;
+}
+
 export interface BillRepository {
   getBill(hostelId: string, userId: string, month: string): Promise<Bill | undefined>;
   listByHostel(hostelId: string, month: string): Promise<Bill[]>;
@@ -128,6 +149,31 @@ export interface BillRepository {
   pay(payment: Omit<Payment, "id">): Promise<void>;
   listPendingVerification(hostelId: string, month: string): Promise<Payment[]>;
   decidePayment(paymentId: string, status: "verified" | "declined"): Promise<void>;
+  /** Computes bills for hostelId/month from meal attendance, room seat rent,
+   * selected Utilities expenses (split equally across every boarder), and
+   * cook salary (fixed amount or Salary-category expenses, split equally) —
+   * replacing any existing bills for the targeted members that month while
+   * preserving what they've already paid. Per-person shares (service charge,
+   * cook salary) are always divided across every boarder in the hostel, even
+   * when only a subset of members is being (re)generated. Any unpaid balance
+   * on that member's immediately preceding month's bill is carried forward
+   * as `previousBalance`, added on top of this month's fresh charges. */
+  generateBills(
+    hostelId: string,
+    month: string,
+    options?: {
+      /** Utilities-category expense ids to include as service charge; omit for all. */
+      includeServiceExpenseIds?: string[];
+      /** "fixed" uses fixedCookSalaryAmount; "expense" sums Salary-category expenses. */
+      cookSalaryMode?: "fixed" | "expense";
+      /** The fixed monthly cook salary to use when cookSalaryMode is "fixed". */
+      fixedCookSalaryAmount?: number;
+      /** Only (re)generate for these boarders; omit for every boarder in the hostel. */
+      userIds?: string[];
+      /** Last day to pay this batch of bills, e.g. "2026-07-15". */
+      dueDate?: string;
+    }
+  ): Promise<Bill[]>;
   subscribe(userId: string, cb: (bill: Bill) => void): Unsubscribe;
 }
 
@@ -166,6 +212,7 @@ export interface NotificationRepository {
 export interface ExpenseRepository {
   listByHostel(hostelId: string): Promise<Expense[]>;
   add(expense: Omit<Expense, "id">): Promise<void>;
+  remove(id: string): Promise<void>;
   subscribe(hostelId: string, cb: (list: Expense[]) => void): Unsubscribe;
 }
 
@@ -209,6 +256,7 @@ export interface Repositories {
   duties: DutyRepository;
   swaps: SwapRepository;
   shoppingCosts: ShoppingCostRepository;
+  shortages: ShortageRepository;
   bills: BillRepository;
   cookLeave: CookLeaveRepository;
   cookAttendance: CookAttendanceRepository;

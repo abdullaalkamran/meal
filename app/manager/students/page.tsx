@@ -16,9 +16,10 @@ import { currentMonth } from "@/lib/utils/date";
 
 export default function ManagerStudentsPage() {
   const { activeHostelId, hostel } = useSession();
-  // Cook is staff, not a boarder (no room/bill) — exclude from the boarder
-  // roster. Manager is included since they're also a boarder (dual identity).
-  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook");
+  // Cook is staff and owner is cross-hostel management — neither is a boarder
+  // (no room/bill) — exclude both from the roster. Manager is included since
+  // they're also a boarder (dual identity).
+  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const rooms = useRooms(activeHostelId);
   const joinRequests = useJoinRequests(activeHostelId).filter((r) => r.status === "pending");
   const { toast } = useToast();

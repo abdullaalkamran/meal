@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Phone, Receipt, ShoppingBag, Wallet } from "lucide-react";
+import { Ban, ChevronDown, ChevronUp, Phone, Receipt, ShoppingBag, Trophy, Wallet } from "lucide-react";
+import Link from "next/link";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealDay } from "@/hooks/useMealDay";
@@ -14,10 +15,11 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
 import { Calendar } from "@/components/ui/Calendar";
+import { StarRating } from "@/components/ui/StarRating";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
-import { repo, type MealDay, type MealSlot, type User } from "@/lib/data";
+import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, today } from "@/lib/utils/date";
 
@@ -32,10 +34,12 @@ export default function StudentMealsPage() {
   const [guestSheetOpen, setGuestSheetOpen] = useState(false);
   const [stopSheetOpen, setStopSheetOpen] = useState(false);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
-  const [totalShopping, setTotalShopping] = useState(0);
+  const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
+  const [allRatings, setAllRatings] = useState<Rating[]>([]);
 
-  // Cook is staff, not a boarder — excluded from meal-toggle rosters.
-  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook");
+  // Cook is staff and owner is cross-hostel management — neither is a boarder,
+  // so both are excluded from meal-toggle rosters.
+  const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const { day, setToggle } = useMealDay(activeHostelId, selectedDate);
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
@@ -60,9 +64,8 @@ export default function StudentMealsPage() {
 
   useEffect(() => {
     if (!activeHostelId) return;
-    repo.shoppingCosts
-      .listByHostel(activeHostelId)
-      .then((costs) => setTotalShopping(costs.reduce((sum, c) => sum + c.amount, 0)));
+    repo.shoppingCosts.listByHostel(activeHostelId).then(setAllCosts);
+    repo.ratings.listByHostel(activeHostelId).then(setAllRatings);
   }, [activeHostelId]);
 
   useEffect(() => {
@@ -76,6 +79,7 @@ export default function StudentMealsPage() {
   const myRequests = myStops.filter((r) => r.userId === user?.id);
   const shoppingPlan = plans.find((p) => p.type === "shopping");
   const due = bill ? bill.grandTotal - bill.paid : 0;
+  const mealsSuspended = user?.mealsSuspended ?? false;
 
   const dayTotal = day
     ? Object.values(day.entries).reduce(
@@ -92,6 +96,59 @@ export default function StudentMealsPage() {
     const count = entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0);
     return { meal, count };
   });
+
+  const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
+  const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
+  const monthCosts = allCosts.filter((c) => c.dates.some(inSelectedMonth));
+  const totalShopping = monthCosts.reduce((sum, c) => sum + c.amount, 0);
+  const blocksInMonth = shoppingPlan?.blocks.filter((b) => b.dates.some(inSelectedMonth)) ?? [];
+
+  // Per-person cost/rate/quality for the selected month, used by both the
+  // shopping-responsible rotation list and the leaderboard below it.
+  const mealsServedOn = (date: string) => {
+    const d = monthDays.find((x) => x.date === date);
+    if (!d) return 0;
+    return Object.values(d.entries).reduce(
+      (sum, e) =>
+        sum +
+        (e.breakfast.on ? 1 + e.breakfast.guestCount : 0) +
+        (e.lunch.on ? 1 + e.lunch.guestCount : 0) +
+        (e.dinner.on ? 1 + e.dinner.guestCount : 0),
+      0
+    );
+  };
+  const statsByUser = new Map<
+    string,
+    { cost: number; meals: number; ratingSum: number; ratingCount: number }
+  >();
+  for (const c of monthCosts) {
+    const entry = statsByUser.get(c.userId) ?? { cost: 0, meals: 0, ratingSum: 0, ratingCount: 0 };
+    entry.cost += c.amount;
+    entry.meals += c.dates.reduce((sum, d) => sum + mealsServedOn(d), 0);
+    for (const r of allRatings) {
+      if (r.target === "menu" && c.dates.includes(r.date)) {
+        entry.ratingSum += r.stars;
+        entry.ratingCount += 1;
+      }
+    }
+    statsByUser.set(c.userId, entry);
+  }
+
+  const leaderboard = [...statsByUser.entries()]
+    .map(([userId, s]) => ({
+      userId,
+      name: users.find((u) => u.id === userId)?.name ?? userId,
+      cost: s.cost,
+      rate: s.meals > 0 ? s.cost / s.meals : 0,
+      quality: s.ratingCount > 0 ? s.ratingSum / s.ratingCount : 0,
+    }))
+    .filter((row) => row.rate > 0)
+    .sort((a, b) => a.rate - b.rate);
+  const bestRateId = leaderboard[0]?.userId;
+  const bestQualityId = leaderboard.reduce<{ id?: string; quality: number }>(
+    (best, row) => (row.quality > best.quality ? { id: row.userId, quality: row.quality } : best),
+    { id: undefined, quality: 0 }
+  ).id;
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -120,6 +177,26 @@ export default function StudentMealsPage() {
         </div>
       </div>
 
+      {/* Manager has switched this member's meals off for an unpaid bill */}
+      {mealsSuspended && (
+        <Card className="border border-danger/30 bg-danger-soft">
+          <div className="mb-1 flex items-center gap-2">
+            <Icon icon={Ban} size={16} className="text-danger" />
+            <div className="text-[12.5px] font-extrabold text-danger">Your meals are turned off</div>
+          </div>
+          <div className="mb-3 text-[11px] font-semibold text-text-secondary">
+            The manager turned off your meals because your bill is unpaid. Pay your bill to resume —
+            you can&rsquo;t turn your own meals back on until then.
+          </div>
+          <Link
+            href="/student/bill"
+            className="flex min-h-10 w-full items-center justify-center rounded-btn bg-danger text-[12px] font-extrabold text-white"
+          >
+            View my bill
+          </Link>
+        </Card>
+      )}
+
       {/* My meal toggles for selected date */}
       <Card>
         <div className="mb-3 flex items-center justify-between">
@@ -129,7 +206,8 @@ export default function StudentMealsPage() {
           <button
             type="button"
             onClick={() => setGuestSheetOpen(true)}
-            className="text-[11px] font-extrabold text-primary"
+            disabled={mealsSuspended}
+            className="text-[11px] font-extrabold text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             + Guest meal
           </button>
@@ -153,7 +231,11 @@ export default function StudentMealsPage() {
                 {!!entry?.guestCount && (
                   <Chip tone="blue">+{entry.guestCount} guest</Chip>
                 )}
-                <Switch checked={on} onChange={(v) => user && setToggle(user.id, meal, v)} />
+                <Switch
+                  checked={on}
+                  disabled={mealsSuspended}
+                  onChange={(v) => user && setToggle(user.id, meal, v)}
+                />
               </div>
             );
           })}
@@ -384,20 +466,31 @@ export default function StudentMealsPage() {
         )}
       </Card>
 
-      {/* Shopping duty rotation */}
-      {shoppingPlan && (
+      {/* Shopping duty rotation — only blocks whose duty dates fall in the selected month */}
+      {shoppingPlan && blocksInMonth.length > 0 && (
         <Card>
           <div className="mb-3 text-[13.5px] font-extrabold">Shopping responsible</div>
           <div className="flex flex-col gap-2">
-            {shoppingPlan.blocks.map((b) => {
-              const isMe = b.userId === user?.id;
+            {blocksInMonth.map((b) => {
+              const isMe = b.userIds.includes(user?.id ?? "");
               const isToday = b.dates.includes(today());
               const isDone = b.dates.at(-1)! < today();
-              const memberName = users.find((u) => u.id === b.userId)?.name ?? b.userId;
+              const memberName = b.userIds
+                .map((id) => users.find((u) => u.id === id)?.name ?? id)
+                .join(" + ");
               const status = isMe ? "You" : isToday ? "Today" : isDone ? "Done" : "Next";
+              const combined = b.userIds.reduce(
+                (acc, id) => {
+                  const s = statsByUser.get(id);
+                  if (!s) return acc;
+                  return { cost: acc.cost + s.cost, meals: acc.meals + s.meals };
+                },
+                { cost: 0, meals: 0 }
+              );
+              const blockRate = combined.meals > 0 ? combined.cost / combined.meals : 0;
               return (
                 <div
-                  key={b.userId}
+                  key={b.userIds.join("-")}
                   className={`flex items-center justify-between rounded-btn px-3 py-2.5 ${
                     isMe ? "bg-primary-soft" : "bg-bg"
                   }`}
@@ -407,6 +500,11 @@ export default function StudentMealsPage() {
                       {b.dates[0]}
                     </div>
                     <div className="text-[11.5px] font-extrabold">{memberName}</div>
+                    <div className="text-[9.5px] font-semibold text-text-secondary">
+                      {combined.cost > 0
+                        ? `${formatBDT(combined.cost)} this month · ${formatBDT(blockRate)}/meal avg`
+                        : "No shopping recorded this month yet"}
+                    </div>
                   </div>
                   <div
                     className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
@@ -422,6 +520,52 @@ export default function StudentMealsPage() {
                 </div>
               );
             })}
+          </div>
+        </Card>
+      )}
+
+      {/* Shopping leaderboard — best rate (cost/meal) vs best food quality for the month */}
+      {leaderboard.length > 0 && (
+        <Card>
+          <div className="mb-3 flex items-center gap-2">
+            <Icon icon={Trophy} size={16} className="text-orange" />
+            <div className="text-[13.5px] font-extrabold">Shopping leaderboard</div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {leaderboard.map((row, i) => (
+              <div
+                key={row.userId}
+                className="flex items-center gap-3 rounded-btn bg-bg px-3 py-2.5"
+              >
+                <div className="w-5 shrink-0 text-center text-[11.5px] font-extrabold text-text-secondary">
+                  #{i + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11.5px] font-extrabold">{row.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <StarRating value={row.quality} readOnly size={11} />
+                    <span className="text-[9.5px] font-semibold text-text-secondary">
+                      {row.quality > 0 ? row.quality.toFixed(1) : "No ratings"}
+                    </span>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[12px] font-extrabold">{formatBDT(row.rate)}/meal</div>
+                  <div className="flex justify-end gap-1">
+                    {row.userId === bestRateId && (
+                      <span className="rounded-pill bg-primary-soft px-1.5 py-0.5 text-[8px] font-extrabold text-primary">
+                        Best rate
+                      </span>
+                    )}
+                    {row.userId === bestQualityId && (
+                      <span className="rounded-pill bg-orange-soft px-1.5 py-0.5 text-[8px] font-extrabold text-orange">
+                        Best quality
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </Card>
       )}

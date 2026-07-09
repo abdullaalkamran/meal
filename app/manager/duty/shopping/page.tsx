@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { Calendar } from "@/components/ui/Calendar";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { repo } from "@/lib/data";
 import { buildEqualBlocks } from "@/lib/duty";
 import { today } from "@/lib/utils/date";
@@ -26,8 +27,9 @@ export default function ManagerShoppingDutyPage() {
   const [rangeEnd, setRangeEnd] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [budgetPerDay, setBudgetPerDay] = useState("2500");
+  const [mode, setMode] = useState<"individual" | "companion">("companion");
 
-  const eligible = users.filter((u) => u.role !== "cook");
+  const eligible = users.filter((u) => u.role !== "cook" && u.role !== "owner");
   const activePlan = plans.find((p) => p.type === "shopping" && p.endDate >= today());
 
   const onSelectDate = (date: string) => {
@@ -59,7 +61,7 @@ export default function ManagerShoppingDutyPage() {
   const create = async () => {
     if (!activeHostelId || !rangeStart || !rangeEnd || selected.size < 2) return;
     const memberIds = [...selected];
-    const blocks = buildEqualBlocks(rangeStart, rangeEnd, memberIds);
+    const blocks = buildEqualBlocks(rangeStart, rangeEnd, memberIds, mode === "companion" ? 2 : 1);
     await repo.duties.createPlan({
       hostelId: activeHostelId,
       type: "shopping",
@@ -79,6 +81,25 @@ export default function ManagerShoppingDutyPage() {
   return (
     <div className="flex flex-col gap-5 pt-2">
       <div className="text-[17.5px] font-extrabold tracking-tight">Set Shopping Duty</div>
+
+      <Card>
+        <div className="mb-3 text-[11.5px] font-extrabold text-text-secondary uppercase tracking-wide">
+          Duty mode
+        </div>
+        <SegmentedControl
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "individual", label: "Individual" },
+            { value: "companion", label: "Companion (2)" },
+          ]}
+        />
+        <div className="mt-2 text-[10.5px] font-semibold text-text-secondary">
+          {mode === "companion"
+            ? "Members are paired up — each pair shares a duty block together."
+            : "Each member gets their own duty block, solo."}
+        </div>
+      </Card>
 
       <Card>
         <div className="mb-3 text-[11.5px] font-extrabold text-text-secondary uppercase tracking-wide">
@@ -149,20 +170,23 @@ export default function ManagerShoppingDutyPage() {
           <div className="mb-3 text-[13.5px] font-extrabold">Plan preview</div>
           <div className="flex flex-col gap-2">
             {activePlan.blocks.map((b) => {
-              const member = users.find((u) => u.id === b.userId);
+              const names = b.userIds
+                .map((id) => users.find((u) => u.id === id)?.name ?? id)
+                .join(" + ");
+              const allSpun = b.userIds.every((id) => activePlan.spun[id]);
               return (
                 <div
-                  key={b.userId}
+                  key={b.userIds.join("-")}
                   className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
                 >
                   <div>
-                    <div className="text-[12px] font-bold">{member?.name ?? b.userId}</div>
+                    <div className="text-[12px] font-bold">{names}</div>
                     <div className="text-[10.5px] font-semibold text-text-secondary">
                       {b.dates[0]} → {b.dates[b.dates.length - 1]}
                     </div>
                   </div>
-                  <Chip tone={activePlan.spun[b.userId] ? "primary" : "orange"} active>
-                    {activePlan.spun[b.userId] ? "Spun" : "Pending"}
+                  <Chip tone={allSpun ? "primary" : "orange"} active>
+                    {allSpun ? "Spun" : "Pending"}
                   </Chip>
                 </div>
               );

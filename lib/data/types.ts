@@ -19,6 +19,9 @@ export interface User {
   department?: string;
   /** Set only on owners: every hostel they own. */
   ownedHostelIds?: string[];
+  /** Manager turned this boarder's meals off for an unpaid bill — they can't
+   * re-enable their own toggles until the manager resumes them. */
+  mealsSuspended?: boolean;
 }
 
 export interface Room {
@@ -27,6 +30,8 @@ export interface Room {
   number: string;
   capacity: number;
   occupantIds: string[];
+  /** Monthly rent for one seat in this room (৳) — each occupant pays this directly, not split across capacity. */
+  seatRent: number;
 }
 
 export interface HostelSettings {
@@ -45,6 +50,8 @@ export interface Hostel {
   cookId?: string;
   mealRate: number;
   kitchenLocation?: string;
+  /** Fixed monthly salary for the hostel's cook (৳) — used to compute paid vs due. */
+  cookMonthlySalary?: number;
   settings: HostelSettings;
 }
 
@@ -107,7 +114,8 @@ export interface DutyPlan {
   startDate: string;
   endDate: string;
   memberIds: string[];
-  blocks: { userId: string; dates: string[] }[];
+  /** Each block's userIds has length 1 (individual) or 2 (companion pair) for shopping duty. */
+  blocks: { userIds: string[]; dates: string[] }[];
   spun: Record<string, boolean>;
   /** Daily shopping budget, e.g. 2500 (৳/day) — only meaningful for type 'shopping'. */
   budgetPerDay?: number;
@@ -134,13 +142,27 @@ export interface ShoppingCost {
   createdAt: string;
 }
 
+/** A cook-reported ingredient shortage — routed to the manager and the
+ * current shopping-duty person(s), and posted as a red-alert announcement,
+ * until whoever bought the items marks it resolved. */
+export interface ShortageRequest {
+  id: string;
+  hostelId: string;
+  cookId: string;
+  items: string;
+  status: "pending" | "resolved";
+  createdAt: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
 export interface BillLineItem {
   label: string;
   amount: number;
 }
 
 export interface BillSection {
-  label: "mealCost" | "serviceCharge" | "roomRent";
+  label: "mealCost" | "serviceCharge" | "roomRent" | "cookSalary";
   items: BillLineItem[];
   total: number;
 }
@@ -152,8 +174,12 @@ export interface Bill {
   month: string; // e.g. "2026-07"
   mealsCount: number;
   sections: BillSection[];
+  /** Unpaid leftover from this member's immediately preceding month's bill, carried forward on top of this month's fresh charges. */
+  previousBalance: number;
   grandTotal: number;
   paid: number;
+  /** Manager-set last day to pay this bill, e.g. "2026-07-15". */
+  dueDate?: string;
 }
 
 export interface Payment {
@@ -163,6 +189,8 @@ export interface Payment {
   paidAt: string;
   method: "bKash" | "Nagad" | "Card" | "Cash";
   reference?: string;
+  /** The number/account the money was sent from (bKash/Nagad number, bank account, etc.) — lets the manager match it against their own statement. Not applicable for Cash. */
+  senderNumber?: string;
   verified: boolean;
 }
 
@@ -215,7 +243,8 @@ export type AnnouncementKind =
   | "spin-wheel-cta"
   | "swap-request"
   | "swap-completed"
-  | "swap-denied";
+  | "swap-denied"
+  | "shortage-alert";
 
 export interface Announcement {
   id: string;

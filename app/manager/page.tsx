@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   ChevronRight,
   Coffee,
   Maximize2,
@@ -21,7 +22,7 @@ import { useMealStops } from "@/hooks/useMealStops";
 import { useGuestMeals } from "@/hooks/useGuestMeals";
 import { useRooms } from "@/hooks/useRooms";
 import { useBill } from "@/hooks/useBill";
-import { useToast } from "@/components/ui/Toast";
+import { useShortages } from "@/hooks/useShortages";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
@@ -43,7 +44,13 @@ const QUICK_ACTIONS = [
     tone: "bg-orange-soft text-orange",
     href: "/manager/menu/edit",
   },
-  { key: "bills", label: "Generate bills", icon: Receipt, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]" },
+  {
+    key: "bills",
+    label: "Generate bills",
+    icon: Receipt,
+    tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]",
+    href: "/manager/finance",
+  },
   {
     key: "shopDuty",
     label: "Shopping duty",
@@ -66,9 +73,9 @@ export default function ManagerDashboardPage() {
   const cookLeaveRequests = useCookLeaveRequests(activeHostelId);
   const mealStops = useMealStops(activeHostelId);
   const guestMeals = useGuestMeals(activeHostelId);
+  const shortages = useShortages(activeHostelId);
   const rooms = useRooms(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
-  const { toast } = useToast();
   const [expenseSheetOpen, setExpenseSheetOpen] = useState(false);
   const [announceSheetOpen, setAnnounceSheetOpen] = useState(false);
   const [pendingPayments, setPendingPayments] = useState(0);
@@ -83,6 +90,7 @@ export default function ManagerDashboardPage() {
   const myDue = bill ? bill.grandTotal - bill.paid : 0;
 
   const pendingCookLeave = cookLeaveRequests.find((r) => r.status === "pending");
+  const pendingShortages = shortages.filter((s) => s.status === "pending");
   const pendingStops = mealStops.filter((r) => r.status === "pending").length;
   const pendingGuests = guestMeals.filter((r) => r.status === "pending").length;
   const pendingCookLeaveCount = cookLeaveRequests.filter((r) => r.status === "pending").length;
@@ -180,6 +188,24 @@ export default function ManagerDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Shortage alerts from the cook */}
+      {pendingShortages.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {pendingShortages.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-card border border-danger/30 bg-danger-soft p-4"
+            >
+              <div className="mb-1 flex items-center gap-2">
+                <Icon icon={AlertTriangle} size={16} className="text-danger" />
+                <div className="text-[12.5px] font-extrabold text-danger">Shopping shortage reported</div>
+              </div>
+              <div className="text-[11.5px] font-semibold text-text">{s.items}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Cook leave request */}
       {pendingCookLeave && (
@@ -335,10 +361,8 @@ export default function ManagerDashboardPage() {
                 onClick={() => {
                   if (action.key === "expense") {
                     setExpenseSheetOpen(true);
-                  } else if (action.key === "announce") {
-                    setAnnounceSheetOpen(true);
                   } else {
-                    toast(`${action.label} — coming in a later build phase`);
+                    setAnnounceSheetOpen(true);
                   }
                 }}
                 className="cursor-pointer text-left"
