@@ -66,9 +66,15 @@ export function PayBillSheet({
   useEffect(() => {
     if (open) {
       queueMicrotask(() => {
-        const all = new Set(rows.map((r) => r.target));
-        setSelected(all);
-        setAmount(String(Math.max(dueOfSelected(all), 0)));
+        // Default to whatever's actually due, not every row — selecting
+        // "all" indiscriminately (including a row that's in credit) can sum
+        // to zero or negative when one category's credit outweighs another's
+        // due, which silently produced a ৳0 amount and a disabled submit
+        // button even though the member clearly still owed money overall.
+        const dueOnly = new Set(rows.filter((r) => r.due > 0).map((r) => r.target));
+        const preselect = dueOnly.size > 0 ? dueOnly : new Set(rows.map((r) => r.target));
+        setSelected(preselect);
+        setAmount(String(Math.max(dueOfSelected(preselect), 0)));
         setSenderNumber("");
       });
     }
