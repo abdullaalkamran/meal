@@ -8,6 +8,7 @@
 import type {
   Announcement,
   Bill,
+  BillAdjustment,
   Comment,
   CookAttendanceReport,
   CookAttendanceVote,
@@ -19,6 +20,8 @@ import type {
   HostelTransferRequest,
   JoinRequest,
   MealDay,
+  MealEditRequest,
+  MealEditVote,
   MealStopRequest,
   Menu,
   Notification,
@@ -48,9 +51,12 @@ export interface Tables {
   shortageRequests: ShortageRequest[];
   bills: Bill[];
   payments: Payment[];
+  billAdjustments: BillAdjustment[];
   cookLeaveRequests: CookLeaveRequest[];
   cookAttendanceReports: CookAttendanceReport[];
   cookAttendanceVotes: CookAttendanceVote[];
+  mealEditRequests: MealEditRequest[];
+  mealEditVotes: MealEditVote[];
   announcements: Announcement[];
   notifications: Notification[];
   expenses: Expense[];
@@ -61,7 +67,7 @@ export interface Tables {
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 16;
 
 interface Persisted {
   version: number;

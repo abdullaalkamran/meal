@@ -9,6 +9,7 @@ import type {
   GuestMealRepository,
   HostelRepository,
   JoinRequestRepository,
+  MealEditRepository,
   MealRepository,
   MealStopRepository,
   MenuRepository,
@@ -22,7 +23,9 @@ import type {
   TransferRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, MealDay, MealSlot } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Payment } from "../types";
+import { formatShortDate } from "../../utils/date";
+import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { nextId, store } from "./store";
 
 function emptyMealDay(hostelId: string, date: string): MealDay {
@@ -441,12 +444,55 @@ const bills: BillRepository = {
     return store.data.payments.filter((p) => p.billId === billId);
   },
   async pay(payment) {
-    store.data.payments.push({ ...payment, id: nextId("pay") });
     const bill = store.data.bills.find((b) => b.id === payment.billId);
+    const breakdown: NonNullable<Payment["breakdown"]> = {};
     if (bill) {
+      // Greedily settle whichever of the chosen targets are still owed —
+      // previous balance first, then sections in a fixed order — recording
+      // exactly what went where so a later rejection can reverse it precisely.
+      let remaining = payment.amount;
+      if (payment.targets.includes("previousBalance")) {
+        const due = bill.previousBalance - bill.previousBalancePaid;
+        if (due > 0 && remaining > 0) {
+          const applied = Math.min(remaining, due);
+          bill.previousBalancePaid += applied;
+          breakdown.previousBalance = applied;
+          remaining -= applied;
+        }
+      }
+      const order: BillSection["label"][] = ["mealCost", "roomRent", "serviceCharge", "cookSalary"];
+      for (const label of order) {
+        if (remaining <= 0) break;
+        if (!payment.targets.includes(label)) continue;
+        const section = bill.sections.find((s) => s.label === label);
+        if (!section) continue;
+        const due = section.total - section.paid;
+        if (due > 0) {
+          const applied = Math.min(remaining, due);
+          section.paid += applied;
+          breakdown[label] = (breakdown[label] ?? 0) + applied;
+          remaining -= applied;
+        }
+      }
+      if (remaining > 0) {
+        // Overpaying past every selected target's due becomes credit — parked
+        // on whichever target the member chose first.
+        const fallback = payment.targets[0];
+        if (fallback === "previousBalance") {
+          bill.previousBalancePaid += remaining;
+          breakdown.previousBalance = (breakdown.previousBalance ?? 0) + remaining;
+        } else if (fallback) {
+          const section = bill.sections.find((s) => s.label === fallback);
+          if (section) {
+            section.paid += remaining;
+            breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
+          }
+        }
+      }
       bill.paid += payment.amount;
-      store.emit(`bill:${bill.userId}`);
     }
+    store.data.payments.push({ ...payment, id: nextId("pay"), breakdown });
+    if (bill) store.emit(`bill:${bill.userId}`);
   },
   async listPendingVerification(hostelId, month) {
     const billIds = store.data.bills
@@ -462,9 +508,55 @@ const bills: BillRepository = {
       payment.verified = true;
     } else {
       store.data.payments = store.data.payments.filter((p) => p.id !== paymentId);
-      if (bill) bill.paid -= payment.amount;
+      if (bill) {
+        bill.paid -= payment.amount;
+        for (const [key, amt] of Object.entries(payment.breakdown ?? {})) {
+          if (key === "previousBalance") {
+            bill.previousBalancePaid -= amt;
+          } else {
+            const section = bill.sections.find((s) => s.label === key);
+            if (section) section.paid -= amt;
+          }
+        }
+      }
     }
     if (bill) store.emit(`bill:${bill.userId}`);
+  },
+  async settleMealCredit(billId, amount, destination) {
+    const bill = store.data.bills.find((b) => b.id === billId);
+    if (!bill) return;
+    const meal = bill.sections.find((s) => s.label === "mealCost");
+    if (!meal) return;
+    const credit = meal.paid - meal.total;
+    const applied = Math.min(amount, Math.max(credit, 0));
+    if (applied <= 0) return;
+
+    meal.paid -= applied;
+    if (destination === "refund") {
+      // The money actually leaves the hostel back to the member, so it no
+      // longer counts as received.
+      bill.paid -= applied;
+    } else if (destination === "previousBalance") {
+      bill.previousBalancePaid += applied;
+    } else {
+      const target = bill.sections.find((s) => s.label === destination);
+      if (target) target.paid += applied;
+    }
+
+    store.data.billAdjustments.push({
+      id: nextId("adj"),
+      billId,
+      userId: bill.userId,
+      amount: applied,
+      createdAt: new Date().toISOString(),
+      kind: destination === "refund" ? "refund" : "transfer",
+      from: "mealCost",
+      to: destination === "refund" ? undefined : destination,
+    });
+    store.emit(`bill:${bill.userId}`);
+  },
+  async listAdjustments(billId) {
+    return store.data.billAdjustments.filter((a) => a.billId === billId);
   },
   async generateBills(hostelId, month, options) {
     const hostel = store.data.hostels.find((h) => h.id === hostelId);
@@ -473,9 +565,6 @@ const bills: BillRepository = {
     const allBoarders = store.data.users.filter(
       (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner"
     );
-    const targetBoarders = options?.userIds?.length
-      ? allBoarders.filter((u) => options.userIds!.includes(u.id))
-      : allBoarders;
     const rooms = store.data.rooms.filter((r) => r.hostelId === hostelId);
     const [year, mon] = month.split("-").map(Number);
     const daysInMonth = new Date(year, mon, 0).getDate();
@@ -485,31 +574,43 @@ const bills: BillRepository = {
       (d) => d.hostelId === hostelId && d.date >= from && d.date <= to
     );
     const monthExpenses = store.data.expenses.filter(
-      (e) => e.hostelId === hostelId && e.date.startsWith(month)
+      (e) => e.hostelId === hostelId && e.billingMonth === month
     );
 
     const utilityExpenses = monthExpenses
-      .filter((e) => e.category === "Utilities")
+      .filter((e) => isServiceChargeCategory(e.category))
       .filter((e) => !options?.includeServiceExpenseIds || options.includeServiceExpenseIds.includes(e.id));
-    const salaryExpenseTotal = monthExpenses
+    const salaryExpenses = monthExpenses
       .filter((e) => e.category === "Salary")
-      .reduce((sum, e) => sum + e.amount, 0);
-    // "Fixed" always uses the amount the manager entered for this run — no
-    // silent fallback to expense totals, so picking "Fixed" reliably behaves
-    // differently from "From expenses" even if no fixed amount was set.
-    const cookSalaryTotal =
-      options?.cookSalaryMode === "expense" ? salaryExpenseTotal : (options?.fixedCookSalaryAmount ?? 0);
-    // Shares are always split across every boarder in the hostel, even when
-    // only regenerating a subset — one member's bill shouldn't change just
-    // because we happened to regenerate it alone.
-    const boarderCount = allBoarders.length || 1;
-    const cookSalaryShare = cookSalaryTotal / boarderCount;
+      .filter((e) => !options?.includeSalaryExpenseIds || options.includeSalaryExpenseIds.includes(e.id));
+
+    // Shared by service charge AND cook salary: an expense's per-member
+    // amount follows its own memberIds/splitMode exactly — "fixed" charges
+    // e.amount to EACH selected member, "equal" divides e.amount across them.
+    // Cook salary used to ignore this entirely (pooling every Salary expense
+    // and dividing equally across every boarder) — that silently overrode
+    // whatever member selection and fixed/equal split the manager set when
+    // adding the expense, so a "Fixed ৳600 per person" salary top-up billed
+    // everyone a fraction of ৳600 instead of ৳600 each.
+    const expenseItemsFor = (expenses: Expense[], userId: string) =>
+      expenses
+        .filter((e) => e.memberIds.includes(userId))
+        .map((e) => {
+          const coversOtherPeriod = !e.dateFrom.startsWith(e.billingMonth);
+          const label = `${e.category}${e.note ? ` — ${e.note}` : ""}${e.splitMode === "fixed" ? "" : " share"}`;
+          return {
+            label: coversOtherPeriod
+              ? `${label} (for ${formatShortDate(e.dateFrom)}${e.dateTo !== e.dateFrom ? ` – ${formatShortDate(e.dateTo)}` : ""})`
+              : label,
+            amount: e.splitMode === "fixed" ? e.amount : e.amount / (e.memberIds.length || 1),
+          };
+        });
 
     const prevDate = new Date(year, mon - 2, 1);
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
 
     const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
-    const bills: Bill[] = targetBoarders.map((u) => {
+    const bills: Bill[] = allBoarders.map((u) => {
       const room = rooms.find((r) => r.occupantIds.includes(u.id));
       const seatRent = room?.seatRent ?? 0;
 
@@ -535,24 +636,34 @@ const bills: BillRepository = {
       }
       const mealCostTotal = (ownMeals + guestMeals) * hostel.mealRate;
 
-      const serviceItems = utilityExpenses.map((e) => ({
-        label: `${e.note ?? e.category} share`,
-        amount: e.amount / boarderCount,
-      }));
+      const serviceItems = expenseItemsFor(utilityExpenses, u.id);
       const serviceTotal = serviceItems.reduce((sum, i) => sum + i.amount, 0);
 
+      const salaryItems = expenseItemsFor(salaryExpenses, u.id);
+      const salaryTotal = salaryItems.reduce((sum, i) => sum + i.amount, 0);
+
+      // Regenerating a bill must not erase what's already been paid against
+      // each section — carry each section's `paid` forward by label.
+      const existing = store.data.bills.find(
+        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === month
+      );
+      const paidFor = (label: BillSection["label"]) =>
+        existing?.sections.find((s) => s.label === label)?.paid ?? 0;
+
       const sections: BillSection[] = [
-        { label: "mealCost", items: mealCostItems, total: mealCostTotal },
+        { label: "mealCost", items: mealCostItems, total: mealCostTotal, paid: paidFor("mealCost") },
         {
           label: "roomRent",
           items: [{ label: room ? `Room ${room.number} (seat)` : "Unassigned", amount: seatRent }],
           total: seatRent,
+          paid: paidFor("roomRent"),
         },
-        { label: "serviceCharge", items: serviceItems, total: serviceTotal },
+        { label: "serviceCharge", items: serviceItems, total: serviceTotal, paid: paidFor("serviceCharge") },
         {
           label: "cookSalary",
-          items: [{ label: "Cook salary (equal share)", amount: cookSalaryShare }],
-          total: cookSalaryShare,
+          items: salaryItems,
+          total: salaryTotal,
+          paid: paidFor("cookSalary"),
         },
       ];
       const prevBill = store.data.bills.find(
@@ -560,10 +671,6 @@ const bills: BillRepository = {
       );
       const previousBalance = prevBill ? Math.max(prevBill.grandTotal - prevBill.paid, 0) : 0;
       const grandTotal = sections.reduce((sum, s) => sum + s.total, 0) + previousBalance;
-
-      const existing = store.data.bills.find(
-        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === month
-      );
 
       return {
         id: existing?.id ?? nextId("bill"),
@@ -573,16 +680,30 @@ const bills: BillRepository = {
         mealsCount: ownMeals,
         sections,
         previousBalance,
+        previousBalancePaid: existing?.previousBalancePaid ?? 0,
         grandTotal,
         paid: existing?.paid ?? 0,
         dueDate: options?.dueDate ?? existing?.dueDate,
       };
     });
 
-    const targetIds = new Set(targetBoarders.map((u) => u.id));
     store.data.bills = store.data.bills
-      .filter((b) => !(b.hostelId === hostelId && b.month === month && targetIds.has(b.userId)))
+      .filter((b) => !(b.hostelId === hostelId && b.month === month))
       .concat(bills);
+
+    // Lock in every expense that actually fed this generation — the Utilities
+    // and Salary expenses included this run — so they're no longer offered
+    // as a togglable choice or deletable the next time bills are (re)generated
+    // for this month; only genuinely new expenses added afterward will be.
+    const billedIds = new Set([...utilityExpenses.map((e) => e.id), ...salaryExpenses.map((e) => e.id)]);
+    if (billedIds.size > 0) {
+      const now = new Date().toISOString();
+      store.data.expenses = store.data.expenses.map((e) =>
+        billedIds.has(e.id) && !e.billedAt ? { ...e, billedAt: now } : e
+      );
+      store.emit(`expenses:${hostelId}`);
+    }
+
     store.emit(`bills:${hostelId}`);
     for (const b of bills) store.emit(`bill:${b.userId}`);
     return bills;
@@ -639,6 +760,9 @@ const cookAttendance: CookAttendanceRepository = {
     return store.data.cookAttendanceReports.filter(
       (r) => r.hostelId === hostelId && r.date === date
     );
+  },
+  async listByHostel(hostelId) {
+    return store.data.cookAttendanceReports.filter((r) => r.hostelId === hostelId);
   },
   async report(req) {
     const created = { ...req, id: nextId("cookattend"), createdAt: new Date().toISOString() };
@@ -720,6 +844,87 @@ const cookAttendance: CookAttendanceRepository = {
   },
   subscribe(hostelId, cb) {
     return store.on(`cookAttendance:${hostelId}`, cb);
+  },
+};
+
+const mealEdits: MealEditRepository = {
+  async listByHostel(hostelId) {
+    return store.data.mealEditRequests.filter((r) => r.hostelId === hostelId);
+  },
+  async request(req) {
+    const created: MealEditRequest = {
+      ...req,
+      id: nextId("mealedit"),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    store.data.mealEditRequests.push(created);
+    const targetName = store.data.users.find((u) => u.id === req.targetUserId)?.name ?? "a member";
+    store.data.announcements.push({
+      id: nextId("ann"),
+      hostelId: req.hostelId,
+      kind: "meal-edit-poll",
+      title: `Allow editing ${targetName}’s meal on ${req.date}?`,
+      body: req.reason
+        ? `The manager wants to manually correct ${targetName}’s meal for ${req.date}. Reason: ${req.reason}. Vote yes to allow.`
+        : `The manager wants to manually correct ${targetName}’s meal for ${req.date}. Vote yes to allow.`,
+      payload: { requestId: created.id, targetUserId: req.targetUserId, date: req.date },
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`mealEdits:${req.hostelId}`);
+    store.emit(`announcements:${req.hostelId}`);
+  },
+  async vote(requestId, userId, choice) {
+    const existing = store.data.mealEditVotes.find(
+      (v) => v.requestId === requestId && v.userId === userId
+    );
+    if (existing) {
+      existing.choice = choice;
+      existing.votedAt = new Date().toISOString();
+    } else {
+      store.data.mealEditVotes.push({ requestId, userId, choice, votedAt: new Date().toISOString() });
+    }
+
+    const request = store.data.mealEditRequests.find((r) => r.id === requestId);
+    if (!request) return;
+
+    if (request.status === "pending") {
+      const boarders = store.data.users.filter(
+        (u) => u.hostelId === request.hostelId && u.role !== "cook" && u.role !== "owner"
+      );
+      const yesVotes = store.data.mealEditVotes.filter(
+        (v) => v.requestId === requestId && v.choice === "yes"
+      ).length;
+      if (boarders.length > 0 && yesVotes / boarders.length >= 0.5) {
+        request.status = "approved";
+        const ann = store.data.announcements.find(
+          (a) =>
+            a.kind === "meal-edit-poll" &&
+            (a.payload as { requestId?: string })?.requestId === requestId
+        );
+        if (ann) {
+          ann.kind = "meal-edit-resolved";
+          ann.title = "Meal edit approved";
+          ann.body = "Members approved the request — the manager can now edit that meal.";
+        }
+      }
+    }
+    store.emit(`mealEdits:${request.hostelId}`);
+    store.emit(`announcements:${request.hostelId}`);
+  },
+  async listVotes(requestId) {
+    return store.data.mealEditVotes.filter((v) => v.requestId === requestId);
+  },
+  async withdraw(requestId) {
+    const request = store.data.mealEditRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    store.data.mealEditRequests = store.data.mealEditRequests.filter((r) => r.id !== requestId);
+    store.emit(`mealEdits:${request.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () => cb(store.data.mealEditRequests.filter((r) => r.hostelId === hostelId));
+    fire();
+    return store.on(`mealEdits:${hostelId}`, fire);
   },
 };
 
@@ -979,6 +1184,7 @@ export const mockRepositories: Repositories = {
   bills,
   cookLeave,
   cookAttendance,
+  mealEdits,
   announcements,
   notifications,
   expenses,

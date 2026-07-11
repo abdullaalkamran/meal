@@ -32,8 +32,11 @@ export default function OwnerReportsPage() {
     );
   }, [hostels]);
 
+  // "Fixed per person" expenses charge e.amount to EACH selected member, so
+  // the real total spent is e.amount × member count, not e.amount itself.
   const byCategory = expenses.reduce<Record<string, number>>((acc, e) => {
-    acc[e.category] = (acc[e.category] ?? 0) + e.amount;
+    const impact = e.splitMode === "fixed" ? e.amount * e.memberIds.length : e.amount;
+    acc[e.category] = (acc[e.category] ?? 0) + impact;
     return acc;
   }, {});
   const segments = Object.entries(byCategory).map(([label, value]) => ({ label, value }));

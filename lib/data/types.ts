@@ -165,7 +165,19 @@ export interface BillSection {
   label: "mealCost" | "serviceCharge" | "roomRent" | "cookSalary";
   items: BillLineItem[];
   total: number;
+  /** How much of this section has been paid so far — tracked per-section (rather
+   * than only as one bill-wide total) so a member who's paid off meal cost but
+   * not rent, or overpaid meal cost into credit (e.g. from shopping-duty spend
+   * exceeding their share), sees that reflected on the exact category it's for. */
+  paid: number;
 }
+
+/** A payment can target one or more specific parts of the bill instead of
+ * always paying everything at once — meal cost, room rent, service charge,
+ * and cook salary are billed for different reasons and a member may want to
+ * settle any combination of them together (or run a credit on one while
+ * still owing on another). */
+export type BillTarget = BillSection["label"] | "previousBalance";
 
 export interface Bill {
   id: string;
@@ -176,6 +188,9 @@ export interface Bill {
   sections: BillSection[];
   /** Unpaid leftover from this member's immediately preceding month's bill, carried forward on top of this month's fresh charges. */
   previousBalance: number;
+  /** How much of `previousBalance` has been paid off — tracked separately from
+   * the per-section paid amounts since it isn't tied to any one section. */
+  previousBalancePaid: number;
   grandTotal: number;
   paid: number;
   /** Manager-set last day to pay this bill, e.g. "2026-07-15". */
@@ -192,6 +207,36 @@ export interface Payment {
   /** The number/account the money was sent from (bKash/Nagad number, bank account, etc.) — lets the manager match it against their own statement. Not applicable for Cash. */
   senderNumber?: string;
   verified: boolean;
+  /** Which part(s) of the bill this payment was meant to cover — a member can
+   * settle multiple categories (e.g. room rent + service charge) in one
+   * payment instead of only ever paying one category or literally everything. */
+  targets: BillTarget[];
+  /** The exact split actually applied across those targets at payment time
+   * (previous balance first, then each section in a fixed order) — recorded
+   * so a later rejection can reverse it precisely instead of re-deriving it
+   * from bill state that may have since changed. */
+  breakdown?: Partial<Record<BillTarget, number>>;
+}
+
+/** Meal cost belongs entirely to members — the hostel keeps no share of it —
+ * so a member's meal-cost credit (they paid in more than the meal charge for
+ * the month) has to be settled by the manager: either handed back in cash, or
+ * used to cover a due they still owe on another part of the same bill (rent,
+ * service charge, cook salary, or a previous-month balance). */
+export interface BillAdjustment {
+  id: string;
+  billId: string;
+  userId: string;
+  amount: number;
+  createdAt: string;
+  /** "refund" pays the credit back to the member in cash; "transfer" moves it
+   * to cover a due on another part of the bill instead. */
+  kind: "refund" | "transfer";
+  /** Always "mealCost" today — the only section the hostel can't keep a share of. */
+  from: BillTarget;
+  /** The category the credit was moved to cover — only set for "transfer". */
+  to?: BillTarget;
+  note?: string;
 }
 
 /**
@@ -235,6 +280,28 @@ export interface CookAttendanceVote {
   votedAt: string;
 }
 
+/** Manager's request to hand-edit one member's meal toggles for one past/
+ * locked date — gated behind a hostel-wide vote so the manager can't
+ * unilaterally change someone's meal record. Auto-approves once yes votes
+ * reach half of the hostel's boarders. */
+export interface MealEditRequest {
+  id: string;
+  hostelId: string;
+  targetUserId: string;
+  date: string;
+  reason: string;
+  requestedBy: string;
+  status: "pending" | "approved" | "denied";
+  createdAt: string;
+}
+
+export interface MealEditVote {
+  requestId: string;
+  userId: string;
+  choice: "yes" | "no";
+  votedAt: string;
+}
+
 export type AnnouncementKind =
   | "general"
   | "cook-absence-poll"
@@ -244,7 +311,9 @@ export type AnnouncementKind =
   | "swap-request"
   | "swap-completed"
   | "swap-denied"
-  | "shortage-alert";
+  | "shortage-alert"
+  | "meal-edit-poll"
+  | "meal-edit-resolved";
 
 export interface Announcement {
   id: string;
@@ -270,9 +339,30 @@ export interface Expense {
   id: string;
   hostelId: string;
   category: string;
+  /** If splitMode is "fixed", this is the amount EACH selected member pays.
+   * If "equal", this is the TOTAL, divided equally across memberIds. */
   amount: number;
-  date: string;
+  /** Service period this expense covers — a single day has dateFrom === dateTo.
+   * Purely descriptive (e.g. "electricity for Apr 1-30"); does NOT decide which
+   * month's finance page / bill the expense lands on — see billingMonth. */
+  dateFrom: string;
+  dateTo: string;
   note?: string;
+  /** Boarders this expense applies to (drives the service-charge share on their bills). */
+  memberIds: string[];
+  splitMode: "fixed" | "equal";
+  /** The month (YYYY-MM) this expense is charged in — e.g. a late electricity
+   * bill covering April can still be recorded against July if that's when it
+   * arrived, so it shows up transparently on the running month's finance page
+   * and bills instead of silently landing on an already-closed April. */
+  billingMonth: string;
+  /** Set once this expense has actually been folded into a generated bill —
+   * a Utilities expense the manager included when generating, or any Salary
+   * expense (cook salary always sums every one for the month). Once billed,
+   * it's locked from deletion and won't be re-offered as a togglable choice
+   * the next time bills are generated for that month — only genuinely new,
+   * not-yet-billed expenses show up as choices then. */
+  billedAt?: string;
 }
 
 export interface HostelTransferRequest {

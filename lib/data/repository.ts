@@ -9,6 +9,8 @@
 import type {
   Announcement,
   Bill,
+  BillAdjustment,
+  BillTarget,
   Comment,
   CookAttendanceReport,
   CookAttendanceVote,
@@ -20,6 +22,8 @@ import type {
   HostelTransferRequest,
   JoinRequest,
   MealDay,
+  MealEditRequest,
+  MealEditVote,
   MealSlot,
   MealStopRequest,
   Menu,
@@ -149,31 +153,34 @@ export interface BillRepository {
   pay(payment: Omit<Payment, "id">): Promise<void>;
   listPendingVerification(hostelId: string, month: string): Promise<Payment[]>;
   decidePayment(paymentId: string, status: "verified" | "declined"): Promise<void>;
-  /** Computes bills for hostelId/month from meal attendance, room seat rent,
-   * selected Utilities expenses (split equally across every boarder), and
-   * cook salary (fixed amount or Salary-category expenses, split equally) —
-   * replacing any existing bills for the targeted members that month while
-   * preserving what they've already paid. Per-person shares (service charge,
-   * cook salary) are always divided across every boarder in the hostel, even
-   * when only a subset of members is being (re)generated. Any unpaid balance
-   * on that member's immediately preceding month's bill is carried forward
-   * as `previousBalance`, added on top of this month's fresh charges. */
+  /** Computes bills for every boarder in the hostel for hostelId/month from
+   * meal attendance, room seat rent, selected Utilities expenses, and
+   * selected Salary expenses (cook salary) — each split per its own
+   * memberIds/splitMode (see Expense), exactly the same way for both —
+   * replacing any existing bills for that month while preserving what's
+   * already been paid. Who owes what follows entirely from how each expense
+   * was set up when it was added (its own member selection and fixed/equal
+   * split), not a separate scope chosen here. Any unpaid balance on a
+   * member's immediately preceding month's bill is carried forward as
+   * `previousBalance`, added on top of this month's fresh charges. */
   generateBills(
     hostelId: string,
     month: string,
     options?: {
       /** Utilities-category expense ids to include as service charge; omit for all. */
       includeServiceExpenseIds?: string[];
-      /** "fixed" uses fixedCookSalaryAmount; "expense" sums Salary-category expenses. */
-      cookSalaryMode?: "fixed" | "expense";
-      /** The fixed monthly cook salary to use when cookSalaryMode is "fixed". */
-      fixedCookSalaryAmount?: number;
-      /** Only (re)generate for these boarders; omit for every boarder in the hostel. */
-      userIds?: string[];
+      /** Salary-category expense ids to include as cook salary; omit for all. */
+      includeSalaryExpenseIds?: string[];
       /** Last day to pay this batch of bills, e.g. "2026-07-15". */
       dueDate?: string;
     }
   ): Promise<Bill[]>;
+  /** Settles some or all of a member's meal-cost credit — money the hostel
+   * never keeps a share of. `destination: "refund"` records it as paid back
+   * to the member in cash; any other `BillTarget` moves it to cover that
+   * category's due on the same bill instead (or the previous-month balance). */
+  settleMealCredit(billId: string, amount: number, destination: BillTarget | "refund"): Promise<void>;
+  listAdjustments(billId: string): Promise<BillAdjustment[]>;
   subscribe(userId: string, cb: (bill: Bill) => void): Unsubscribe;
 }
 
@@ -188,12 +195,25 @@ export interface CookLeaveRepository {
 
 export interface CookAttendanceRepository {
   listForDate(hostelId: string, date: string): Promise<CookAttendanceReport[]>;
+  listByHostel(hostelId: string): Promise<CookAttendanceReport[]>;
   report(req: Omit<CookAttendanceReport, "id" | "createdAt">): Promise<CookAttendanceReport>;
   markCooked(hostelId: string, date: string, meal: MealSlot): Promise<void>;
   vote(reportId: string, userId: string, choice: CookAttendanceVote["choice"]): Promise<void>;
   listVotes(reportId: string): Promise<CookAttendanceVote[]>;
   confirmAbsent(reportId: string): Promise<void>;
   subscribe(hostelId: string, cb: () => void): Unsubscribe;
+}
+
+export interface MealEditRepository {
+  listByHostel(hostelId: string): Promise<MealEditRequest[]>;
+  /** Creates the request and posts a hostel-wide vote-poll announcement. */
+  request(req: Omit<MealEditRequest, "id" | "status" | "createdAt">): Promise<void>;
+  /** Records the vote and auto-approves once yes votes reach half the
+   * hostel's boarders (excluding cook/owner). */
+  vote(requestId: string, userId: string, choice: MealEditVote["choice"]): Promise<void>;
+  listVotes(requestId: string): Promise<MealEditVote[]>;
+  withdraw(requestId: string): Promise<void>;
+  subscribe(hostelId: string, cb: (list: MealEditRequest[]) => void): Unsubscribe;
 }
 
 export interface AnnouncementRepository {
@@ -260,6 +280,7 @@ export interface Repositories {
   bills: BillRepository;
   cookLeave: CookLeaveRepository;
   cookAttendance: CookAttendanceRepository;
+  mealEdits: MealEditRepository;
   announcements: AnnouncementRepository;
   notifications: NotificationRepository;
   expenses: ExpenseRepository;

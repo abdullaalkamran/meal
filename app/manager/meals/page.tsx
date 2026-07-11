@@ -2,33 +2,73 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronUp, Phone } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Clock, PencilLine, Phone } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
+import { useMealEditRequests } from "@/hooks/useMealEditRequests";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Switch } from "@/components/ui/Switch";
 import { Calendar } from "@/components/ui/Calendar";
+import { useToast } from "@/components/ui/Toast";
+import { RequestMealEditSheet } from "@/components/manager/RequestMealEditSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type User } from "@/lib/data";
 import { today } from "@/lib/utils/date";
 
 export default function ManagerMealsPage() {
-  const { hostel, activeHostelId } = useSession();
+  const { user, hostel, activeHostelId } = useSession();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [selectedDate, setSelectedDate] = useState(today());
   const [membersOpen, setMembersOpen] = useState(true);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
+  const [editRequestTarget, setEditRequestTarget] = useState<User | null>(null);
+  const { toast } = useToast();
 
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
   const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const { day } = useMealDay(activeHostelId, selectedDate);
   const plans = useDutyPlans(activeHostelId);
+  const editRequests = useMealEditRequests(activeHostelId);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
+
+  const requestFor = (userId: string) =>
+    editRequests.find(
+      (r) => r.targetUserId === userId && r.date === selectedDate && r.status !== "denied"
+    );
+
+  // Edits are staged locally and only written to the meal day (and the
+  // approval consumed) once the manager taps Submit — editing again after
+  // that requires sending a fresh request.
+  const [drafts, setDrafts] = useState<Record<string, Partial<Record<MealSlot, boolean>>>>({});
+  const draftFor = (userId: string, meal: MealSlot, actualOn: boolean) =>
+    drafts[userId]?.[meal] ?? actualOn;
+  const setDraft = (userId: string, meal: MealSlot, on: boolean) => {
+    setDrafts((prev) => ({ ...prev, [userId]: { ...prev[userId], [meal]: on } }));
+  };
+  const submitEdit = async (userId: string, requestId: string) => {
+    if (!activeHostelId) return;
+    const memberDraft = drafts[userId];
+    if (memberDraft) {
+      await Promise.all(
+        (Object.entries(memberDraft) as [MealSlot, boolean][]).map(([meal, on]) =>
+          repo.meals.setMemberMealToggle(activeHostelId, userId, selectedDate, meal, on)
+        )
+      );
+    }
+    await repo.mealEdits.withdraw(requestId);
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[userId];
+      return next;
+    });
+    toast("Meal edit submitted — request again to edit further");
+  };
 
   useEffect(() => {
     if (!activeHostelId) return;
@@ -136,18 +176,20 @@ export default function ManagerMealsPage() {
         </button>
         {membersOpen && (
           <div className="mt-3 flex flex-col gap-2">
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-1 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
+            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-1 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
               <div>Member</div>
               <div className="w-6 text-center">B</div>
               <div className="w-6 text-center">L</div>
               <div className="w-6 text-center">D</div>
+              <div className="w-16 text-center">Edit</div>
             </div>
             {users.map((m) => {
               const entry = day?.entries[m.id];
+              const request = requestFor(m.id);
               return (
                 <div
                   key={m.id}
-                  className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-btn bg-bg px-2 py-2"
+                  className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-2 rounded-btn bg-bg px-2 py-2"
                 >
                   <div className="min-w-0 text-[11px] font-bold">{m.name}</div>
                   {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
@@ -165,12 +207,84 @@ export default function ManagerMealsPage() {
                       </div>
                     );
                   })}
+                  <div className="flex w-16 justify-center">
+                    {request?.status === "approved" ? (
+                      <span className="text-[9px] font-extrabold text-primary">Unlocked</span>
+                    ) : request?.status === "pending" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          repo.mealEdits.withdraw(request.id);
+                          toast("Edit request withdrawn");
+                        }}
+                        className="flex cursor-pointer items-center gap-0.5 text-[9px] font-extrabold text-orange"
+                      >
+                        <Icon icon={Clock} size={11} />
+                        Pending
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditRequestTarget(m)}
+                        aria-label={`Request edit for ${m.name}`}
+                        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-text-secondary"
+                      >
+                        <Icon icon={PencilLine} size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </Card>
+
+      {users.some((m) => requestFor(m.id)?.status === "approved") && (
+        <Card>
+          <div className="mb-1 text-[13.5px] font-extrabold">Editable meals — {selectedDate}</div>
+          <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+            Members approved manual edits for these meals on this date.
+          </div>
+          <div className="flex flex-col divide-y divide-border">
+            {users
+              .filter((m) => requestFor(m.id)?.status === "approved")
+              .map((m) => {
+                const entry = day?.entries[m.id];
+                const request = requestFor(m.id)!;
+                return (
+                  <div key={m.id} className="py-3 first:pt-0 last:pb-0">
+                    <div className="mb-2 text-[11.5px] font-extrabold">{m.name}</div>
+                    <div className="mb-3 flex flex-col gap-2">
+                      {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
+                        const on = draftFor(m.id, meal, entry?.[meal]?.on ?? true);
+                        const c = MEAL_COLORS[meal];
+                        return (
+                          <div key={meal} className="flex items-center gap-3">
+                            <div
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${c.bg}`}
+                            >
+                              <Icon icon={c.icon} size={14} className={c.text} />
+                            </div>
+                            <div className="min-w-0 flex-1 text-[11px] font-bold">{MEAL_LABEL[meal]}</div>
+                            <Switch checked={on} onChange={(v) => setDraft(m.id, meal, v)} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => submitEdit(m.id, request.id)}
+                      className="min-h-10 w-full cursor-pointer rounded-btn bg-primary text-[12px] font-extrabold text-white"
+                    >
+                      Submit
+                    </button>
+                  </div>
+                );
+              })}
+          </div>
+        </Card>
+      )}
 
       {shoppingPlan && (
         <Card>
@@ -198,6 +312,16 @@ export default function ManagerMealsPage() {
           </div>
         </Card>
       )}
+
+      <RequestMealEditSheet
+        open={!!editRequestTarget}
+        onClose={() => setEditRequestTarget(null)}
+        hostelId={activeHostelId}
+        managerId={user?.id}
+        targetUserId={editRequestTarget?.id}
+        targetUserName={editRequestTarget?.name ?? ""}
+        date={selectedDate}
+      />
     </div>
   );
 }

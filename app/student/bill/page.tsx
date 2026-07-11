@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChefHat, Home, Sun, Wrench } from "lucide-react";
+import { ChefHat, ChevronLeft, ChevronRight, Home, Sun, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useBill } from "@/hooks/useBill";
 import { useToast } from "@/components/ui/Toast";
@@ -9,14 +9,22 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth, formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
-import type { BillSection } from "@/lib/data";
+import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
+import type { BillSection, BillTarget } from "@/lib/data";
 
 const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun; tone: string }> = {
   mealCost: { label: "Meal cost", icon: Sun, tone: "bg-orange-soft text-orange" },
   serviceCharge: { label: "Service charge", icon: Wrench, tone: "bg-blue-soft text-blue" },
   roomRent: { label: "Room rent", icon: Home, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]" },
   cookSalary: { label: "Cook salary", icon: ChefHat, tone: "bg-primary-soft text-primary" },
+};
+
+const TARGET_LABEL: Record<BillTarget, string> = {
+  previousBalance: "Previous balance",
+  mealCost: "Meal cost",
+  roomRent: "Room rent",
+  serviceCharge: "Service charge",
+  cookSalary: "Cook salary",
 };
 
 const METHOD_TONE: Record<string, string> = {
@@ -28,26 +36,67 @@ const METHOD_TONE: Record<string, string> = {
 
 export default function StudentBillPage() {
   const { user, activeHostelId } = useSession();
-  const { bill, payments } = useBill(activeHostelId, user?.id, currentMonth());
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const { bill, payments, adjustments } = useBill(activeHostelId, user?.id, monthStr);
   const { toast } = useToast();
   const [payOpen, setPayOpen] = useState(false);
+
+  const shiftMonth = (delta: number) => {
+    const d = new Date(year, month - 1 + delta, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
+  };
+
+  const monthNav = (
+    <Card className="flex items-center justify-between">
+      <button
+        type="button"
+        onClick={() => shiftMonth(-1)}
+        aria-label="Previous month"
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
+      >
+        <Icon icon={ChevronLeft} size={16} />
+      </button>
+      <div className="text-[13px] font-extrabold">{formatMonthLabel(monthStr)}</div>
+      <button
+        type="button"
+        onClick={() => shiftMonth(1)}
+        aria-label="Next month"
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
+      >
+        <Icon icon={ChevronRight} size={16} />
+      </button>
+    </Card>
+  );
 
   if (!bill) {
     return (
       <div className="flex flex-col gap-5 pt-2">
         <div className="text-[17.5px] font-extrabold tracking-tight">Bill</div>
+        {monthNav}
         <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
-          No bill generated for this month yet.
+          No bill generated for {formatMonthLabel(monthStr)} yet.
         </Card>
       </div>
     );
   }
 
   const due = bill.grandTotal - bill.paid;
+  const previousDue = bill.previousBalance - bill.previousBalancePaid;
+  // A category can still be owed even when the aggregate nets to a credit —
+  // e.g. a big meal-cost credit offsetting rent that's still unpaid — so the
+  // pay button stays enabled whenever ANY specific part of the bill is due,
+  // not just when the bill-wide total is.
+  const anyCategoryDue = previousDue > 0 || bill.sections.some((s) => s.total - s.paid > 0);
 
   return (
     <div className="flex flex-col gap-5 pt-2">
       <div className="text-[17.5px] font-extrabold tracking-tight">{formatMonthLabel(bill.month)} Bill</div>
+
+      {monthNav}
 
       <div
         className="rounded-card p-5 text-white"
@@ -72,7 +121,7 @@ export default function StudentBillPage() {
         </div>
       </div>
 
-      {bill.previousBalance > 0 && (
+      {previousDue > 0 && (
         <Card className="flex items-center justify-between border border-orange/30 bg-orange-soft">
           <div>
             <div className="text-[12.5px] font-extrabold text-orange">Previous balance</div>
@@ -80,20 +129,37 @@ export default function StudentBillPage() {
               Unpaid amount carried over from {formatMonthLabel(previousMonth(bill.month))}
             </div>
           </div>
-          <div className="text-[13.5px] font-extrabold text-orange">{formatBDT(bill.previousBalance)}</div>
+          <div className="text-[13.5px] font-extrabold text-orange">{formatBDT(previousDue)}</div>
         </Card>
       )}
 
       {bill.sections.map((section) => {
         const meta = SECTION_META[section.label];
+        const sectionDue = section.total - section.paid;
         return (
           <Card key={section.label}>
             <div className="mb-2 flex items-center gap-2.5">
               <div className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.tone}`}>
                 <Icon icon={meta.icon} size={15} />
               </div>
-              <div className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold">{meta.label}</div>
-              <div className="text-[13.5px] font-extrabold">{formatBDT(section.total)}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13.5px] font-extrabold">{meta.label}</div>
+                <div className="text-[9.5px] font-bold text-text-secondary">{formatMonthLabel(bill.month)}</div>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="text-[13.5px] font-extrabold">{formatBDT(section.total)}</div>
+                <div
+                  className={`text-[9.5px] font-bold ${
+                    sectionDue < 0 ? "text-primary" : sectionDue > 0 ? "text-danger" : "text-text-secondary"
+                  }`}
+                >
+                  {sectionDue < 0
+                    ? `Credit ${formatBDT(-sectionDue)}`
+                    : sectionDue > 0
+                      ? `Due ${formatBDT(sectionDue)}`
+                      : "Paid in full"}
+                </div>
+              </div>
             </div>
             <div className="flex flex-col gap-1.5 pl-[42px]">
               {section.items.map((item, i) => (
@@ -102,6 +168,12 @@ export default function StudentBillPage() {
                   <div>{formatBDT(item.amount)}</div>
                 </div>
               ))}
+              {section.label === "mealCost" && previousDue > 0 && (
+                <div className="flex items-center justify-between text-[11px] font-semibold text-orange">
+                  <div>Previous month due ({formatMonthLabel(previousMonth(bill.month))})</div>
+                  <div>{formatBDT(previousDue)}</div>
+                </div>
+              )}
             </div>
           </Card>
         );
@@ -116,7 +188,7 @@ export default function StudentBillPage() {
         <button
           type="button"
           onClick={() => setPayOpen(true)}
-          disabled={due <= 0}
+          disabled={due <= 0 && !anyCategoryDue}
           className="min-h-11 flex-1 cursor-pointer rounded-btn font-extrabold text-white disabled:opacity-50"
           style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
         >
@@ -149,6 +221,7 @@ export default function StudentBillPage() {
               <div className="min-w-0 flex-1">
                 <div className="text-[12px] font-extrabold">{formatBDT(p.amount)}</div>
                 <div className="text-[10px] font-semibold text-text-secondary">
+                  For {p.targets.map((t) => TARGET_LABEL[t]).join(", ")} ·{" "}
                   {new Date(p.paidAt).toLocaleDateString()}
                   {p.reference ? ` · ${p.reference}` : ""}
                   {p.senderNumber ? ` · ${p.senderNumber}` : ""}
@@ -165,6 +238,32 @@ export default function StudentBillPage() {
           ))}
         </div>
       </div>
+
+      {adjustments.length > 0 && (
+        <div>
+          <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Meal credit settlements
+          </div>
+          <div className="flex flex-col gap-2">
+            {adjustments.map((a) => (
+              <Card key={a.id} className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+                  <Icon icon={a.kind === "refund" ? Home : Wrench} size={15} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-extrabold">{formatBDT(a.amount)}</div>
+                  <div className="text-[10px] font-semibold text-text-secondary">
+                    {a.kind === "refund"
+                      ? "Refunded in cash"
+                      : `Adjusted to ${TARGET_LABEL[a.to ?? "mealCost"]}`}{" "}
+                    · {new Date(a.createdAt).toLocaleDateString()}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <PayBillSheet open={payOpen} onClose={() => setPayOpen(false)} bill={bill} />
     </div>

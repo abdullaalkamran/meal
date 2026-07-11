@@ -91,9 +91,10 @@ export default function OwnerDashboardPage() {
   const cookCount = allUsers.filter((u) => u.role === "cook").length;
   const avgMealRate =
     hostels.length > 0 ? hostels.reduce((sum, h) => sum + h.mealRate, 0) / hostels.length : 0;
-  const totalExpense = Object.values(expensesByHostel)
-    .flat()
-    .reduce((sum, e) => sum + e.amount, 0);
+  // "Fixed per person" expenses charge e.amount to EACH selected member, so
+  // the real total spent is e.amount × member count, not e.amount itself.
+  const expenseImpact = (e: Expense) => (e.splitMode === "fixed" ? e.amount * e.memberIds.length : e.amount);
+  const totalExpense = Object.values(expensesByHostel).flat().reduce((sum, e) => sum + expenseImpact(e), 0);
   const totalIncome = Object.values(billsByHostel)
     .flat()
     .reduce((sum, b) => sum + b.paid, 0);
@@ -105,7 +106,7 @@ export default function OwnerDashboardPage() {
   const perHostel = hostels.map((h) => ({
     name: h.name,
     income: (billsByHostel[h.id] ?? []).reduce((sum, b) => sum + b.paid, 0),
-    expense: (expensesByHostel[h.id] ?? []).reduce((sum, e) => sum + e.amount, 0),
+    expense: (expensesByHostel[h.id] ?? []).reduce((sum, e) => sum + expenseImpact(e), 0),
   }));
   const maxAmount = Math.max(1, ...perHostel.flatMap((h) => [h.income, h.expense]));
 

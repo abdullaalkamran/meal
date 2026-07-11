@@ -10,13 +10,20 @@ import {
   Clock,
   HelpCircle,
   Megaphone,
+  PencilLine,
   PieChart,
   Soup,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
-import { repo, type Announcement, type AnnouncementKind, type CookAttendanceVote } from "@/lib/data";
+import {
+  repo,
+  type Announcement,
+  type AnnouncementKind,
+  type CookAttendanceVote,
+  type MealEditVote,
+} from "@/lib/data";
 import { formatRelativeTime } from "@/lib/utils/date";
 
 interface CategoryMeta {
@@ -35,6 +42,8 @@ const CATEGORY: Record<AnnouncementKind, CategoryMeta> = {
   "cook-leave-approved": { tag: "Notice", icon: Megaphone, color: "#4C7DF0", soft: "bg-blue-soft" },
   "cook-absence-resolved": { tag: "Notice", icon: Megaphone, color: "#EF4444", soft: "bg-danger-soft" },
   "shortage-alert": { tag: "Urgent", icon: AlertTriangle, color: "#EF4444", soft: "bg-danger-soft" },
+  "meal-edit-poll": { tag: "Vote", icon: PencilLine, color: "#4C7DF0", soft: "bg-blue-soft" },
+  "meal-edit-resolved": { tag: "Notice", icon: CheckCircle2, color: "#10BFB4", soft: "bg-primary-soft" },
   general: { tag: "Notice", icon: Megaphone, color: "#4C7DF0", soft: "bg-blue-soft" },
 };
 
@@ -46,7 +55,9 @@ export function AnnouncementItem({
   userId: string | undefined;
 }) {
   const [votes, setVotes] = useState<CookAttendanceVote[]>([]);
+  const [editVotes, setEditVotes] = useState<MealEditVote[]>([]);
   const reportId = (announcement.payload as { reportId?: string } | undefined)?.reportId;
+  const requestId = (announcement.payload as { requestId?: string } | undefined)?.requestId;
   const meta = CATEGORY[announcement.kind];
 
   useEffect(() => {
@@ -66,9 +77,31 @@ export function AnnouncementItem({
     };
   }, [announcement.kind, announcement.hostelId, reportId]);
 
+  useEffect(() => {
+    if (announcement.kind !== "meal-edit-poll" || !requestId) return;
+    let cancelled = false;
+    const load = () =>
+      repo.mealEdits.listVotes(requestId).then((v) => {
+        if (!cancelled) setEditVotes(v);
+      });
+    load();
+    const unsub = announcement.hostelId
+      ? repo.mealEdits.subscribe(announcement.hostelId, load)
+      : undefined;
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [announcement.kind, announcement.hostelId, requestId]);
+
   const myVote = votes.find((v) => v.userId === userId)?.choice;
   const vote = (choice: "yes" | "no" | "dk") => {
     if (reportId && userId) repo.cookAttendance.vote(reportId, userId, choice);
+  };
+
+  const myEditVote = editVotes.find((v) => v.userId === userId)?.choice;
+  const voteOnEdit = (choice: "yes" | "no") => {
+    if (requestId && userId) repo.mealEdits.vote(requestId, userId, choice);
   };
 
   return (
@@ -136,6 +169,39 @@ export function AnnouncementItem({
             >
               <HelpCircle size={15} />
               Don&rsquo;t know
+            </button>
+          </div>
+        )}
+
+        {announcement.kind === "meal-edit-poll" && requestId && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => voteOnEdit("yes")}
+              className={`flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[11px] font-semibold ${
+                myEditVote === "yes"
+                  ? "border-primary bg-primary-soft text-primary"
+                  : "border-border text-text-secondary"
+              }`}
+            >
+              <CheckCircle2
+                size={15}
+                className={myEditVote === "yes" ? "fill-primary text-white" : "text-text-secondary"}
+              />
+              Yes &middot; Allow
+            </button>
+            <button
+              type="button"
+              onClick={() => voteOnEdit("no")}
+              className={`flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[11px] font-semibold ${
+                myEditVote === "no" ? "border-danger bg-danger-soft text-danger" : "border-border text-text-secondary"
+              }`}
+            >
+              <XCircle
+                size={15}
+                className={myEditVote === "no" ? "fill-danger text-white" : "text-text-secondary"}
+              />
+              No &middot; Deny
             </button>
           </div>
         )}

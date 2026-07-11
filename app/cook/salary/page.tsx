@@ -27,7 +27,7 @@ export default function CookSalaryPage() {
 
   const monthlySalary = hostel?.cookMonthlySalary ?? 0;
   const paidThisMonth = expenses
-    .filter((e) => e.category === "Salary" && e.date.startsWith(currentMonth()))
+    .filter((e) => e.category === "Salary" && e.billingMonth === currentMonth())
     .reduce((sum, e) => sum + e.amount, 0);
   const due = Math.max(monthlySalary - paidThisMonth, 0);
 

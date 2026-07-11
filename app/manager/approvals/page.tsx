@@ -13,9 +13,17 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
-import { repo, type Bill, type Payment } from "@/lib/data";
+import { repo, type Bill, type BillTarget, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
+
+const TARGET_LABEL: Record<BillTarget, string> = {
+  previousBalance: "Previous balance",
+  mealCost: "Meal cost",
+  roomRent: "Room rent",
+  serviceCharge: "Service charge",
+  cookSalary: "Cook salary",
+};
 
 export default function ManagerApprovalsPage() {
   const { user, hostel, activeHostelId } = useSession();
@@ -261,7 +269,8 @@ export default function ManagerApprovalsPage() {
                       {p.method} · {billUserName(p.billId)} · {formatBDT(p.amount)}
                     </div>
                     <div className="text-[10px] font-semibold text-text-secondary">
-                      {p.reference}
+                      For {p.targets.map((t) => TARGET_LABEL[t]).join(", ")}
+                      {p.reference ? ` · ${p.reference}` : ""}
                       {p.senderNumber ? ` · Sent from ${p.senderNumber}` : ""}
                     </div>
                   </div>

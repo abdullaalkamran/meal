@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { repo, type Bill, type Payment } from "@/lib/data";
+import { repo, type Bill, type BillTarget, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { generatePaymentReference } from "@/lib/utils/paymentReference";
 
@@ -18,6 +18,14 @@ const SENDER_LABEL: Record<Payment["method"], string> = {
   Cash: "",
 };
 
+const TARGET_LABEL: Record<BillTarget, string> = {
+  previousBalance: "Previous balance",
+  mealCost: "Meal cost",
+  roomRent: "Room rent",
+  serviceCharge: "Service charge",
+  cookSalary: "Cook salary",
+};
+
 export function PayBillSheet({
   open,
   onClose,
@@ -28,23 +36,63 @@ export function PayBillSheet({
   bill: Bill | undefined;
 }) {
   const { toast } = useToast();
-  const due = bill ? bill.grandTotal - bill.paid : 0;
-  const [amount, setAmount] = useState(String(due));
+
+  // Meal cost, room rent, service charge, and cook salary are billed for
+  // different reasons — letting a member pick any combination of them (not
+  // just one at a time, or literally everything) means a category they've
+  // overpaid (e.g. meal cost, if their shopping-duty spend ran over their
+  // share) can stay untouched as its own credit while they settle the rest.
+  const rows = useMemo(() => {
+    if (!bill) return [];
+    const list: { target: BillTarget; due: number }[] = [];
+    if (bill.previousBalance > 0) {
+      list.push({ target: "previousBalance", due: bill.previousBalance - bill.previousBalancePaid });
+    }
+    for (const s of bill.sections) {
+      list.push({ target: s.label, due: s.total - s.paid });
+    }
+    return list;
+  }, [bill]);
+
+  const [selected, setSelected] = useState<Set<BillTarget>>(new Set());
+  const [amount, setAmount] = useState("0");
   const [method, setMethod] = useState<Payment["method"]>("bKash");
   const [senderNumber, setSenderNumber] = useState("");
   const requiresSender = method !== "Cash";
 
+  const dueOfSelected = (targets: Set<BillTarget>) =>
+    rows.filter((r) => targets.has(r.target)).reduce((sum, r) => sum + r.due, 0);
+
   useEffect(() => {
     if (open) {
       queueMicrotask(() => {
-        setAmount(String(due));
+        const all = new Set(rows.map((r) => r.target));
+        setSelected(all);
+        setAmount(String(Math.max(dueOfSelected(all), 0)));
         setSenderNumber("");
       });
     }
-  }, [open, due]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bill?.id]);
+
+  const toggleTarget = (t: BillTarget) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      setAmount(String(Math.max(dueOfSelected(next), 0)));
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    const next = selected.size === rows.length ? new Set<BillTarget>() : new Set(rows.map((r) => r.target));
+    setSelected(next);
+    setAmount(String(Math.max(dueOfSelected(next), 0)));
+  };
 
   const submit = async () => {
-    if (!bill || !amount) return;
+    if (!bill || !amount || selected.size === 0) return;
     if (requiresSender && !senderNumber.trim()) return;
     await repo.bills.pay({
       billId: bill.id,
@@ -54,6 +102,7 @@ export function PayBillSheet({
       reference: generatePaymentReference(method),
       senderNumber: requiresSender ? senderNumber.trim() : undefined,
       verified: false,
+      targets: [...selected],
     });
     toast("Payment submitted — pending verification");
     onClose();
@@ -61,9 +110,35 @@ export function PayBillSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Pay bill">
-      <div className="mb-4 text-[11px] font-semibold text-text-secondary">
-        Outstanding: {formatBDT(due)}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-[10.5px] font-extrabold text-text-secondary">
+          WHAT TO PAY ({selected.size}/{rows.length})
+        </div>
+        <button type="button" onClick={selectAll} className="text-[11px] font-extrabold text-primary">
+          {selected.size === rows.length ? "Deselect all" : "Select all"}
+        </button>
       </div>
+      <div className="mb-4 flex flex-col gap-2">
+        {rows.map(({ target: t, due: d }) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => toggleTarget(t)}
+            className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
+          >
+            <div className="text-[12px] font-bold">{TARGET_LABEL[t]}</div>
+            <div className="flex items-center gap-2">
+              <div className={`text-[11px] font-extrabold ${d < 0 ? "text-primary" : "text-text-secondary"}`}>
+                {d < 0 ? `Credit ${formatBDT(-d)}` : `Due ${formatBDT(d)}`}
+              </div>
+              <Chip tone="primary" active={selected.has(t)}>
+                {selected.has(t) ? "Selected" : "Select"}
+              </Chip>
+            </div>
+          </button>
+        ))}
+      </div>
+
       <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">AMOUNT</div>
       <input
         type="number"
@@ -98,7 +173,9 @@ export function PayBillSheet({
       <Button
         fullWidth
         onClick={submit}
-        disabled={!amount || Number(amount) <= 0 || (requiresSender && !senderNumber.trim())}
+        disabled={
+          !amount || Number(amount) <= 0 || selected.size === 0 || (requiresSender && !senderNumber.trim())
+        }
       >
         Pay now · {formatBDT(Number(amount) || 0)}
       </Button>

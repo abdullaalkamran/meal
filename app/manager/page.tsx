@@ -378,6 +378,7 @@ export default function ManagerDashboardPage() {
         open={expenseSheetOpen}
         onClose={() => setExpenseSheetOpen(false)}
         hostelId={activeHostelId}
+        month={currentMonth()}
       />
       <AnnounceSheet
         open={announceSheetOpen}

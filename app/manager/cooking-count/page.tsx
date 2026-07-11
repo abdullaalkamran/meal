@@ -7,8 +7,8 @@ import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
-import { repo, type CookAttendanceVote, type MealSlot } from "@/lib/data";
-import { today } from "@/lib/utils/date";
+import { repo, type CookAttendanceReport, type CookAttendanceVote, type MealDay, type MealSlot } from "@/lib/data";
+import { addDays, formatShortDate, today } from "@/lib/utils/date";
 
 const MEAL_LABEL: Record<MealSlot, string> = {
   breakfast: "Breakfast",
@@ -16,12 +16,38 @@ const MEAL_LABEL: Record<MealSlot, string> = {
   dinner: "Dinner",
 };
 
+const HISTORY_DAYS = 14;
+const MEAL_SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
+
+interface HistoryRow {
+  date: string;
+  total: number;
+  cancelledMeals: MealSlot[];
+}
+
+function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): HistoryRow[] {
+  return days
+    .map((d) => {
+      const entries = Object.values(d.entries);
+      const total = MEAL_SLOTS.reduce(
+        (sum, meal) => sum + entries.reduce((s, e) => s + (e[meal].on ? 1 + e[meal].guestCount : 0), 0),
+        0
+      );
+      const cancelledMeals = MEAL_SLOTS.filter((meal) =>
+        reports.some((r) => r.date === d.date && r.meal === meal && r.status === "confirmed_absent")
+      );
+      return { date: d.date, total, cancelledMeals };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export default function ManagerCookingCountPage() {
   const { user, activeHostelId } = useSession();
   const date = today();
   const { day } = useMealDay(activeHostelId, date);
   const reports = useCookAttendanceForDate(activeHostelId, date);
   const [votesByReport, setVotesByReport] = useState<Record<string, CookAttendanceVote[]>>({});
+  const [history, setHistory] = useState<HistoryRow[]>([]);
 
   useEffect(() => {
     const reported = reports.filter((r) => r.status === "reported");
@@ -29,6 +55,16 @@ export default function ManagerCookingCountPage() {
       reported.map(async (r) => [r.id, await repo.cookAttendance.listVotes(r.id)] as const)
     ).then((entries) => setVotesByReport(Object.fromEntries(entries)));
   }, [reports]);
+
+  useEffect(() => {
+    if (!activeHostelId) return;
+    const from = addDays(date, -HISTORY_DAYS);
+    const to = addDays(date, -1);
+    Promise.all([
+      repo.meals.listMealDays(activeHostelId, { from, to }),
+      repo.cookAttendance.listByHostel(activeHostelId),
+    ]).then(([days, allReports]) => setHistory(buildHistory(days, allReports)));
+  }, [activeHostelId, date]);
 
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
@@ -110,13 +146,21 @@ export default function ManagerCookingCountPage() {
                   </Chip>
                   <Chip>Don&rsquo;t know {dk}</Chip>
                 </div>
-                <Button
-                  fullWidth
-                  variant="danger"
-                  onClick={() => repo.cookAttendance.confirmAbsent(report.id)}
-                >
-                  Confirm cook absent · mark {MEAL_LABEL[meal]} off
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    fullWidth
+                    onClick={() => activeHostelId && repo.cookAttendance.markCooked(activeHostelId, date, meal)}
+                  >
+                    Confirm cooked
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="danger"
+                    onClick={() => repo.cookAttendance.confirmAbsent(report.id)}
+                  >
+                    Confirm cook absent
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -133,6 +177,34 @@ export default function ManagerCookingCountPage() {
           </Card>
         );
       })}
+
+      <div>
+        <div className="mb-2 text-[13.5px] font-extrabold">Cooking history</div>
+        <div className="flex flex-col gap-2">
+          {history.length === 0 && (
+            <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
+              No past records yet.
+            </Card>
+          )}
+          {history.map((h) => (
+            <Card key={h.date} className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[12px] font-bold">{formatShortDate(h.date)}</div>
+                {h.cancelledMeals.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {h.cancelledMeals.map((m) => (
+                      <Chip key={m} tone="danger" active>
+                        {MEAL_LABEL[m]} cancelled
+                      </Chip>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 text-[12px] font-extrabold">{h.total} meals</div>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
