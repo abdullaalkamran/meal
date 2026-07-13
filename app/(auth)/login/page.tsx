@@ -12,7 +12,12 @@ const ROLE_LABEL: Record<User["role"], string> = {
   manager: "Manager",
   owner: "Owner",
   cook: "Cook",
+  superadmin: "Super Admin",
+  marketing: "Marketing",
+  service: "Service",
 };
+
+const PLATFORM_ROLES: User["role"][] = ["superadmin", "marketing", "service"];
 
 export default function LoginPage() {
   const { login } = useSession();
@@ -29,9 +34,10 @@ export default function LoginPage() {
 
   const grouped = hostels.map((hostel) => ({
     hostel,
-    members: users.filter((u) => u.hostelId === hostel.id),
+    members: users.filter((u) => u.hostelId === hostel.id && !PLATFORM_ROLES.includes(u.role)),
   }));
   const owners = users.filter((u) => u.role === "owner");
+  const platformTeam = users.filter((u) => PLATFORM_ROLES.includes(u.role));
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-6 px-5 py-10">
@@ -41,6 +47,19 @@ export default function LoginPage() {
           Choose an account to continue (dev sign-in)
         </div>
       </div>
+
+      {platformTeam.length > 0 && (
+        <Card>
+          <div className="mb-3 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Platform team
+          </div>
+          <div className="flex flex-col gap-2">
+            {platformTeam.map((u) => (
+              <AccountRow key={u.id} user={u} subtitle={`${ROLE_LABEL[u.role]} · Hostel ERP`} onSelect={login} />
+            ))}
+          </div>
+        </Card>
+      )}
 
       {owners.length > 0 && (
         <Card>

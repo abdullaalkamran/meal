@@ -16,7 +16,12 @@ export type IconKey =
   | "hostels"
   | "reports"
   | "cook"
-  | "salary";
+  | "salary"
+  | "kpi"
+  | "campaigns"
+  | "catalog"
+  | "community"
+  | "settings";
 
 export interface NavItem {
   href: string;
@@ -54,5 +59,18 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
   cook: [
     { href: "/cook", label: "Dashboard", iconKey: "cook" },
     { href: "/cook/salary", label: "Salary", iconKey: "salary" },
+  ],
+  superadmin: [
+    { href: "/admin", label: "Dashboard", iconKey: "dashboard" },
+    { href: "/admin/hostels", label: "Hostels", iconKey: "hostels" },
+    { href: "/admin/users", label: "Users", iconKey: "students" },
+  ],
+  marketing: [
+    { href: "/marketing", label: "KPIs", iconKey: "kpi" },
+    { href: "/marketing/campaigns", label: "Campaigns", iconKey: "campaigns" },
+  ],
+  service: [
+    { href: "/service", label: "Catalog", iconKey: "catalog" },
+    { href: "/service/community", label: "Community", iconKey: "community" },
   ],
 };

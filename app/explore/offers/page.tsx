@@ -8,13 +8,14 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo } from "@/lib/data";
-import { OFFERS } from "@/lib/explore/content";
 
 export default function OffersPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
+  const OFFERS = useServiceListings("offer").filter((l) => l.active);
 
   const grabbed = new Set(
     interactions.filter((i) => i.feature === "offers" && i.kind === "grabbed").map((i) => i.itemId)

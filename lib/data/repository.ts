@@ -11,6 +11,7 @@ import type {
   Bill,
   BillAdjustment,
   BillTarget,
+  Campaign,
   Comment,
   CommunityPost,
   CookAttendanceReport,
@@ -23,6 +24,7 @@ import type {
   Hostel,
   HostelTransferRequest,
   JoinRequest,
+  MarketingTarget,
   MealDay,
   MealEditRequest,
   MealEditVote,
@@ -32,8 +34,11 @@ import type {
   Notification,
   Payment,
   Rating,
+  NewServiceListing,
   Reaction,
   Room,
+  ServiceKind,
+  ServiceListing,
   ShoppingCost,
   ShortageRequest,
   Stars,
@@ -79,6 +84,8 @@ export interface HostelRepository {
   listByOwner(ownerId: string): Promise<Hostel[]>;
   listAll(): Promise<Hostel[]>;
   updateSettings(hostelId: string, patch: Partial<Hostel["settings"]>): Promise<void>;
+  /** Super Admin suspend/reactivate a hostel on the platform. */
+  setSuspended(hostelId: string, suspended: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (hostel: Hostel) => void): Unsubscribe;
 }
 
@@ -296,7 +303,33 @@ export interface CommunityRepository {
   listAll(): Promise<CommunityPost[]>;
   post(post: Omit<CommunityPost, "id" | "createdAt" | "likeUserIds">): Promise<void>;
   toggleLike(postId: string, userId: string): Promise<void>;
+  /** Service Manager moderation — remove a community post. */
+  remove(postId: string): Promise<void>;
   subscribe(cb: (list: CommunityPost[]) => void): Unsubscribe;
+}
+
+export interface ServiceCatalogRepository {
+  listByKind(kind: ServiceKind): Promise<ServiceListing[]>;
+  listAll(): Promise<ServiceListing[]>;
+  add(listing: NewServiceListing): Promise<void>;
+  update(id: string, patch: Partial<ServiceListing>): Promise<void>;
+  toggleActive(id: string): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: ServiceListing[]) => void): Unsubscribe;
+}
+
+export interface CampaignRepository {
+  listAll(): Promise<Campaign[]>;
+  create(campaign: Omit<Campaign, "id">): Promise<void>;
+  updateStatus(id: string, status: Campaign["status"]): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: Campaign[]) => void): Unsubscribe;
+}
+
+export interface MarketingRepository {
+  listTargets(month: string): Promise<MarketingTarget[]>;
+  setTarget(metric: string, month: string, target: number): Promise<void>;
+  subscribe(cb: () => void): Unsubscribe;
 }
 
 export interface Repositories {
@@ -324,4 +357,7 @@ export interface Repositories {
   guestMeals: GuestMealRepository;
   exploreInteractions: ExploreInteractionRepository;
   community: CommunityRepository;
+  serviceCatalog: ServiceCatalogRepository;
+  campaigns: CampaignRepository;
+  marketing: MarketingRepository;
 }

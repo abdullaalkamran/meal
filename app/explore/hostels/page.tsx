@@ -8,8 +8,8 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo, type Hostel } from "@/lib/data";
-import { EXTRA_HOSTELS } from "@/lib/explore/content";
 import { formatBDT } from "@/lib/utils/currency";
 
 export default function HostelsPage() {
@@ -17,6 +17,7 @@ export default function HostelsPage() {
   const { toast } = useToast();
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
+  const EXTRA_HOSTELS = useServiceListings("hostel").filter((l) => l.active);
 
   useEffect(() => {
     repo.hostels.listAll().then(setHostels);

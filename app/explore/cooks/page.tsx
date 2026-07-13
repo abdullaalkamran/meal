@@ -9,14 +9,15 @@ import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo } from "@/lib/data";
-import { COOKS } from "@/lib/explore/content";
 import { formatBDT } from "@/lib/utils/currency";
 
 export default function CooksPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
+  const COOKS = useServiceListings("cook").filter((l) => l.active);
 
   const shortlisted = new Set(
     interactions.filter((i) => i.feature === "cooks" && i.kind === "saved").map((i) => i.itemId)

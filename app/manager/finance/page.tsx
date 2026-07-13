@@ -31,7 +31,7 @@ import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
 import { repo, type Bill, type BillSection } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
+import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
 
 const CATEGORY_META: Record<string, { icon: LucideIcon; bar: string; tone: string }> = {
   Grocery: { icon: ShoppingCart, bar: "bg-primary", tone: "bg-primary-soft text-primary" },
@@ -84,6 +84,9 @@ export default function ManagerFinancePage() {
   const [expandedSection, setExpandedSection] = useState<BillSection["label"] | null>(null);
 
   const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  // Bills can only be generated for the current or a past month — a future
+  // month has no meals/expenses to bill yet.
+  const isFutureMonth = monthStr > currentMonth();
   const expenses = allExpenses.filter((e) => e.billingMonth === monthStr);
   const monthEnd = lastDayOfMonth(monthStr);
   const canSuspendMeals = monthEnd >= today();
@@ -164,15 +167,21 @@ export default function ManagerFinancePage() {
         }}
       />
 
-      <button
-        type="button"
-        onClick={() => setGenerateSheetOpen(true)}
-        disabled={!activeHostelId}
-        className="min-h-11 w-full cursor-pointer rounded-btn font-extrabold text-white disabled:opacity-50"
-        style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
-      >
-        Generate bills · {formatMonthLabel(monthStr)}
-      </button>
+      {isFutureMonth ? (
+        <div className="rounded-btn bg-bg px-4 py-3 text-center text-[11px] font-semibold text-text-secondary">
+          Bills for {formatMonthLabel(monthStr)} can&rsquo;t be generated yet — pick the current or a past month.
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setGenerateSheetOpen(true)}
+          disabled={!activeHostelId}
+          className="min-h-11 w-full cursor-pointer rounded-btn font-extrabold text-white disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
+        >
+          Generate bills · {formatMonthLabel(monthStr)}
+        </button>
+      )}
 
       <Card>
         <div className="mb-3 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">

@@ -2,7 +2,7 @@
 // These unify several inconsistent mock-data shapes found in the original
 // design prototype (see design_handoff_hostel_erp/) into single sources of truth.
 
-export type Role = "student" | "manager" | "owner" | "cook";
+export type Role = "student" | "manager" | "owner" | "cook" | "superadmin" | "marketing" | "service";
 export type MealSlot = "breakfast" | "lunch" | "dinner";
 export type Stars = 1 | 2 | 3 | 4 | 5;
 
@@ -65,6 +65,9 @@ export interface Hostel {
   /** Fixed monthly salary for the hostel's cook (৳) — used to compute paid vs due. */
   cookMonthlySalary?: number;
   settings: HostelSettings;
+  /** Super Admin suspended this hostel from the platform — a soft flag shown in
+   * the admin directory; kept out of "active hostels" counts. */
+  suspended?: boolean;
 }
 
 export interface MealEntry {
@@ -440,3 +443,39 @@ export interface CommunityPost {
   createdAt: string;
   likeUserIds: string[];
 }
+
+/** A service listing the platform offers hostels, shown in /explore and managed
+ * by the Service Manager. One discriminated table across kinds so the catalog
+ * has a single source of truth. */
+export type ServiceListing =
+  | { kind: "cook"; id: string; active: boolean; createdAt: string; name: string; cuisine: string; experienceYears: number; monthlyRate: number; rating: number; phone: string }
+  | { kind: "job"; id: string; active: boolean; createdAt: string; title: string; company: string; location: string; jobType: string; pay: string; tags: string[] }
+  | { kind: "course"; id: string; active: boolean; createdAt: string; title: string; provider: string; category: string; level: string; duration: string; price: string }
+  | { kind: "offer"; id: string; active: boolean; createdAt: string; shop: string; title: string; discount: string; code: string; expires: string; category: string }
+  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string };
+
+export type ServiceKind = ServiceListing["kind"];
+
+/** A marketing campaign tracked by the Marketing Manager. */
+export interface Campaign {
+  id: string;
+  name: string;
+  channel: string;
+  status: "planned" | "running" | "done";
+  startDate: string;
+  budget: number;
+  note?: string;
+}
+
+/** An editable, persisted target for a marketing KPI in a given month. Actuals
+ * are computed live from platform data; only the target is stored here. */
+export interface MarketingTarget {
+  metric: string;
+  month: string;
+  target: number;
+}
+
+/** Omit that distributes over a union so each ServiceListing variant keeps its
+ * own fields (a plain Omit<Union, K> collapses to only the shared keys). */
+export type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+export type NewServiceListing = DistributiveOmit<ServiceListing, "id" | "createdAt" | "active">;

@@ -9,20 +9,21 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo } from "@/lib/data";
-import { JOBS } from "@/lib/explore/content";
 
 export default function JobsPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
   const [query, setQuery] = useState("");
+  const jobs = useServiceListings("job").filter((l) => l.active);
 
   const applied = new Set(
     interactions.filter((i) => i.feature === "jobs" && i.kind === "applied").map((i) => i.itemId)
   );
 
-  const results = JOBS.filter((j) =>
+  const results = jobs.filter((j) =>
     `${j.title} ${j.company} ${j.location} ${j.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -64,7 +65,7 @@ export default function JobsPage() {
                   <div className="text-[12.5px] font-extrabold">{j.title}</div>
                   <div className="text-[10.5px] font-semibold text-text-secondary">{j.company}</div>
                   <div className="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-text-secondary">
-                    <Icon icon={MapPin} size={11} /> {j.location} · {j.type}
+                    <Icon icon={MapPin} size={11} /> {j.location} · {j.jobType}
                   </div>
                 </div>
                 <div className="shrink-0 text-right text-[11px] font-extrabold text-primary">{j.pay}</div>

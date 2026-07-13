@@ -9,21 +9,22 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo } from "@/lib/data";
-import { COURSES, type Course } from "@/lib/explore/content";
 
-const CATEGORIES: (Course["category"] | "All")[] = ["All", "Programming", "Business", "Design", "Language", "Career"];
+const CATEGORIES = ["All", "Programming", "Business", "Design", "Language", "Career"];
 
 export default function LearningPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
-  const [cat, setCat] = useState<Course["category"] | "All">("All");
+  const [cat, setCat] = useState<string>("All");
+  const courses = useServiceListings("course").filter((l) => l.active);
 
   const enrolled = new Set(
     interactions.filter((i) => i.feature === "learning" && i.kind === "enrolled").map((i) => i.itemId)
   );
-  const results = COURSES.filter((c) => cat === "All" || c.category === cat);
+  const results = courses.filter((c) => cat === "All" || c.category === cat);
 
   const enroll = async (id: string, title: string) => {
     if (!user) return;

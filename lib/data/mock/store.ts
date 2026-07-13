@@ -9,6 +9,7 @@ import type {
   Announcement,
   Bill,
   BillAdjustment,
+  Campaign,
   Comment,
   CommunityPost,
   CookAttendanceReport,
@@ -21,6 +22,7 @@ import type {
   Hostel,
   HostelTransferRequest,
   JoinRequest,
+  MarketingTarget,
   MealDay,
   MealEditRequest,
   MealEditVote,
@@ -31,6 +33,7 @@ import type {
   Rating,
   Reaction,
   Room,
+  ServiceListing,
   ShoppingCost,
   ShortageRequest,
   SwapRequest,
@@ -68,10 +71,13 @@ export interface Tables {
   guestMealRequests: GuestMealRequest[];
   exploreInteractions: ExploreInteraction[];
   communityPosts: CommunityPost[];
+  serviceListings: ServiceListing[];
+  campaigns: Campaign[];
+  marketingTargets: MarketingTarget[];
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 interface Persisted {
   version: number;

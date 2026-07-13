@@ -1,6 +1,7 @@
 import type {
   Announcement,
   Bill,
+  Campaign,
   CommunityPost,
   CookAttendanceReport,
   CookAttendanceVote,
@@ -15,14 +16,17 @@ import type {
   MealStopRequest,
   Menu,
   Notification,
+  MarketingTarget,
   Payment,
   Rating,
   Room,
+  ServiceListing,
   ShoppingCost,
   User,
 } from "../types";
 import type { Tables } from "./store";
 import { addDays, currentMonth, today } from "../../utils/date";
+import { COOKS, COURSES, EXTRA_HOSTELS, JOBS, OFFERS } from "../../explore/content";
 
 const T = today();
 
@@ -81,6 +85,32 @@ export function buildSeed(): Tables {
       role: "owner",
       avatarSeed: "owner-abdullah",
       ownedHostelIds: ["hostel_bright", "hostel_green"],
+    },
+    // Platform team (our SaaS staff, above the hostels). hostelId is a nominal
+    // fallback — these roles operate cross-platform, not within one hostel.
+    {
+      id: "u_superadmin",
+      hostelId: "hostel_bright",
+      name: "Shahin Alam",
+      phone: "01700-000010",
+      role: "superadmin",
+      avatarSeed: "admin-shahin",
+    },
+    {
+      id: "u_marketing",
+      hostelId: "hostel_bright",
+      name: "Farhana Haque",
+      phone: "01700-000011",
+      role: "marketing",
+      avatarSeed: "marketing-farhana",
+    },
+    {
+      id: "u_service",
+      hostelId: "hostel_bright",
+      name: "Imran Hossain",
+      phone: "01700-000012",
+      role: "service",
+      avatarSeed: "service-imran",
     },
     {
       id: "u_manager_bright",
@@ -660,6 +690,28 @@ export function buildSeed(): Tables {
     },
   ];
 
+  // Service catalog — seeded from the static /explore content, now the live,
+  // Service-Manager-editable source of truth for those pages.
+  const serviceListings: ServiceListing[] = [
+    ...COOKS.map((c) => ({ kind: "cook" as const, id: c.id, active: true, createdAt: T, name: c.name, cuisine: c.cuisine, experienceYears: c.experienceYears, monthlyRate: c.monthlyRate, rating: c.rating, phone: c.phone })),
+    ...JOBS.map((j) => ({ kind: "job" as const, id: j.id, active: true, createdAt: T, title: j.title, company: j.company, location: j.location, jobType: j.type, pay: j.pay, tags: j.tags })),
+    ...COURSES.map((c) => ({ kind: "course" as const, id: c.id, active: true, createdAt: T, title: c.title, provider: c.provider, category: c.category, level: c.level, duration: c.duration, price: c.price })),
+    ...OFFERS.map((o) => ({ kind: "offer" as const, id: o.id, active: true, createdAt: T, shop: o.shop, title: o.title, discount: o.discount, code: o.code, expires: o.expires, category: o.category })),
+    ...EXTRA_HOSTELS.map((h) => ({ kind: "hostel" as const, id: h.id, active: true, createdAt: T, name: h.name, area: h.area, seatRentFrom: h.seatRentFrom, seatsAvailable: h.seatsAvailable, rating: h.rating, amenities: h.amenities, phone: h.phone })),
+  ];
+
+  const campaigns: Campaign[] = [
+    { id: "camp_1", name: "Back-to-campus signup drive", channel: "Facebook + Instagram", status: "running", startDate: addDays(T, -10), budget: 25000, note: "Targeting new session students." },
+    { id: "camp_2", name: "Refer-a-roommate bonus", channel: "In-app + SMS", status: "planned", startDate: addDays(T, 5), budget: 12000 },
+    { id: "camp_3", name: "Ramadan meal-plan promo", channel: "Email", status: "done", startDate: addDays(T, -45), budget: 8000, note: "Wrapped up, 4 hostels onboarded." },
+  ];
+
+  const marketingTargets: MarketingTarget[] = [
+    { metric: "users", month: currentMonth(), target: 12 },
+    { metric: "signups", month: currentMonth(), target: 6 },
+    { metric: "revenue", month: currentMonth(), target: 20000 },
+  ];
+
   return {
     users,
     rooms,
@@ -690,5 +742,8 @@ export function buildSeed(): Tables {
     guestMealRequests,
     exploreInteractions: [],
     communityPosts,
+    serviceListings,
+    campaigns,
+    marketingTargets,
   };
 }

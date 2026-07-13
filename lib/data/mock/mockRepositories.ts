@@ -1,6 +1,7 @@
 import type {
   AnnouncementRepository,
   BillRepository,
+  CampaignRepository,
   CommentRepository,
   CommunityRepository,
   CookAttendanceRepository,
@@ -11,6 +12,7 @@ import type {
   GuestMealRepository,
   HostelRepository,
   JoinRequestRepository,
+  MarketingRepository,
   MealEditRepository,
   MealRepository,
   MealStopRepository,
@@ -19,16 +21,22 @@ import type {
   RatingRepository,
   Repositories,
   RoomRepository,
+  ServiceCatalogRepository,
   ShoppingCostRepository,
   ShortageRepository,
   SwapRepository,
   TransferRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Payment } from "../types";
-import { formatShortDate } from "../../utils/date";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Payment, Role, ServiceListing } from "../types";
+import { currentMonth, formatShortDate } from "../../utils/date";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { nextId, store } from "./store";
+
+// Roles that aren't boarders of any single hostel — excluded from per-hostel
+// member/boarder listings (owner + platform-team operators).
+const NON_HOSTEL_ROLES: Role[] = ["owner", "superadmin", "marketing", "service"];
+const isHostelMember = (role: Role) => !NON_HOSTEL_ROLES.includes(role);
 
 function emptyMealDay(hostelId: string, date: string): MealDay {
   return { hostelId, date, entries: {} };
@@ -70,7 +78,7 @@ const users: UserRepository = {
     // Owners aren't boarders of any single hostel — their `hostelId` is only
     // a fallback/display value, not real membership — so they're excluded
     // from per-hostel member/boarder listings.
-    return store.data.users.filter((u) => u.hostelId === hostelId && u.role !== "owner");
+    return store.data.users.filter((u) => u.hostelId === hostelId && isHostelMember(u.role));
   },
   async listAll() {
     return store.data.users;
@@ -128,7 +136,7 @@ const users: UserRepository = {
   },
   subscribe(hostelId, cb) {
     const fire = () =>
-      cb(store.data.users.filter((u) => u.hostelId === hostelId && u.role !== "owner"));
+      cb(store.data.users.filter((u) => u.hostelId === hostelId && isHostelMember(u.role)));
     fire();
     return store.on(`users:${hostelId}`, fire);
   },
@@ -200,6 +208,13 @@ const hostels: HostelRepository = {
     if (!h) return;
     h.settings = { ...h.settings, ...patch };
     store.emit(`hostel:${hostelId}`);
+  },
+  async setSuspended(hostelId, suspended) {
+    const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
+    if (idx === -1) return;
+    store.data.hostels[idx] = { ...store.data.hostels[idx], suspended };
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
   },
   subscribe(hostelId, cb) {
     const fire = () => {
@@ -632,6 +647,8 @@ const bills: BillRepository = {
   async generateBills(hostelId, month, options) {
     const hostel = store.data.hostels.find((h) => h.id === hostelId);
     if (!hostel) return [];
+    // Never bill a future month — there are no meals/expenses to charge yet.
+    if (month > currentMonth()) return [];
 
     const allBoarders = store.data.users.filter(
       (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner" && !u.banned
@@ -1293,10 +1310,97 @@ const community: CommunityRepository = {
     };
     store.emit("community");
   },
+  async remove(postId) {
+    store.data.communityPosts = store.data.communityPosts.filter((p) => p.id !== postId);
+    store.emit("community");
+  },
   subscribe(cb) {
     const fire = () => cb([...store.data.communityPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     fire();
     return store.on("community", fire);
+  },
+};
+
+const serviceCatalog: ServiceCatalogRepository = {
+  async listByKind(kind) {
+    return store.data.serviceListings.filter((l) => l.kind === kind);
+  },
+  async listAll() {
+    return store.data.serviceListings;
+  },
+  async add(listing) {
+    store.data.serviceListings.push({
+      ...listing,
+      id: nextId("svc"),
+      active: true,
+      createdAt: new Date().toISOString(),
+    } as ServiceListing);
+    store.emit("serviceCatalog");
+  },
+  async update(id, patch) {
+    const idx = store.data.serviceListings.findIndex((l) => l.id === id);
+    if (idx === -1) return;
+    store.data.serviceListings[idx] = { ...store.data.serviceListings[idx], ...patch } as ServiceListing;
+    store.emit("serviceCatalog");
+  },
+  async toggleActive(id) {
+    const idx = store.data.serviceListings.findIndex((l) => l.id === id);
+    if (idx === -1) return;
+    const l = store.data.serviceListings[idx];
+    store.data.serviceListings[idx] = { ...l, active: !l.active };
+    store.emit("serviceCatalog");
+  },
+  async remove(id) {
+    store.data.serviceListings = store.data.serviceListings.filter((l) => l.id !== id);
+    store.emit("serviceCatalog");
+  },
+  subscribe(cb) {
+    const fire = () => cb(store.data.serviceListings);
+    fire();
+    return store.on("serviceCatalog", fire);
+  },
+};
+
+const campaigns: CampaignRepository = {
+  async listAll() {
+    return [...store.data.campaigns].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  },
+  async create(campaign) {
+    store.data.campaigns.push({ ...campaign, id: nextId("camp") });
+    store.emit("campaigns");
+  },
+  async updateStatus(id, status) {
+    const idx = store.data.campaigns.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    store.data.campaigns[idx] = { ...store.data.campaigns[idx], status };
+    store.emit("campaigns");
+  },
+  async remove(id) {
+    store.data.campaigns = store.data.campaigns.filter((c) => c.id !== id);
+    store.emit("campaigns");
+  },
+  subscribe(cb) {
+    const fire = () => cb([...store.data.campaigns].sort((a, b) => b.startDate.localeCompare(a.startDate)));
+    fire();
+    return store.on("campaigns", fire);
+  },
+};
+
+const marketing: MarketingRepository = {
+  async listTargets(month) {
+    return store.data.marketingTargets.filter((t) => t.month === month);
+  },
+  async setTarget(metric, month, target) {
+    const idx = store.data.marketingTargets.findIndex((t) => t.metric === metric && t.month === month);
+    if (idx === -1) {
+      store.data.marketingTargets.push({ metric, month, target });
+    } else {
+      store.data.marketingTargets[idx] = { metric, month, target };
+    }
+    store.emit("marketing");
+  },
+  subscribe(cb) {
+    return store.on("marketing", cb);
   },
 };
 
@@ -1325,4 +1429,7 @@ export const mockRepositories: Repositories = {
   guestMeals,
   exploreInteractions,
   community,
+  serviceCatalog,
+  campaigns,
+  marketing,
 };

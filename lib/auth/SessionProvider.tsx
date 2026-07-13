@@ -17,6 +17,9 @@ export const ROLE_HOME: Record<Role, string> = {
   manager: "/manager",
   owner: "/owner",
   cook: "/cook",
+  superadmin: "/admin",
+  marketing: "/marketing",
+  service: "/service",
 };
 
 interface SessionContextValue {
