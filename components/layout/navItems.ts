@@ -10,6 +10,8 @@ export type IconKey =
   | "approvals"
   | "finance"
   | "students"
+  | "members"
+  | "rooms"
   | "overview"
   | "hostels"
   | "reports"
@@ -40,7 +42,8 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/manager/meals", label: "Meals", iconKey: "meals" },
     { href: "/manager/approvals", label: "Approvals", iconKey: "approvals" },
     { href: "/manager/finance", label: "Finance", iconKey: "finance" },
-    { href: "/manager/students", label: "Students", iconKey: "students" },
+    { href: "/manager/members", label: "Members", iconKey: "members" },
+    { href: "/manager/rooms", label: "Rooms", iconKey: "rooms" },
   ],
   owner: [
     { href: "/owner", label: "Overview", iconKey: "overview" },

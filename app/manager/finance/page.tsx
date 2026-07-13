@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import {
   Ban,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Droplet,
   Flame,
@@ -27,6 +25,7 @@ import { useRooms } from "@/hooks/useRooms";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { MonthNav } from "@/components/ui/MonthNav";
 import { AddExpenseSheet } from "@/components/manager/AddExpenseSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
@@ -94,11 +93,6 @@ export default function ManagerFinancePage() {
     repo.bills.listByHostel(activeHostelId, monthStr).then(setBills);
   }, [activeHostelId, monthStr, allExpenses]);
 
-  const shiftMonth = (delta: number) => {
-    const d = new Date(year, month - 1 + delta, 1);
-    setYear(d.getFullYear());
-    setMonth(d.getMonth() + 1);
-  };
 
   const refreshBills = () => {
     if (!activeHostelId) return;
@@ -161,25 +155,14 @@ export default function ManagerFinancePage() {
         </button>
       </div>
 
-      <Card className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => shiftMonth(-1)}
-          aria-label="Previous month"
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
-        >
-          <Icon icon={ChevronLeft} size={16} />
-        </button>
-        <div className="text-[13px] font-extrabold">{formatMonthLabel(monthStr)}</div>
-        <button
-          type="button"
-          onClick={() => shiftMonth(1)}
-          aria-label="Next month"
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
-        >
-          <Icon icon={ChevronRight} size={16} />
-        </button>
-      </Card>
+      <MonthNav
+        value={monthStr}
+        onChange={(ms) => {
+          const [y, m] = ms.split("-").map(Number);
+          setYear(y);
+          setMonth(m);
+        }}
+      />
 
       <button
         type="button"

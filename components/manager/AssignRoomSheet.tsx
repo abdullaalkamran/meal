@@ -17,7 +17,11 @@ export function AssignRoomSheet({
   room: Room | null;
 }) {
   const { toast } = useToast();
-  const users = useUsers(hostelId).filter((u) => u.roomId !== room?.id);
+  // Only offer members not already in this room, and never staff/owner or
+  // banned members (they must be un-banned before getting a seat).
+  const users = useUsers(hostelId).filter(
+    (u) => u.roomId !== room?.id && u.role !== "cook" && u.role !== "owner" && !u.banned
+  );
 
   const assign = async (userId: string) => {
     if (!room) return;

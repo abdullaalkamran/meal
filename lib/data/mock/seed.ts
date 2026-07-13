@@ -1,6 +1,7 @@
 import type {
   Announcement,
   Bill,
+  CommunityPost,
   CookAttendanceReport,
   CookAttendanceVote,
   CookLeaveRequest,
@@ -125,6 +126,9 @@ export function buildSeed(): Tables {
       avatarSeed: "student-karim",
       studentId: "STU2024005",
       department: "CSE, BUET",
+      joinedAt: "2024-01-15",
+      managerRating: 5,
+      managerRatingNote: "Pays on time, keeps the room tidy.",
     },
     {
       id: "u_student_2",
@@ -136,6 +140,8 @@ export function buildSeed(): Tables {
       avatarSeed: "student-fahim",
       studentId: "STU2024012",
       department: "EEE, BUET",
+      joinedAt: "2024-03-02",
+      managerRating: 4,
     },
     {
       id: "u_student_3",
@@ -147,6 +153,7 @@ export function buildSeed(): Tables {
       avatarSeed: "student-tanvir",
       studentId: "STU2024019",
       department: "ME, BUET",
+      joinedAt: "2023-11-20",
     },
     {
       id: "u_student_4",
@@ -169,6 +176,7 @@ export function buildSeed(): Tables {
       capacity: 3,
       occupantIds: ["u_student_1", "u_student_2"],
       seatRent: 1800,
+      facilities: ["Attached bath", "Balcony", "Ceiling fan"],
     },
     {
       id: "room_bright_103",
@@ -177,6 +185,7 @@ export function buildSeed(): Tables {
       capacity: 2,
       occupantIds: ["u_student_3"],
       seatRent: 2200,
+      facilities: ["Attached bath", "AC"],
     },
     {
       id: "room_bright_104",
@@ -193,6 +202,7 @@ export function buildSeed(): Tables {
       capacity: 1,
       occupantIds: ["u_manager_bright"],
       seatRent: 3500,
+      facilities: ["Attached bath", "AC", "Balcony", "Study desk"],
     },
     {
       id: "room_green_g1",
@@ -620,6 +630,36 @@ export function buildSeed(): Tables {
     },
   ];
 
+  const communityPosts: CommunityPost[] = [
+    {
+      id: "cpost_1",
+      hostelId: "hostel_bright",
+      userId: "u_student_1",
+      authorName: "Karim Rahman",
+      body: "Anyone from Bright Hostel heading to campus around 8am? Can share a rickshaw.",
+      createdAt: addDays(T, -1),
+      likeUserIds: ["u_student_2", "u_student_3"],
+    },
+    {
+      id: "cpost_2",
+      hostelId: "hostel_green",
+      userId: "u_student_4",
+      authorName: "Nabila Islam",
+      body: "Selling my second-year textbooks at half price — DM if interested!",
+      createdAt: addDays(T, -2),
+      likeUserIds: ["u_student_1"],
+    },
+    {
+      id: "cpost_3",
+      hostelId: "hostel_bright",
+      userId: "u_manager_bright",
+      authorName: "Rashed Karim",
+      body: "Reminder: water tank cleaning this Friday morning. Store drinking water tonight.",
+      createdAt: addDays(T, -3),
+      likeUserIds: ["u_student_1", "u_student_2", "u_student_3"],
+    },
+  ];
+
   return {
     users,
     rooms,
@@ -648,5 +688,7 @@ export function buildSeed(): Tables {
     joinRequests,
     mealStopRequests,
     guestMealRequests,
+    exploreInteractions: [],
+    communityPosts,
   };
 }

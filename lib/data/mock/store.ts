@@ -10,11 +10,13 @@ import type {
   Bill,
   BillAdjustment,
   Comment,
+  CommunityPost,
   CookAttendanceReport,
   CookAttendanceVote,
   CookLeaveRequest,
   DutyPlan,
   Expense,
+  ExploreInteraction,
   GuestMealRequest,
   Hostel,
   HostelTransferRequest,
@@ -64,10 +66,12 @@ export interface Tables {
   joinRequests: JoinRequest[];
   mealStopRequests: MealStopRequest[];
   guestMealRequests: GuestMealRequest[];
+  exploreInteractions: ExploreInteraction[];
+  communityPosts: CommunityPost[];
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 18;
 
 interface Persisted {
   version: number;

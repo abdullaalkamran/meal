@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BedDouble,
   Building2,
   CheckCircle2,
   ChefHat,
@@ -24,6 +25,8 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   approvals: CheckCircle2,
   finance: Wallet,
   students: Users,
+  members: Users,
+  rooms: BedDouble,
   overview: LayoutDashboard,
   hostels: Building2,
   reports: BarChart3,

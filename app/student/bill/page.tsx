@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ChefHat, ChevronLeft, ChevronRight, Home, Sun, Wrench } from "lucide-react";
+import { ChefHat, Home, Sun, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useBill } from "@/hooks/useBill";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { MonthNav } from "@/components/ui/MonthNav";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
@@ -44,32 +45,15 @@ export default function StudentBillPage() {
   const { toast } = useToast();
   const [payOpen, setPayOpen] = useState(false);
 
-  const shiftMonth = (delta: number) => {
-    const d = new Date(year, month - 1 + delta, 1);
-    setYear(d.getFullYear());
-    setMonth(d.getMonth() + 1);
-  };
-
   const monthNav = (
-    <Card className="flex items-center justify-between">
-      <button
-        type="button"
-        onClick={() => shiftMonth(-1)}
-        aria-label="Previous month"
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
-      >
-        <Icon icon={ChevronLeft} size={16} />
-      </button>
-      <div className="text-[13px] font-extrabold">{formatMonthLabel(monthStr)}</div>
-      <button
-        type="button"
-        onClick={() => shiftMonth(1)}
-        aria-label="Next month"
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-bg"
-      >
-        <Icon icon={ChevronRight} size={16} />
-      </button>
-    </Card>
+    <MonthNav
+      value={monthStr}
+      onChange={(ms) => {
+        const [y, m] = ms.split("-").map(Number);
+        setYear(y);
+        setMonth(m);
+      }}
+    />
   );
 
   if (!bill) {

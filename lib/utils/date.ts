@@ -17,8 +17,13 @@ export function currentMonth(): string {
 }
 
 export function previousMonth(monthStr: string): string {
+  return addMonths(monthStr, -1);
+}
+
+/** Shift a YYYY-MM string by `delta` months (negative = earlier). */
+export function addMonths(monthStr: string, delta: number): string {
   const [year, month] = monthStr.split("-").map(Number);
-  const d = new Date(year, month - 2, 1);
+  const d = new Date(year, month - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 

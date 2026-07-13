@@ -12,11 +12,13 @@ import type {
   BillAdjustment,
   BillTarget,
   Comment,
+  CommunityPost,
   CookAttendanceReport,
   CookAttendanceVote,
   CookLeaveRequest,
   DutyPlan,
   Expense,
+  ExploreInteraction,
   GuestMealRequest,
   Hostel,
   HostelTransferRequest,
@@ -34,6 +36,7 @@ import type {
   Room,
   ShoppingCost,
   ShortageRequest,
+  Stars,
   SwapRequest,
   User,
 } from "./types";
@@ -45,12 +48,29 @@ export interface UserRepository {
   listByHostel(hostelId: string): Promise<User[]>;
   listAll(): Promise<User[]>;
   updateUser(userId: string, patch: Partial<User>): Promise<void>;
+  /** Ban/un-ban a member from their hostel. Banning evicts them from their
+   * room seat and turns meals off; the user record is kept so they can still
+   * switch/transfer to another hostel. */
+  setBanned(userId: string, banned: boolean): Promise<void>;
+  /** Hard-remove a member from the hostel and free their room seat. */
+  remove(userId: string): Promise<void>;
+  /** Manager's conduct/reliability rating of a member (1–5 + optional note). */
+  rate(userId: string, stars: Stars, note?: string): Promise<void>;
   subscribe(hostelId: string, cb: (users: User[]) => void): Unsubscribe;
 }
 
 export interface RoomRepository {
   listByHostel(hostelId: string): Promise<Room[]>;
+  /** Assigns a member to a room — also vacates them from any room they were
+   * already in, so this doubles as a room-to-room move. */
   assignMember(roomId: string, userId: string): Promise<void>;
+  /** Removes a member from whatever room they occupy (clears their seat). */
+  vacate(userId: string): Promise<void>;
+  create(room: Omit<Room, "id" | "occupantIds">): Promise<void>;
+  update(
+    roomId: string,
+    patch: Partial<Pick<Room, "number" | "capacity" | "seatRent" | "facilities">>
+  ): Promise<void>;
   subscribe(hostelId: string, cb: (rooms: Room[]) => void): Unsubscribe;
 }
 
@@ -265,6 +285,20 @@ export interface GuestMealRepository {
   subscribe(hostelId: string, cb: (list: GuestMealRequest[]) => void): Unsubscribe;
 }
 
+export interface ExploreInteractionRepository {
+  listByUser(userId: string): Promise<ExploreInteraction[]>;
+  /** Toggle a user's action on an /explore item — adds it if absent, removes it if present. */
+  toggle(userId: string, feature: ExploreInteraction["feature"], itemId: string, kind: ExploreInteraction["kind"]): Promise<void>;
+  subscribe(userId: string, cb: (list: ExploreInteraction[]) => void): Unsubscribe;
+}
+
+export interface CommunityRepository {
+  listAll(): Promise<CommunityPost[]>;
+  post(post: Omit<CommunityPost, "id" | "createdAt" | "likeUserIds">): Promise<void>;
+  toggleLike(postId: string, userId: string): Promise<void>;
+  subscribe(cb: (list: CommunityPost[]) => void): Unsubscribe;
+}
+
 export interface Repositories {
   users: UserRepository;
   rooms: RoomRepository;
@@ -288,4 +322,6 @@ export interface Repositories {
   joinRequests: JoinRequestRepository;
   mealStops: MealStopRepository;
   guestMeals: GuestMealRepository;
+  exploreInteractions: ExploreInteractionRepository;
+  community: CommunityRepository;
 }

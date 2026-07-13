@@ -2,10 +2,12 @@ import type {
   AnnouncementRepository,
   BillRepository,
   CommentRepository,
+  CommunityRepository,
   CookAttendanceRepository,
   CookLeaveRepository,
   DutyRepository,
   ExpenseRepository,
+  ExploreInteractionRepository,
   GuestMealRepository,
   HostelRepository,
   JoinRequestRepository,
@@ -83,6 +85,47 @@ const users: UserRepository = {
     store.data.users[idx] = updated;
     store.emit(`users:${updated.hostelId}`);
   },
+  async setBanned(userId, banned) {
+    const idx = store.data.users.findIndex((x) => x.id === userId);
+    if (idx === -1) return;
+    const user = store.data.users[idx];
+    if (banned) {
+      // Evict from their room seat and turn meals off, but keep the record so
+      // the member can still transfer to another hostel.
+      store.data.rooms.forEach((r) => {
+        if (r.occupantIds.includes(userId)) {
+          r.occupantIds = r.occupantIds.filter((id) => id !== userId);
+        }
+      });
+      store.data.users[idx] = { ...user, banned: true, mealsSuspended: true, roomId: undefined };
+    } else {
+      store.data.users[idx] = { ...user, banned: false };
+    }
+    store.emit(`users:${user.hostelId}`);
+    store.emit(`rooms:${user.hostelId}`);
+  },
+  async remove(userId) {
+    const user = store.data.users.find((u) => u.id === userId);
+    if (!user) return;
+    store.data.rooms.forEach((r) => {
+      if (r.occupantIds.includes(userId)) {
+        r.occupantIds = r.occupantIds.filter((id) => id !== userId);
+      }
+    });
+    store.data.users = store.data.users.filter((u) => u.id !== userId);
+    store.emit(`users:${user.hostelId}`);
+    store.emit(`rooms:${user.hostelId}`);
+  },
+  async rate(userId, stars, note) {
+    const idx = store.data.users.findIndex((x) => x.id === userId);
+    if (idx === -1) return;
+    store.data.users[idx] = {
+      ...store.data.users[idx],
+      managerRating: stars,
+      managerRatingNote: note,
+    };
+    store.emit(`users:${store.data.users[idx].hostelId}`);
+  },
   subscribe(hostelId, cb) {
     const fire = () =>
       cb(store.data.users.filter((u) => u.hostelId === hostelId && u.role !== "owner"));
@@ -102,10 +145,38 @@ const rooms: RoomRepository = {
       r.occupantIds = r.occupantIds.filter((id) => id !== userId);
     });
     room.occupantIds.push(userId);
-    const user = store.data.users.find((u) => u.id === userId);
-    if (user) user.roomId = roomId;
+    const uidx = store.data.users.findIndex((u) => u.id === userId);
+    if (uidx !== -1) {
+      store.data.users[uidx] = { ...store.data.users[uidx], roomId };
+    }
     store.emit(`rooms:${room.hostelId}`);
     store.emit(`users:${room.hostelId}`);
+  },
+  async vacate(userId) {
+    const user = store.data.users.find((u) => u.id === userId);
+    if (!user) return;
+    store.data.rooms.forEach((r) => {
+      if (r.occupantIds.includes(userId)) {
+        r.occupantIds = r.occupantIds.filter((id) => id !== userId);
+      }
+    });
+    const uidx = store.data.users.findIndex((u) => u.id === userId);
+    if (uidx !== -1) {
+      store.data.users[uidx] = { ...store.data.users[uidx], roomId: undefined };
+    }
+    store.emit(`rooms:${user.hostelId}`);
+    store.emit(`users:${user.hostelId}`);
+  },
+  async create(room) {
+    store.data.rooms.push({ ...room, id: nextId("room"), occupantIds: [] });
+    store.emit(`rooms:${room.hostelId}`);
+  },
+  async update(roomId, patch) {
+    const idx = store.data.rooms.findIndex((r) => r.id === roomId);
+    if (idx === -1) return;
+    const updated = { ...store.data.rooms[idx], ...patch };
+    store.data.rooms[idx] = updated;
+    store.emit(`rooms:${updated.hostelId}`);
   },
   subscribe(hostelId, cb) {
     const fire = () => cb(store.data.rooms.filter((r) => r.hostelId === hostelId));
@@ -563,7 +634,7 @@ const bills: BillRepository = {
     if (!hostel) return [];
 
     const allBoarders = store.data.users.filter(
-      (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner"
+      (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner" && !u.banned
     );
     const rooms = store.data.rooms.filter((r) => r.hostelId === hostelId);
     const [year, mon] = month.split("-").map(Number);
@@ -1169,6 +1240,66 @@ const guestMeals: GuestMealRepository = {
   },
 };
 
+const exploreInteractions: ExploreInteractionRepository = {
+  async listByUser(userId) {
+    return store.data.exploreInteractions.filter((i) => i.userId === userId);
+  },
+  async toggle(userId, feature, itemId, kind) {
+    const existing = store.data.exploreInteractions.find(
+      (i) => i.userId === userId && i.feature === feature && i.itemId === itemId && i.kind === kind
+    );
+    if (existing) {
+      store.data.exploreInteractions = store.data.exploreInteractions.filter((i) => i.id !== existing.id);
+    } else {
+      store.data.exploreInteractions.push({
+        id: nextId("expl"),
+        userId,
+        feature,
+        itemId,
+        kind,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    store.emit(`explore:${userId}`);
+  },
+  subscribe(userId, cb) {
+    const fire = () => cb(store.data.exploreInteractions.filter((i) => i.userId === userId));
+    fire();
+    return store.on(`explore:${userId}`, fire);
+  },
+};
+
+const community: CommunityRepository = {
+  async listAll() {
+    return [...store.data.communityPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async post(post) {
+    store.data.communityPosts.push({
+      ...post,
+      id: nextId("cpost"),
+      createdAt: new Date().toISOString(),
+      likeUserIds: [],
+    });
+    store.emit("community");
+  },
+  async toggleLike(postId, userId) {
+    const idx = store.data.communityPosts.findIndex((p) => p.id === postId);
+    if (idx === -1) return;
+    const p = store.data.communityPosts[idx];
+    const liked = p.likeUserIds.includes(userId);
+    store.data.communityPosts[idx] = {
+      ...p,
+      likeUserIds: liked ? p.likeUserIds.filter((id) => id !== userId) : [...p.likeUserIds, userId],
+    };
+    store.emit("community");
+  },
+  subscribe(cb) {
+    const fire = () => cb([...store.data.communityPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("community", fire);
+  },
+};
+
 export const mockRepositories: Repositories = {
   users,
   rooms,
@@ -1192,4 +1323,6 @@ export const mockRepositories: Repositories = {
   joinRequests,
   mealStops,
   guestMeals,
+  exploreInteractions,
+  community,
 };

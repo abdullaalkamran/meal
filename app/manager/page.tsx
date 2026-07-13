@@ -4,13 +4,21 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  BedDouble,
+  BookOpen,
+  Briefcase,
   ChevronRight,
+  ChefHat,
   Coffee,
+  GraduationCap,
   Maximize2,
   Megaphone,
+  MessagesSquare,
   Receipt,
   ShoppingCart,
   Sparkles,
+  Tag,
+  TrendingUp,
   User as UserIcon,
   UtensilsCrossed,
   Wallet,
@@ -65,6 +73,14 @@ const QUICK_ACTIONS = [
     tone: "bg-blue-soft text-blue",
     href: "/manager/duty/cleaning",
   },
+  { key: "jobs", label: "Find Job", icon: Briefcase, tone: "bg-primary-soft text-primary", href: "/explore/jobs" },
+  { key: "learning", label: "Learning", icon: GraduationCap, tone: "bg-blue-soft text-blue", href: "/explore/learning" },
+  { key: "investment", label: "Investment", icon: TrendingUp, tone: "bg-primary-soft text-primary", href: "/explore/investment" },
+  { key: "books", label: "Buy Books", icon: BookOpen, tone: "bg-orange-soft text-orange", href: "/explore/books" },
+  { key: "findHostel", label: "Find Hostel", icon: BedDouble, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]", href: "/explore/hostels" },
+  { key: "findCook", label: "Find Cook", icon: ChefHat, tone: "bg-orange-soft text-orange", href: "/explore/cooks" },
+  { key: "offers", label: "Shopping offer", icon: Tag, tone: "bg-blue-soft text-blue", href: "/explore/offers" },
+  { key: "community", label: "Hostel community", icon: MessagesSquare, tone: "bg-primary-soft text-primary", href: "/explore/community" },
 ] as const;
 
 export default function ManagerDashboardPage() {

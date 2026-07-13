@@ -22,6 +22,16 @@ export interface User {
   /** Manager turned this boarder's meals off for an unpaid bill — they can't
    * re-enable their own toggles until the manager resumes them. */
   mealsSuspended?: boolean;
+  /** Manager banned this member from THIS hostel — record is kept (so they can
+   * still switch/transfer to another hostel) but they're evicted from their
+   * room seat, meals are off, and they're excluded from active roster,
+   * billing, and cooking counts until un-banned. */
+  banned?: boolean;
+  /** Manager's private conduct/reliability rating of this member (1–5). */
+  managerRating?: Stars;
+  managerRatingNote?: string;
+  /** When this member joined the hostel (ISO date) — shown as "member since". */
+  joinedAt?: string;
 }
 
 export interface Room {
@@ -32,6 +42,8 @@ export interface Room {
   occupantIds: string[];
   /** Monthly rent for one seat in this room (৳) — each occupant pays this directly, not split across capacity. */
   seatRent: number;
+  /** Amenities available in this room, e.g. ["Attached bath", "AC", "Balcony"]. */
+  facilities?: string[];
 }
 
 export interface HostelSettings {
@@ -404,4 +416,27 @@ export interface GuestMealRequest {
   guestName: string;
   qty: number;
   status: "pending" | "approved" | "denied";
+}
+
+/** A logged-in user's action on a browsable /explore item (job, course, book,
+ * offer, cook) — persisted so "Applied"/"Enrolled"/"Saved"/"Grabbed" states
+ * survive reloads. `itemId` references a stable id from lib/explore/content.ts. */
+export interface ExploreInteraction {
+  id: string;
+  userId: string;
+  feature: "jobs" | "learning" | "books" | "offers" | "cooks" | "investment";
+  itemId: string;
+  kind: "applied" | "enrolled" | "saved" | "grabbed";
+  createdAt: string;
+}
+
+/** A post in the cross-hostel community feed (/explore/community). */
+export interface CommunityPost {
+  id: string;
+  hostelId: string;
+  userId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  likeUserIds: string[];
 }

@@ -2,7 +2,23 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Bell, ChevronRight, Ban, CreditCard, Megaphone, ShoppingCart, UserPlus } from "lucide-react";
+import {
+  Ban,
+  BedDouble,
+  Bell,
+  BookOpen,
+  Briefcase,
+  ChefHat,
+  ChevronRight,
+  CreditCard,
+  GraduationCap,
+  Megaphone,
+  MessagesSquare,
+  ShoppingCart,
+  Tag,
+  TrendingUp,
+  UserPlus,
+} from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useAnnouncements } from "@/hooks/useAnnouncements";
@@ -28,6 +44,14 @@ const QUICK_ACTIONS = [
   { key: "guest", label: "Guest meal", icon: UserPlus, tone: "orange" as const },
   { key: "pay", label: "Pay bill", icon: CreditCard, tone: "primary" as const, href: "/student/bill" },
   { key: "shopping", label: "Shopping", icon: ShoppingCart, tone: "blue" as const, href: "/student/shopping" },
+  { key: "jobs", label: "Find Job", icon: Briefcase, tone: "primary" as const, href: "/explore/jobs" },
+  { key: "learning", label: "Learning", icon: GraduationCap, tone: "blue" as const, href: "/explore/learning" },
+  { key: "investment", label: "Investment", icon: TrendingUp, tone: "primary" as const, href: "/explore/investment" },
+  { key: "books", label: "Buy Books", icon: BookOpen, tone: "orange" as const, href: "/explore/books" },
+  { key: "findHostel", label: "Find Hostel", icon: BedDouble, tone: "violet" as const, href: "/explore/hostels" },
+  { key: "findCook", label: "Find Cook", icon: ChefHat, tone: "orange" as const, href: "/explore/cooks" },
+  { key: "offers", label: "Shop offer", icon: Tag, tone: "blue" as const, href: "/explore/offers" },
+  { key: "community", label: "Community", icon: MessagesSquare, tone: "primary" as const, href: "/explore/community" },
 ] as const;
 
 const TONE_CLASSES = {
@@ -35,6 +59,7 @@ const TONE_CLASSES = {
   orange: "bg-orange-soft text-orange",
   primary: "bg-primary-soft text-primary",
   blue: "bg-blue-soft text-blue",
+  violet: "bg-[#7C6CF6]/10 text-[#7C6CF6]",
 };
 
 export default function StudentHomePage() {
