@@ -29,7 +29,10 @@ import type {
   MealStopRequest,
   Menu,
   Notification,
+  Order,
+  CartItem,
   Payment,
+  Product,
   Rating,
   Reaction,
   Room,
@@ -37,6 +40,7 @@ import type {
   ShoppingCost,
   ShortageRequest,
   SwapRequest,
+  UsedBookListing,
   User,
 } from "../types";
 import { buildSeed } from "./seed";
@@ -74,10 +78,14 @@ export interface Tables {
   serviceListings: ServiceListing[];
   campaigns: Campaign[];
   marketingTargets: MarketingTarget[];
+  products: Product[];
+  cartItems: CartItem[];
+  orders: Order[];
+  usedBookListings: UsedBookListing[];
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 22;
 
 interface Persisted {
   version: number;

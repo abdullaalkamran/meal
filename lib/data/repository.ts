@@ -31,8 +31,15 @@ import type {
   MealSlot,
   MealStopRequest,
   Menu,
+  NewProduct,
+  NewUsedBook,
   Notification,
+  Order,
+  CartItem,
+  PaymentMethod,
   Payment,
+  Product,
+  ProductKind,
   Rating,
   NewServiceListing,
   Reaction,
@@ -43,6 +50,7 @@ import type {
   ShortageRequest,
   Stars,
   SwapRequest,
+  UsedBookListing,
   User,
 } from "./types";
 
@@ -332,6 +340,52 @@ export interface MarketingRepository {
   subscribe(cb: () => void): Unsubscribe;
 }
 
+export interface ProductRepository {
+  listByKind(kind: ProductKind): Promise<Product[]>;
+  listAll(): Promise<Product[]>;
+  add(product: NewProduct): Promise<void>;
+  update(id: string, patch: Partial<Product>): Promise<void>;
+  toggleActive(id: string): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: Product[]) => void): Unsubscribe;
+}
+
+export interface CartRepository {
+  listByUser(userId: string): Promise<CartItem[]>;
+  /** Adds `qty` of a product (increments the line if it already exists). */
+  add(userId: string, productId: string, qty?: number): Promise<void>;
+  /** Sets an exact quantity; a qty of 0 removes the line. */
+  setQty(userId: string, productId: string, qty: number): Promise<void>;
+  remove(userId: string, productId: string): Promise<void>;
+  clear(userId: string): Promise<void>;
+  subscribe(userId: string, cb: (list: CartItem[]) => void): Unsubscribe;
+}
+
+export interface OrderRepository {
+  listByUser(userId: string): Promise<Order[]>;
+  /** Every order across the platform — Service Manager order management. */
+  listAll(): Promise<Order[]>;
+  /** Snapshots the user's cart into a new order (computing subtotal, delivery
+   * fee, and total), clears the cart, and returns the placed order. */
+  place(
+    userId: string,
+    details: { paymentMethod: PaymentMethod; note?: string }
+  ): Promise<Order>;
+  /** Service Manager advances/cancels an order (placed → confirmed → delivered,
+   * or cancelled) — the buyer sees the change live on their orders page. */
+  updateStatus(orderId: string, status: Order["status"]): Promise<void>;
+  subscribe(userId: string, cb: (list: Order[]) => void): Unsubscribe;
+  subscribeAll(cb: (list: Order[]) => void): Unsubscribe;
+}
+
+export interface UsedBookRepository {
+  listAll(): Promise<UsedBookListing[]>;
+  add(book: NewUsedBook): Promise<void>;
+  /** Seller delists their own book (or Service Manager moderates one). */
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: UsedBookListing[]) => void): Unsubscribe;
+}
+
 export interface Repositories {
   users: UserRepository;
   rooms: RoomRepository;
@@ -360,4 +414,8 @@ export interface Repositories {
   serviceCatalog: ServiceCatalogRepository;
   campaigns: CampaignRepository;
   marketing: MarketingRepository;
+  products: ProductRepository;
+  cart: CartRepository;
+  orders: OrderRepository;
+  usedBooks: UsedBookRepository;
 }

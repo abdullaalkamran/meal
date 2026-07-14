@@ -18,6 +18,9 @@ import type {
   MealStopRepository,
   MenuRepository,
   NotificationRepository,
+  OrderRepository,
+  CartRepository,
+  ProductRepository,
   RatingRepository,
   Repositories,
   RoomRepository,
@@ -26,11 +29,13 @@ import type {
   ShortageRepository,
   SwapRepository,
   TransferRepository,
+  UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Payment, Role, ServiceListing } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing } from "../types";
 import { currentMonth, formatShortDate } from "../../utils/date";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
+import { deliveryFeeFor } from "../../utils/store";
 import { nextId, store } from "./store";
 
 // Roles that aren't boarders of any single hostel — excluded from per-hostel
@@ -1355,7 +1360,8 @@ const serviceCatalog: ServiceCatalogRepository = {
     store.emit("serviceCatalog");
   },
   subscribe(cb) {
-    const fire = () => cb(store.data.serviceListings);
+    // Fresh array each fire — same React-bailout guard as products.subscribe.
+    const fire = () => cb([...store.data.serviceListings]);
     fire();
     return store.on("serviceCatalog", fire);
   },
@@ -1404,6 +1410,180 @@ const marketing: MarketingRepository = {
   },
 };
 
+const products: ProductRepository = {
+  async listByKind(kind) {
+    return store.data.products.filter((p) => p.kind === kind);
+  },
+  async listAll() {
+    return store.data.products;
+  },
+  async add(product) {
+    store.data.products.push({
+      ...product,
+      id: nextId("prod"),
+      active: true,
+      createdAt: new Date().toISOString(),
+    } as Product);
+    store.emit("products");
+  },
+  async update(id, patch) {
+    const idx = store.data.products.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    store.data.products[idx] = { ...store.data.products[idx], ...patch } as Product;
+    store.emit("products");
+  },
+  async toggleActive(id) {
+    const idx = store.data.products.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const p = store.data.products[idx];
+    store.data.products[idx] = { ...p, active: !p.active };
+    store.emit("products");
+  },
+  async remove(id) {
+    store.data.products = store.data.products.filter((p) => p.id !== id);
+    store.emit("products");
+  },
+  subscribe(cb) {
+    // Fresh array each fire — in-place element swaps (update/toggleActive)
+    // keep the array reference stable, and passing the same reference into
+    // React setState makes it bail out and skip the re-render.
+    const fire = () => cb([...store.data.products]);
+    fire();
+    return store.on("products", fire);
+  },
+};
+
+const cart: CartRepository = {
+  async listByUser(userId) {
+    return store.data.cartItems.filter((c) => c.userId === userId);
+  },
+  async add(userId, productId, qty = 1) {
+    const existing = store.data.cartItems.find((c) => c.userId === userId && c.productId === productId);
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      store.data.cartItems.push({ id: nextId("cart"), userId, productId, qty });
+    }
+    store.emit(`cart:${userId}`);
+  },
+  async setQty(userId, productId, qty) {
+    if (qty <= 0) {
+      store.data.cartItems = store.data.cartItems.filter(
+        (c) => !(c.userId === userId && c.productId === productId)
+      );
+    } else {
+      const item = store.data.cartItems.find((c) => c.userId === userId && c.productId === productId);
+      if (item) item.qty = qty;
+      else store.data.cartItems.push({ id: nextId("cart"), userId, productId, qty });
+    }
+    store.emit(`cart:${userId}`);
+  },
+  async remove(userId, productId) {
+    store.data.cartItems = store.data.cartItems.filter(
+      (c) => !(c.userId === userId && c.productId === productId)
+    );
+    store.emit(`cart:${userId}`);
+  },
+  async clear(userId) {
+    store.data.cartItems = store.data.cartItems.filter((c) => c.userId !== userId);
+    store.emit(`cart:${userId}`);
+  },
+  subscribe(userId, cb) {
+    const fire = () => cb(store.data.cartItems.filter((c) => c.userId === userId));
+    fire();
+    return store.on(`cart:${userId}`, fire);
+  },
+};
+
+const orders: OrderRepository = {
+  async listByUser(userId) {
+    return [...store.data.orders]
+      .filter((o) => o.userId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async listAll() {
+    return [...store.data.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async place(userId, details) {
+    const lines = store.data.cartItems.filter((c) => c.userId === userId);
+    const items: OrderItem[] = lines.flatMap((c) => {
+      const p = store.data.products.find((pr) => pr.id === c.productId);
+      if (!p) return [];
+      return [{ productId: p.id, kind: p.kind, name: p.name, qty: c.qty, price: p.price }];
+    });
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const deliveryFee = deliveryFeeFor(items.some((i) => i.kind === "grocery"));
+    const user = store.data.users.find((u) => u.id === userId);
+    const order: Order = {
+      id: nextId("order"),
+      userId,
+      hostelId: user?.hostelId ?? "",
+      items,
+      subtotal,
+      deliveryFee,
+      total: subtotal + deliveryFee,
+      paymentMethod: details.paymentMethod,
+      status: "placed",
+      note: details.note,
+      createdAt: new Date().toISOString(),
+    };
+    store.data.orders.push(order);
+    store.data.cartItems = store.data.cartItems.filter((c) => c.userId !== userId);
+    store.emit(`orders:${userId}`);
+    store.emit("orders");
+    store.emit(`cart:${userId}`);
+    return order;
+  },
+  async updateStatus(orderId, status) {
+    const idx = store.data.orders.findIndex((o) => o.id === orderId);
+    if (idx === -1) return;
+    const order = store.data.orders[idx];
+    store.data.orders[idx] = { ...order, status };
+    store.emit(`orders:${order.userId}`);
+    store.emit("orders");
+  },
+  subscribe(userId, cb) {
+    const fire = () =>
+      cb(
+        [...store.data.orders]
+          .filter((o) => o.userId === userId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      );
+    fire();
+    return store.on(`orders:${userId}`, fire);
+  },
+  subscribeAll(cb) {
+    const fire = () =>
+      cb([...store.data.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("orders", fire);
+  },
+};
+
+const usedBooks: UsedBookRepository = {
+  async listAll() {
+    return [...store.data.usedBookListings].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async add(book) {
+    store.data.usedBookListings.push({
+      ...book,
+      id: nextId("ubook"),
+      createdAt: new Date().toISOString(),
+    });
+    store.emit("usedBooks");
+  },
+  async remove(id) {
+    store.data.usedBookListings = store.data.usedBookListings.filter((b) => b.id !== id);
+    store.emit("usedBooks");
+  },
+  subscribe(cb) {
+    const fire = () =>
+      cb([...store.data.usedBookListings].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("usedBooks", fire);
+  },
+};
+
 export const mockRepositories: Repositories = {
   users,
   rooms,
@@ -1432,4 +1612,8 @@ export const mockRepositories: Repositories = {
   serviceCatalog,
   campaigns,
   marketing,
+  products,
+  cart,
+  orders,
+  usedBooks,
 };

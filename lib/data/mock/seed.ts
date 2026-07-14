@@ -18,15 +18,27 @@ import type {
   Notification,
   MarketingTarget,
   Payment,
+  Product,
   Rating,
   Room,
   ServiceListing,
   ShoppingCost,
+  UsedBookListing,
   User,
 } from "../types";
 import type { Tables } from "./store";
 import { addDays, currentMonth, today } from "../../utils/date";
-import { COOKS, COURSES, EXTRA_HOSTELS, JOBS, OFFERS } from "../../explore/content";
+import {
+  BOOKS,
+  COOKS,
+  COURSES,
+  EXTRA_HOSTELS,
+  GROCERY_SEED,
+  JOBS,
+  NEW_BOOKS_SEED,
+  OFFERS,
+  STUDY_ABROAD,
+} from "../../explore/content";
 
 const T = today();
 
@@ -698,6 +710,7 @@ export function buildSeed(): Tables {
     ...COURSES.map((c) => ({ kind: "course" as const, id: c.id, active: true, createdAt: T, title: c.title, provider: c.provider, category: c.category, level: c.level, duration: c.duration, price: c.price })),
     ...OFFERS.map((o) => ({ kind: "offer" as const, id: o.id, active: true, createdAt: T, shop: o.shop, title: o.title, discount: o.discount, code: o.code, expires: o.expires, category: o.category })),
     ...EXTRA_HOSTELS.map((h) => ({ kind: "hostel" as const, id: h.id, active: true, createdAt: T, name: h.name, area: h.area, seatRentFrom: h.seatRentFrom, seatsAvailable: h.seatsAvailable, rating: h.rating, amenities: h.amenities, phone: h.phone })),
+    ...STUDY_ABROAD.map((s) => ({ kind: "studyabroad" as const, id: s.id, active: true, createdAt: T, agency: s.agency, country: s.country, services: s.services, intake: s.intake, consultationFee: s.consultationFee, rating: s.rating, phone: s.phone })),
   ];
 
   const campaigns: Campaign[] = [
@@ -711,6 +724,49 @@ export function buildSeed(): Tables {
     { metric: "signups", month: currentMonth(), target: 6 },
     { metric: "revenue", month: currentMonth(), target: 20000 },
   ];
+
+  // Platform store inventory — grocery + NEW books, stocked by the Service Manager.
+  const products: Product[] = [
+    ...GROCERY_SEED.map((g) => ({ kind: "grocery" as const, id: g.id, active: true, createdAt: T, name: g.name, price: g.price, category: g.category, unit: g.unit })),
+    ...NEW_BOOKS_SEED.map((b) => ({ kind: "book" as const, id: b.id, active: true, createdAt: T, name: b.name, price: b.price, category: b.category, author: b.author, academicClass: b.academicClass })),
+  ];
+
+  // OLD books — member-listed, seeded from the existing static BOOKS list.
+  const usedBookSellers: Record<string, { sellerId: string; hostelId: string }> = {
+    bk_1: { sellerId: "u_student_3", hostelId: "hostel_bright" },
+    bk_2: { sellerId: "u_student_2", hostelId: "hostel_bright" },
+    bk_3: { sellerId: "u_student_1", hostelId: "hostel_bright" },
+    bk_4: { sellerId: "u_student_4", hostelId: "hostel_green" },
+    bk_5: { sellerId: "u_manager_bright", hostelId: "hostel_bright" },
+    bk_6: { sellerId: "u_student_3", hostelId: "hostel_bright" },
+  };
+  const usedBookMeta: Record<string, { category: string; academicClass: string }> = {
+    bk_1: { category: "Academic / Textbook", academicClass: "Honors / University" },
+    bk_2: { category: "Academic / Textbook", academicClass: "Honors / University" },
+    bk_3: { category: "Academic / Textbook", academicClass: "Honors / University" },
+    bk_4: { category: "Academic / Textbook", academicClass: "HSC (Class 11–12)" },
+    bk_5: { category: "Academic / Textbook", academicClass: "HSC (Class 11–12)" },
+    bk_6: { category: "Others", academicClass: "Others" },
+  };
+  const usedBookListings: UsedBookListing[] = BOOKS.map((b) => {
+    const s = usedBookSellers[b.id] ?? { sellerId: "u_student_1", hostelId: "hostel_bright" };
+    const m = usedBookMeta[b.id] ?? { category: "Others", academicClass: "Others" };
+    return {
+      id: b.id,
+      hostelId: s.hostelId,
+      sellerId: s.sellerId,
+      sellerName: b.seller,
+      title: b.title,
+      author: b.author,
+      category: m.category,
+      academicClass: m.academicClass,
+      condition: b.condition === "New" ? "Like new" : b.condition,
+      price: b.price,
+      free: false,
+      phone: b.phone,
+      createdAt: T,
+    };
+  });
 
   return {
     users,
@@ -745,5 +801,9 @@ export function buildSeed(): Tables {
     serviceListings,
     campaigns,
     marketingTargets,
+    products,
+    cartItems: [],
+    orders: [],
+    usedBookListings,
   };
 }

@@ -427,7 +427,7 @@ export interface GuestMealRequest {
 export interface ExploreInteraction {
   id: string;
   userId: string;
-  feature: "jobs" | "learning" | "books" | "offers" | "cooks" | "investment";
+  feature: "jobs" | "learning" | "books" | "offers" | "cooks" | "investment" | "studyabroad";
   itemId: string;
   kind: "applied" | "enrolled" | "saved" | "grabbed";
   createdAt: string;
@@ -452,7 +452,8 @@ export type ServiceListing =
   | { kind: "job"; id: string; active: boolean; createdAt: string; title: string; company: string; location: string; jobType: string; pay: string; tags: string[] }
   | { kind: "course"; id: string; active: boolean; createdAt: string; title: string; provider: string; category: string; level: string; duration: string; price: string }
   | { kind: "offer"; id: string; active: boolean; createdAt: string; shop: string; title: string; discount: string; code: string; expires: string; category: string }
-  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string };
+  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string }
+  | { kind: "studyabroad"; id: string; active: boolean; createdAt: string; agency: string; country: string; services: string; intake: string; consultationFee: string; rating: number; phone: string };
 
 export type ServiceKind = ServiceListing["kind"];
 
@@ -479,3 +480,89 @@ export interface MarketingTarget {
  * own fields (a plain Omit<Union, K> collapses to only the shared keys). */
 export type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 export type NewServiceListing = DistributiveOmit<ServiceListing, "id" | "createdAt" | "active">;
+
+// ── Platform e-commerce (grocery + books store) ────────────────────────────
+
+export type ProductKind = "grocery" | "book";
+
+/** A platform-stocked item bought through the cart — a grocery product or a
+ * NEW book. Managed by the Service Manager. `image` is an uploaded photo,
+ * downscaled client-side and stored as a data URL (no external image hosts,
+ * keeping the app static-export / CSP friendly); when absent the UI shows a
+ * neutral per-kind icon. */
+export interface Product {
+  id: string;
+  kind: ProductKind;
+  name: string;
+  price: number;
+  category: string;
+  image?: string;
+  active: boolean;
+  createdAt: string;
+  /** Grocery only, e.g. "1 kg", "500 g", "per pcs". */
+  unit?: string;
+  /** Book only. */
+  author?: string;
+  /** Book only — Bangladesh academic class (see BD_ACADEMIC_CLASSES). */
+  academicClass?: string;
+}
+
+export type NewProduct = Omit<Product, "id" | "createdAt" | "active">;
+
+/** One line in a user's persisted cart (survives reloads like everything else). */
+export interface CartItem {
+  id: string;
+  userId: string;
+  productId: string;
+  qty: number;
+}
+
+export type PaymentMethod = "bKash" | "Nagad" | "Card" | "Cash";
+
+/** A snapshot line item on a placed order — copied from the product so later
+ * catalog edits never rewrite order history (same discipline as Bill sections). */
+export interface OrderItem {
+  productId: string;
+  kind: ProductKind;
+  name: string;
+  qty: number;
+  price: number;
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  hostelId: string;
+  items: OrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: PaymentMethod;
+  status: "placed" | "confirmed" | "delivered" | "cancelled";
+  /** Delivery address / note (defaults to the buyer's hostel + room). */
+  note?: string;
+  createdAt: string;
+}
+
+/** A member-listed OLD book — sold or given free by a student, bought by
+ * contacting the seller directly (not through the cart). */
+export interface UsedBookListing {
+  id: string;
+  hostelId: string;
+  sellerId: string;
+  sellerName: string;
+  title: string;
+  author: string;
+  category: string;
+  academicClass: string;
+  condition: "Like new" | "Good" | "Fair";
+  /** 0 when given away free. */
+  price: number;
+  free: boolean;
+  phone: string;
+  /** Optional seller-uploaded photo (downscaled data URL). */
+  image?: string;
+  createdAt: string;
+}
+
+export type NewUsedBook = Omit<UsedBookListing, "id" | "createdAt">;

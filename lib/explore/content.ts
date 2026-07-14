@@ -130,3 +130,91 @@ export const OFFERS: Offer[] = [
   { id: "of_4", shop: "Pathao", title: "25% off next 5 rides", discount: "25%", code: "RIDE25", expires: "20 Aug", category: "Transport" },
   { id: "of_5", shop: "Rokomari", title: "Buy 2 books get 1 free", discount: "B2G1", code: "READMORE", expires: "10 Sep", category: "Books" },
 ];
+
+export interface StudyAbroadListing {
+  id: string;
+  agency: string;
+  country: string;
+  services: string;
+  intake: string;
+  consultationFee: string;
+  rating: number;
+  phone: string;
+}
+
+// ── Store taxonomy + seed inventory (grocery + books) ──────────────────────
+
+export const GROCERY_CATEGORIES = [
+  "Rice & Grains",
+  "Vegetables",
+  "Fruits",
+  "Dairy & Eggs",
+  "Meat & Fish",
+  "Oil & Spices",
+  "Snacks",
+  "Beverages",
+  "Household",
+  "Others",
+] as const;
+
+export const BOOK_CATEGORIES = [
+  "Academic / Textbook",
+  "Guide / Note",
+  "Novel / Story",
+  "Religious",
+  "Competitive / Job",
+  "Others",
+] as const;
+
+/** Bangladesh academic classes, used by both new (platform) and old (member) books. */
+export const BD_ACADEMIC_CLASSES = [
+  "Class 1",
+  "Class 2",
+  "Class 3",
+  "Class 4",
+  "Class 5",
+  "Class 6",
+  "Class 7",
+  "Class 8",
+  "SSC (Class 9–10)",
+  "HSC (Class 11–12)",
+  "Admission",
+  "Honors / University",
+  "Others",
+] as const;
+
+/** Seed grocery inventory — shape matches the Product entity (kind "grocery").
+ * No seed photos: cards fall back to a neutral icon until the Service Manager
+ * uploads one. */
+export const GROCERY_SEED = [
+  { id: "gr_1", name: "Miniket Rice", price: 78, unit: "1 kg", category: "Rice & Grains" },
+  { id: "gr_2", name: "Red Lentil (Masoor Dal)", price: 135, unit: "1 kg", category: "Rice & Grains" },
+  { id: "gr_3", name: "Soybean Oil", price: 168, unit: "1 L", category: "Oil & Spices" },
+  { id: "gr_4", name: "Farm Eggs", price: 130, unit: "1 dozen", category: "Dairy & Eggs" },
+  { id: "gr_5", name: "Potato", price: 45, unit: "1 kg", category: "Vegetables" },
+  { id: "gr_6", name: "Onion", price: 55, unit: "1 kg", category: "Vegetables" },
+  { id: "gr_7", name: "Broiler Chicken", price: 190, unit: "1 kg", category: "Meat & Fish" },
+  { id: "gr_8", name: "Rui Fish", price: 320, unit: "1 kg", category: "Meat & Fish" },
+  { id: "gr_9", name: "Banana", price: 48, unit: "1 dozen", category: "Fruits" },
+  { id: "gr_10", name: "Powder Milk", price: 85, unit: "500 g", category: "Dairy & Eggs" },
+  { id: "gr_11", name: "Sugar", price: 120, unit: "1 kg", category: "Oil & Spices" },
+  { id: "gr_12", name: "Toilet Tissue", price: 60, unit: "4 rolls", category: "Household" },
+];
+
+/** Seed NEW-book inventory — shape matches the Product entity (kind "book"). */
+export const NEW_BOOKS_SEED = [
+  { id: "nb_1", name: "HSC Physics 1st Paper", author: "Dr. Shahjahan Tapan", price: 380, category: "Academic / Textbook", academicClass: "HSC (Class 11–12)" },
+  { id: "nb_2", name: "SSC Higher Math", author: "S. U. Ahmed", price: 290, category: "Academic / Textbook", academicClass: "SSC (Class 9–10)" },
+  { id: "nb_3", name: "Bank Job Question Bank", author: "Professor's", price: 450, category: "Competitive / Job", academicClass: "Admission" },
+  { id: "nb_4", name: "English Grammar & Composition", author: "P. C. Das", price: 210, category: "Guide / Note", academicClass: "Class 8" },
+  { id: "nb_5", name: "University Admission Guide", author: "Uttoron", price: 520, category: "Competitive / Job", academicClass: "Admission" },
+  { id: "nb_6", name: "Class 5 Amar Bangla Boi", author: "NCTB", price: 120, category: "Academic / Textbook", academicClass: "Class 5" },
+];
+
+export const STUDY_ABROAD: StudyAbroadListing[] = [
+  { id: "sa_1", agency: "Global Reach Education", country: "United Kingdom", services: "Admission · IELTS · Visa · Scholarship", intake: "Sep 2026 / Jan 2027", consultationFee: "Free consultation", rating: 4.7, phone: "01714-300400" },
+  { id: "sa_2", agency: "Maple Leaf Consultancy", country: "Canada", services: "SDS Visa · Admission · Bank statement guide", intake: "Fall 2026", consultationFee: "৳3,000", rating: 4.5, phone: "01714-300401" },
+  { id: "sa_3", agency: "Kangaroo Overseas", country: "Australia", services: "Admission · GTE · Visa · Post-study work", intake: "Feb / Jul 2027", consultationFee: "Free consultation", rating: 4.4, phone: "01714-300402" },
+  { id: "sa_4", agency: "Deutschland Study Point", country: "Germany", services: "Public universities · APS · Blocked account · German A1", intake: "Winter 2026", consultationFee: "৳5,000", rating: 4.6, phone: "01714-300403" },
+  { id: "sa_5", agency: "USA Dream Advisors", country: "United States", services: "Admission · SAT/GRE · F-1 Visa · Scholarship", intake: "Fall 2026 / Spring 2027", consultationFee: "৳4,000", rating: 4.3, phone: "01714-300404" },
+];

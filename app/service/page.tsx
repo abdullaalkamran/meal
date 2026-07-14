@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BedDouble, BookOpen, Briefcase, ChefHat, Tag, Trash2 } from "lucide-react";
+import { BedDouble, BookOpen, Briefcase, ChefHat, Plane, Tag, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
@@ -17,6 +17,7 @@ const KINDS: { kind: ServiceKind; label: string; add: string; icon: typeof ChefH
   { kind: "course", label: "Courses", add: "Add course", icon: BookOpen },
   { kind: "offer", label: "Offers", add: "Add offer", icon: Tag },
   { kind: "hostel", label: "Partner hostels", add: "Add hostel", icon: BedDouble },
+  { kind: "studyabroad", label: "Study abroad", add: "Add agency", icon: Plane },
 ];
 
 function title(l: ServiceListing): string {
@@ -31,6 +32,8 @@ function title(l: ServiceListing): string {
       return `${l.shop} — ${l.title}`;
     case "hostel":
       return l.name;
+    case "studyabroad":
+      return `${l.agency} — ${l.country}`;
   }
 }
 function subtitle(l: ServiceListing): string {
@@ -45,6 +48,8 @@ function subtitle(l: ServiceListing): string {
       return `${l.discount} · code ${l.code}`;
     case "hostel":
       return `${l.area} · ${formatBDT(l.seatRentFrom)}/seat`;
+    case "studyabroad":
+      return `${l.services} · ${l.consultationFee}`;
   }
 }
 

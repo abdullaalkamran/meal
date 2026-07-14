@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { clsx } from "clsx";
-import { AlertTriangle, ClipboardList, ShoppingBag } from "lucide-react";
+import { AlertTriangle, BookOpen, ChevronRight, ClipboardList, ShoppingBag } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useSwaps } from "@/hooks/useSwaps";
 import { useShortages } from "@/hooks/useShortages";
+import { useProducts } from "@/hooks/useProducts";
+import { useCart } from "@/hooks/useCart";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { SpinWheel } from "@/components/ui/SpinWheel";
+import { ProductCard } from "@/components/store/ProductCard";
 import { repo, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, today } from "@/lib/utils/date";
@@ -98,6 +102,51 @@ export default function StudentShoppingPage() {
     setItems("");
   };
 
+  const groceryPicks = useProducts("grocery").filter((p) => p.active).slice(0, 2);
+  const cartItems = useCart(user?.id);
+  const qtyOf = (id: string) => cartItems.find((c) => c.productId === id)?.qty ?? 0;
+
+  // Recommendation strip: two products from the platform grocery store, plus a
+  // books teaser — shown to every member regardless of duty state.
+  const storeStrip = (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[13.5px] font-extrabold">From the grocery store</div>
+        <Link href="/explore/grocery" className="flex items-center gap-0.5 text-[11px] font-extrabold text-primary">
+          Shop all
+          <Icon icon={ChevronRight} size={14} />
+        </Link>
+      </div>
+      {groceryPicks.length > 0 && (
+        <div className="grid grid-cols-2 gap-2.5">
+          {groceryPicks.map((p) => (
+            <ProductCard
+              key={p.id}
+              product={p}
+              qty={qtyOf(p.id)}
+              onAdd={() => user && repo.cart.add(user.id, p.id)}
+              onSetQty={(qty) => user && repo.cart.setQty(user.id, p.id, qty)}
+            />
+          ))}
+        </div>
+      )}
+      <Link href="/explore/books">
+        <Card className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-soft text-orange">
+            <Icon icon={BookOpen} size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-extrabold">Buy books</div>
+            <div className="text-[10px] font-semibold text-text-secondary">
+              New books from the platform · old books from members
+            </div>
+          </div>
+          <Icon icon={ChevronRight} size={16} className="text-text-secondary" />
+        </Card>
+      </Link>
+    </div>
+  );
+
   const shortageAlerts = pendingShortages.length > 0 && (
     <div className="flex flex-col gap-2">
       {pendingShortages.map((s) => (
@@ -128,6 +177,7 @@ export default function StudentShoppingPage() {
       <div className="flex flex-col gap-5 pt-2">
         <div className="text-[17.5px] font-extrabold tracking-tight">Shopping</div>
         {shortageAlerts}
+        {storeStrip}
         <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
           No active shopping duty rotation right now.
         </Card>
@@ -140,6 +190,8 @@ export default function StudentShoppingPage() {
       <div className="text-[17.5px] font-extrabold tracking-tight">Shopping</div>
 
       {shortageAlerts}
+
+      {storeStrip}
 
       {!hasSpun ? (
         <div

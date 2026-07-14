@@ -10,6 +10,7 @@ import {
   Package,
   Receipt,
   Settings,
+  ShoppingBag,
   ShoppingCart,
   Target,
   User,
@@ -41,5 +42,6 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   campaigns: Megaphone,
   catalog: Package,
   community: MessagesSquare,
+  store: ShoppingBag,
   settings: Settings,
 };

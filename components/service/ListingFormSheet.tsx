@@ -50,6 +50,15 @@ const KIND_FIELDS: Record<ServiceKind, Field[]> = {
     { name: "amenities", label: "Amenities (comma separated)", type: "list" },
     { name: "phone", label: "Phone", type: "text" },
   ],
+  studyabroad: [
+    { name: "agency", label: "Agency / consultancy", type: "text" },
+    { name: "country", label: "Destination country", type: "text" },
+    { name: "services", label: "Services offered", type: "text" },
+    { name: "intake", label: "Intake", type: "text" },
+    { name: "consultationFee", label: "Consultation fee", type: "text" },
+    { name: "rating", label: "Rating (0–5)", type: "number" },
+    { name: "phone", label: "Phone", type: "text" },
+  ],
 };
 
 const KIND_LABEL: Record<ServiceKind, string> = {
@@ -58,6 +67,7 @@ const KIND_LABEL: Record<ServiceKind, string> = {
   course: "course",
   offer: "offer",
   hostel: "hostel listing",
+  studyabroad: "study abroad agency",
 };
 
 export function ListingFormSheet({
@@ -95,8 +105,10 @@ export function ListingFormSheet({
       payload = { kind, title: v("title"), provider: v("provider"), category: v("category"), level: v("level"), duration: v("duration"), price: v("price") };
     } else if (kind === "offer") {
       payload = { kind, shop: v("shop"), title: v("title"), discount: v("discount"), code: v("code"), expires: v("expires"), category: v("category") };
-    } else {
+    } else if (kind === "hostel") {
       payload = { kind, name: v("name"), area: v("area"), seatRentFrom: num("seatRentFrom"), seatsAvailable: num("seatsAvailable"), rating: num("rating"), amenities: list("amenities"), phone: v("phone") };
+    } else {
+      payload = { kind, agency: v("agency"), country: v("country"), services: v("services"), intake: v("intake"), consultationFee: v("consultationFee"), rating: num("rating"), phone: v("phone") };
     }
 
     await repo.serviceCatalog.add(payload);
