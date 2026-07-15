@@ -11,6 +11,8 @@ export interface User {
   hostelId: string;
   name: string;
   phone: string;
+  /** Used to prefill forms (e.g. the study-abroad eligibility check). */
+  email?: string;
   role: Role;
   roomId?: string;
   avatarSeed: string;
@@ -452,8 +454,7 @@ export type ServiceListing =
   | { kind: "job"; id: string; active: boolean; createdAt: string; title: string; company: string; location: string; jobType: string; pay: string; tags: string[] }
   | { kind: "course"; id: string; active: boolean; createdAt: string; title: string; provider: string; category: string; level: string; duration: string; price: string }
   | { kind: "offer"; id: string; active: boolean; createdAt: string; shop: string; title: string; discount: string; code: string; expires: string; category: string }
-  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string }
-  | { kind: "studyabroad"; id: string; active: boolean; createdAt: string; agency: string; country: string; services: string; intake: string; consultationFee: string; rating: number; phone: string };
+  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string };
 
 export type ServiceKind = ServiceListing["kind"];
 
@@ -566,3 +567,57 @@ export interface UsedBookListing {
 }
 
 export type NewUsedBook = Omit<UsedBookListing, "id" | "createdAt">;
+
+// ── Study abroad hub ────────────────────────────────────────────────────────
+
+/** Study-abroad content curated by the Service Manager, one discriminated
+ * table across kinds:
+ * - country: destination guide (tuition, living cost, work rights, intakes)
+ * - scholarship: a scholarship members can aim for
+ * - counsellor: a platform counsellor members call directly for consultation
+ * - promo: a promotional photo card pushed to members (adding one also sends
+ *   every hostel member a notification) */
+export type StudyAbroadItem =
+  | { kind: "country"; id: string; active: boolean; createdAt: string; name: string; flag: string; overview: string; tuition: string; livingCost: string; workRights: string; intakes: string; universities: string; visa: string; ielts: string; image?: string }
+  | { kind: "scholarship"; id: string; active: boolean; createdAt: string; name: string; country: string; coverage: string; deadline: string; eligibility: string }
+  | { kind: "counsellor"; id: string; active: boolean; createdAt: string; name: string; countries: string; experienceYears: number; phone: string; image?: string }
+  | { kind: "promo"; id: string; active: boolean; createdAt: string; title: string; tagline: string; image?: string }
+  /** A country-tagged article members read from that country's detail view. */
+  | { kind: "blog"; id: string; active: boolean; createdAt: string; title: string; country: string; excerpt: string; body: string; author: string; image?: string };
+
+export type StudyAbroadKind = StudyAbroadItem["kind"];
+export type NewStudyAbroadItem = DistributiveOmit<StudyAbroadItem, "id" | "createdAt" | "active">;
+
+/** A member's "check your eligibility" submission — a study-abroad lead the
+ * Service Manager follows up on (and exports to Excel). */
+export interface StudyLead {
+  id: string;
+  userId: string;
+  name: string;
+  phone: string;
+  email: string;
+  lastAcademic: string;
+  englishTest: string;
+  interestedCountry: string;
+  subjects: string;
+  contacted: boolean;
+  createdAt: string;
+}
+
+export type NewStudyLead = Omit<StudyLead, "id" | "createdAt" | "contacted">;
+
+/** Service-Manager-controlled settings for the promotional carousel on every
+ * member's homepage: which card types appear, how long each slide shows, and
+ * the photo card height in px. */
+export interface HeroPromoSettings {
+  sources: {
+    study: boolean;
+    offers: boolean;
+    grocery: boolean;
+    books: boolean;
+  };
+  /** Seconds each slide stays before auto-advancing (2–15). */
+  intervalSec: number;
+  /** Rendered height of the photo cards in px (120–240). */
+  photoHeightPx: number;
+}

@@ -36,9 +36,9 @@ import { useToast } from "@/components/ui/Toast";
 import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
+import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
-import { formatBDT } from "@/lib/utils/currency";
-import { today, currentMonth, greeting, formatDayMonth, formatMonthLabel } from "@/lib/utils/date";
+import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
 import type { MealSlot } from "@/lib/data";
 
 const QUICK_ACTIONS = [
@@ -81,7 +81,6 @@ export default function StudentHomePage() {
   const myEntry = user && day?.entries[user.id];
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const unread = notifications.some((n) => !n.read);
-  const due = bill ? bill.grandTotal - bill.paid : 0;
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
   const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
@@ -110,45 +109,8 @@ export default function StudentHomePage() {
         </div>
       </div>
 
-      {/* Hero: current bill summary */}
-      <Link href="/student/bill">
-        <div
-          className="rounded-card p-5 text-white"
-          style={{
-            background:
-              "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))",
-          }}
-        >
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-[11.5px] font-bold text-white/80">
-              Current bill · {formatMonthLabel(currentMonth()).split(" ")[0]}
-            </div>
-            <Icon icon={ChevronRight} size={18} />
-          </div>
-          <div className="mb-3 flex items-center gap-2.5">
-            <div className="text-[22px] font-extrabold">{formatBDT(bill?.grandTotal ?? 0)}</div>
-            {due > 0 && (
-              <div className="rounded-pill bg-danger px-2.5 py-1 text-[10px] font-extrabold">
-                {formatBDT(due)} Outstanding
-              </div>
-            )}
-          </div>
-          <div className="flex gap-6 border-t border-white/20 pt-3">
-            <div>
-              <div className="text-[9.5px] font-bold text-white/60">Meals</div>
-              <div className="text-[12.5px] font-extrabold">{bill?.mealsCount ?? "—"}</div>
-            </div>
-            <div>
-              <div className="text-[9.5px] font-bold text-white/60">Meal rate</div>
-              <div className="text-[12.5px] font-extrabold">{formatBDT(hostel?.mealRate ?? 0)}</div>
-            </div>
-            <div>
-              <div className="text-[9.5px] font-bold text-white/60">Paid</div>
-              <div className="text-[12.5px] font-extrabold">{formatBDT(bill?.paid ?? 0)}</div>
-            </div>
-          </div>
-        </div>
-      </Link>
+      {/* Hero: promo slider ⇄ current bill & credit (toggle in the header) */}
+      <HomeHero bill={bill ?? undefined} mealRate={hostel?.mealRate ?? 0} />
 
       {/* Announcements */}
       {announcements.length > 0 && (

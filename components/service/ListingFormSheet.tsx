@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { repo, type NewServiceListing, type ServiceKind } from "@/lib/data";
+import { repo, type NewServiceListing, type ServiceKind, type ServiceListing } from "@/lib/data";
 
 type Field = { name: string; label: string; type: "text" | "number" | "list" };
 
@@ -50,15 +50,6 @@ const KIND_FIELDS: Record<ServiceKind, Field[]> = {
     { name: "amenities", label: "Amenities (comma separated)", type: "list" },
     { name: "phone", label: "Phone", type: "text" },
   ],
-  studyabroad: [
-    { name: "agency", label: "Agency / consultancy", type: "text" },
-    { name: "country", label: "Destination country", type: "text" },
-    { name: "services", label: "Services offered", type: "text" },
-    { name: "intake", label: "Intake", type: "text" },
-    { name: "consultationFee", label: "Consultation fee", type: "text" },
-    { name: "rating", label: "Rating (0–5)", type: "number" },
-    { name: "phone", label: "Phone", type: "text" },
-  ],
 };
 
 const KIND_LABEL: Record<ServiceKind, string> = {
@@ -67,25 +58,42 @@ const KIND_LABEL: Record<ServiceKind, string> = {
   course: "course",
   offer: "offer",
   hostel: "hostel listing",
-  studyabroad: "study abroad agency",
 };
 
+/** Add a catalog listing of `kind`, or edit an existing one when `listing`
+ * is passed (fields come prefilled and a Remove action appears). */
 export function ListingFormSheet({
   open,
   onClose,
   kind,
+  listing,
 }: {
   open: boolean;
   onClose: () => void;
   kind: ServiceKind;
+  listing?: ServiceListing | null;
 }) {
   const { toast } = useToast();
+  const editing = !!listing;
   const fields = KIND_FIELDS[kind];
   const [values, setValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (open) queueMicrotask(() => setValues({}));
-  }, [open, kind]);
+    if (!open) return;
+    queueMicrotask(() => {
+      if (!listing) {
+        setValues({});
+        return;
+      }
+      // Prefill from the listing: join list fields, stringify numbers.
+      const next: Record<string, string> = {};
+      for (const f of KIND_FIELDS[listing.kind]) {
+        const v = (listing as unknown as Record<string, unknown>)[f.name];
+        next[f.name] = Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v);
+      }
+      setValues(next);
+    });
+  }, [open, kind, listing]);
 
   const set = (name: string, v: string) => setValues((prev) => ({ ...prev, [name]: v }));
 
@@ -105,14 +113,17 @@ export function ListingFormSheet({
       payload = { kind, title: v("title"), provider: v("provider"), category: v("category"), level: v("level"), duration: v("duration"), price: v("price") };
     } else if (kind === "offer") {
       payload = { kind, shop: v("shop"), title: v("title"), discount: v("discount"), code: v("code"), expires: v("expires"), category: v("category") };
-    } else if (kind === "hostel") {
-      payload = { kind, name: v("name"), area: v("area"), seatRentFrom: num("seatRentFrom"), seatsAvailable: num("seatsAvailable"), rating: num("rating"), amenities: list("amenities"), phone: v("phone") };
     } else {
-      payload = { kind, agency: v("agency"), country: v("country"), services: v("services"), intake: v("intake"), consultationFee: v("consultationFee"), rating: num("rating"), phone: v("phone") };
+      payload = { kind, name: v("name"), area: v("area"), seatRentFrom: num("seatRentFrom"), seatsAvailable: num("seatsAvailable"), rating: num("rating"), amenities: list("amenities"), phone: v("phone") };
     }
 
-    await repo.serviceCatalog.add(payload);
-    toast(`Added ${KIND_LABEL[kind]}`);
+    if (editing && listing) {
+      await repo.serviceCatalog.update(listing.id, payload);
+      toast("Listing updated");
+    } else {
+      await repo.serviceCatalog.add(payload);
+      toast(`Added ${KIND_LABEL[kind]}`);
+    }
     onClose();
   };
 
@@ -120,7 +131,7 @@ export function ListingFormSheet({
   const canSubmit = !!values[firstRequired]?.trim();
 
   return (
-    <Sheet open={open} onClose={onClose} title={`Add ${KIND_LABEL[kind]}`}>
+    <Sheet open={open} onClose={onClose} title={editing ? `Edit ${KIND_LABEL[kind]}` : `Add ${KIND_LABEL[kind]}`}>
       <div className="flex flex-col gap-3">
         {fields.map((f) => (
           <label key={f.name}>
@@ -135,8 +146,22 @@ export function ListingFormSheet({
         ))}
       </div>
       <Button fullWidth onClick={submit} disabled={!canSubmit} className="mt-4">
-        Add to catalog
+        {editing ? "Save changes" : "Add to catalog"}
       </Button>
+      {editing && listing && (
+        <Button
+          fullWidth
+          variant="danger"
+          className="mt-2"
+          onClick={async () => {
+            await repo.serviceCatalog.remove(listing.id);
+            toast("Listing removed");
+            onClose();
+          }}
+        >
+          Remove listing
+        </Button>
+      )}
     </Sheet>
   );
 }

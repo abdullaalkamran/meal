@@ -23,6 +23,7 @@ import type {
   Room,
   ServiceListing,
   ShoppingCost,
+  StudyAbroadItem,
   UsedBookListing,
   User,
 } from "../types";
@@ -37,7 +38,11 @@ import {
   JOBS,
   NEW_BOOKS_SEED,
   OFFERS,
-  STUDY_ABROAD,
+  STUDY_BLOGS,
+  STUDY_COUNSELLORS,
+  STUDY_COUNTRIES,
+  STUDY_PROMOS,
+  STUDY_SCHOLARSHIPS,
 } from "../../explore/content";
 
 const T = today();
@@ -129,6 +134,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_bright",
       name: "Rashed Karim",
       phone: "01711-000002",
+      email: "rashed.karim@gmail.com",
       role: "manager",
       roomId: "room_bright_202",
       avatarSeed: "manager-rashed",
@@ -138,6 +144,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_green",
       name: "Nusrat Jahan",
       phone: "01711-000003",
+      email: "nusrat.jahan@gmail.com",
       role: "manager",
       roomId: "room_green_g2",
       avatarSeed: "manager-nusrat",
@@ -163,6 +170,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_bright",
       name: "Karim Rahman",
       phone: "01711-000006",
+      email: "karim.rahman@gmail.com",
       role: "student",
       roomId: "room_bright_101",
       avatarSeed: "student-karim",
@@ -177,6 +185,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_bright",
       name: "Fahim Chowdhury",
       phone: "01711-000007",
+      email: "fahim.chy@gmail.com",
       role: "student",
       roomId: "room_bright_101",
       avatarSeed: "student-fahim",
@@ -190,6 +199,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_bright",
       name: "Tanvir Ahmed",
       phone: "01711-000008",
+      email: "tanvir.ahmed@gmail.com",
       role: "student",
       roomId: "room_bright_103",
       avatarSeed: "student-tanvir",
@@ -202,6 +212,7 @@ export function buildSeed(): Tables {
       hostelId: "hostel_green",
       name: "Nabila Islam",
       phone: "01711-000009",
+      email: "nabila.islam@gmail.com",
       role: "student",
       roomId: "room_green_g1",
       avatarSeed: "student-nabila",
@@ -710,7 +721,15 @@ export function buildSeed(): Tables {
     ...COURSES.map((c) => ({ kind: "course" as const, id: c.id, active: true, createdAt: T, title: c.title, provider: c.provider, category: c.category, level: c.level, duration: c.duration, price: c.price })),
     ...OFFERS.map((o) => ({ kind: "offer" as const, id: o.id, active: true, createdAt: T, shop: o.shop, title: o.title, discount: o.discount, code: o.code, expires: o.expires, category: o.category })),
     ...EXTRA_HOSTELS.map((h) => ({ kind: "hostel" as const, id: h.id, active: true, createdAt: T, name: h.name, area: h.area, seatRentFrom: h.seatRentFrom, seatsAvailable: h.seatsAvailable, rating: h.rating, amenities: h.amenities, phone: h.phone })),
-    ...STUDY_ABROAD.map((s) => ({ kind: "studyabroad" as const, id: s.id, active: true, createdAt: T, agency: s.agency, country: s.country, services: s.services, intake: s.intake, consultationFee: s.consultationFee, rating: s.rating, phone: s.phone })),
+  ];
+
+  // Study abroad hub — countries, scholarships, counsellors, and promo cards.
+  const studyAbroadItems: StudyAbroadItem[] = [
+    ...STUDY_COUNTRIES.map((c) => ({ kind: "country" as const, id: c.id, active: true, createdAt: T, name: c.name, flag: c.flag, overview: c.overview, tuition: c.tuition, livingCost: c.livingCost, workRights: c.workRights, intakes: c.intakes, universities: c.universities, visa: c.visa, ielts: c.ielts })),
+    ...STUDY_SCHOLARSHIPS.map((s) => ({ kind: "scholarship" as const, id: s.id, active: true, createdAt: T, name: s.name, country: s.country, coverage: s.coverage, deadline: s.deadline, eligibility: s.eligibility })),
+    ...STUDY_COUNSELLORS.map((c) => ({ kind: "counsellor" as const, id: c.id, active: true, createdAt: T, name: c.name, countries: c.countries, experienceYears: c.experienceYears, phone: c.phone })),
+    ...STUDY_PROMOS.map((p) => ({ kind: "promo" as const, id: p.id, active: true, createdAt: T, title: p.title, tagline: p.tagline })),
+    ...STUDY_BLOGS.map((b) => ({ kind: "blog" as const, id: b.id, active: true, createdAt: T, title: b.title, country: b.country, excerpt: b.excerpt, body: b.body, author: b.author })),
   ];
 
   const campaigns: Campaign[] = [
@@ -805,5 +824,12 @@ export function buildSeed(): Tables {
     cartItems: [],
     orders: [],
     usedBookListings,
+    studyAbroadItems,
+    studyLeads: [],
+    heroPromoSettings: {
+      sources: { study: true, offers: true, grocery: true, books: true },
+      intervalSec: 4,
+      photoHeightPx: 150,
+    },
   };
 }

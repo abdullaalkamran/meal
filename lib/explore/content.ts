@@ -131,17 +131,6 @@ export const OFFERS: Offer[] = [
   { id: "of_5", shop: "Rokomari", title: "Buy 2 books get 1 free", discount: "B2G1", code: "READMORE", expires: "10 Sep", category: "Books" },
 ];
 
-export interface StudyAbroadListing {
-  id: string;
-  agency: string;
-  country: string;
-  services: string;
-  intake: string;
-  consultationFee: string;
-  rating: number;
-  phone: string;
-}
-
 // ── Store taxonomy + seed inventory (grocery + books) ──────────────────────
 
 export const GROCERY_CATEGORIES = [
@@ -211,10 +200,77 @@ export const NEW_BOOKS_SEED = [
   { id: "nb_6", name: "Class 5 Amar Bangla Boi", author: "NCTB", price: 120, category: "Academic / Textbook", academicClass: "Class 5" },
 ];
 
-export const STUDY_ABROAD: StudyAbroadListing[] = [
-  { id: "sa_1", agency: "Global Reach Education", country: "United Kingdom", services: "Admission · IELTS · Visa · Scholarship", intake: "Sep 2026 / Jan 2027", consultationFee: "Free consultation", rating: 4.7, phone: "01714-300400" },
-  { id: "sa_2", agency: "Maple Leaf Consultancy", country: "Canada", services: "SDS Visa · Admission · Bank statement guide", intake: "Fall 2026", consultationFee: "৳3,000", rating: 4.5, phone: "01714-300401" },
-  { id: "sa_3", agency: "Kangaroo Overseas", country: "Australia", services: "Admission · GTE · Visa · Post-study work", intake: "Feb / Jul 2027", consultationFee: "Free consultation", rating: 4.4, phone: "01714-300402" },
-  { id: "sa_4", agency: "Deutschland Study Point", country: "Germany", services: "Public universities · APS · Blocked account · German A1", intake: "Winter 2026", consultationFee: "৳5,000", rating: 4.6, phone: "01714-300403" },
-  { id: "sa_5", agency: "USA Dream Advisors", country: "United States", services: "Admission · SAT/GRE · F-1 Visa · Scholarship", intake: "Fall 2026 / Spring 2027", consultationFee: "৳4,000", rating: 4.3, phone: "01714-300404" },
+// ── Study abroad hub seeds (countries, scholarships, counsellors, promos) ──
+
+export const STUDY_COUNTRIES = [
+  { id: "sc_uk", name: "United Kingdom", flag: "🇬🇧", overview: "1-year master's degrees, strong scholarships, and a 2-year post-study work visa.", tuition: "£14,000–25,000/yr", livingCost: "£900–1,300/mo", workRights: "20 hrs/week + 2-yr Graduate Route", intakes: "Sep · Jan", universities: "Oxford · Manchester · Coventry · UEL · Greenwich", visa: "Student visa: CAS letter, ~£13,000 maintenance funds shown for 28 days, TB test", ielts: "IELTS 6.0–6.5 (many accept MOI from private universities)" },
+  { id: "sc_ca", name: "Canada", flag: "🇨🇦", overview: "Affordable tuition, co-op programs, and one of the clearest paths to permanent residency.", tuition: "CA$15,000–30,000/yr", livingCost: "CA$1,000–1,500/mo", workRights: "24 hrs/week + up to 3-yr PGWP", intakes: "Sep · Jan · May", universities: "Toronto · UBC · Windsor · Manitoba · Conestoga", visa: "Study permit: LOA, GIC CA$20,635, proof of first-year tuition", ielts: "IELTS 6.0–6.5 (SDS stream needs 6.0 in each band)" },
+  { id: "sc_au", name: "Australia", flag: "🇦🇺", overview: "High-ranked universities, a big Bangladeshi student community, and generous work rights.", tuition: "AU$20,000–35,000/yr", livingCost: "AU$1,400–1,800/mo", workRights: "48 hrs/fortnight + 2–4-yr post-study", intakes: "Feb · Jul", universities: "Melbourne · Monash · UNSW · Deakin · Wollongong", visa: "Subclass 500: GTE statement, OSHC health cover, ~AU$29,700 funds", ielts: "IELTS 6.0–6.5 (some accept PTE 50+)" },
+  { id: "sc_de", name: "Germany", flag: "🇩🇪", overview: "Public universities charge little or no tuition — you mainly budget the blocked account.", tuition: "€0–1,500/yr (public)", livingCost: "€850–1,100/mo", workRights: "120 full days/yr + 18-mo job-seeker visa", intakes: "Oct · Apr", universities: "TU Munich · RWTH Aachen · TU Berlin · Stuttgart · Magdeburg", visa: "National visa: APS certificate, blocked account €11,904/yr, admission letter", ielts: "IELTS 6.0–6.5 for English programs · German B2 for German-taught" },
+  { id: "sc_us", name: "United States", flag: "🇺🇸", overview: "The widest university choice — STEM assistantships can cover tuition and living fully.", tuition: "US$20,000–45,000/yr", livingCost: "US$1,000–1,800/mo", workRights: "On-campus 20 hrs/week + OPT/STEM-OPT", intakes: "Fall · Spring", universities: "ASU · UT Arlington · NEU · Wichita State · Troy", visa: "F-1 visa: I-20, SEVIS fee, embassy interview, ~1 year of funds shown", ielts: "IELTS 6.5+ / TOEFL 80+ · GRE for many STEM master's" },
+];
+
+/** Country-tagged articles shown inside each country's detail view. Paragraphs
+ * separated by blank lines. */
+export const STUDY_BLOGS = [
+  {
+    id: "blog_uk_apply",
+    title: "How to apply to UK universities from Bangladesh",
+    country: "United Kingdom",
+    excerpt: "From choosing a course to getting your CAS — the whole journey in 6 steps.",
+    author: "Sadia Rahman",
+    body: "Start 8–10 months before your target intake. Shortlist 5–6 universities that match your CGPA and budget — league tables matter less than course content and city living costs.\n\nApply directly on university portals or through UCAS for undergrad. Most master's applications are free and need your transcripts, two references, an SOP, and your passport.\n\nOnce you get a conditional offer, meet the conditions (usually IELTS) and pay the deposit to receive your CAS. With the CAS you can book your visa appointment.\n\nFor the visa you must show 28-day-old maintenance funds — roughly the first year's tuition balance plus £9,207–£13,347 living costs depending on city.\n\nFinal tip: apply for Chevening or Commonwealth in parallel. The deadlines come earlier than university deadlines, so plan both timelines together.",
+  },
+  {
+    id: "blog_uk_cost",
+    title: "Real monthly budget of a Bangladeshi student in the UK",
+    country: "United Kingdom",
+    excerpt: "What London vs. smaller cities actually costs once you land.",
+    author: "Sadia Rahman",
+    body: "Outside London you can live on £800–1,000 a month: £450–550 for a room, £150 groceries, £60 transport, and the rest for phone, utilities, and occasional travel.\n\nLondon pushes rent alone to £700–900, which is why most students on a budget pick Midlands or northern cities.\n\nPart-time work at 20 hrs/week on minimum wage brings in roughly £900/month before tax — enough to cover living costs in most cities, but never count on it for tuition.\n\nOpen a student bank account in the first month and always pay rent through bank transfer — you will need the statements for future visa extensions.",
+  },
+  {
+    id: "blog_de_blocked",
+    title: "Germany's blocked account, explained simply",
+    country: "Germany",
+    excerpt: "What the Sperrkonto is, how much to load, and how you get the money back.",
+    author: "Farid Hossain",
+    body: "A blocked account (Sperrkonto) is a special bank account where you deposit one year of living costs — currently €11,904 — before applying for your German student visa.\n\nThe money stays yours. After you arrive and register, the bank releases €992 to you every month. It is proof of funds, not a fee.\n\nUse providers like Expatrio, Fintiba, or Coracle — they open the account online from Bangladesh in a few days and bundle health insurance, which the visa also requires.\n\nRemember the APS certificate is mandatory for Bangladeshi applicants since 2023 — book it before anything else, as verification can take 2–3 months.",
+  },
+  {
+    id: "blog_ca_sds",
+    title: "Canada SDS vs regular stream — which should you pick?",
+    country: "Canada",
+    excerpt: "SDS is faster but stricter. Here's how to decide in 5 minutes.",
+    author: "Nusrat Sharmin",
+    body: "SDS (Student Direct Stream) processes most study permits in about 4–6 weeks, versus 3+ months in the regular stream. But it demands IELTS 6.0 in every band and a CA$20,635 GIC.\n\nIf one IELTS band dipped to 5.5, you can still apply through the regular stream with stronger financial documents — bank statements, sponsor letters, and property papers.\n\nEither way, your Letter of Acceptance must come from a DLI (Designated Learning Institute) that is PGWP-eligible — always verify this list before paying any deposit.\n\nPay first-year tuition upfront if you can. It is the single strongest signal in a Canadian study permit file.",
+  },
+  {
+    id: "blog_au_gte",
+    title: "Writing a GTE statement that gets approved",
+    country: "Australia",
+    excerpt: "The GTE is where most Australian visa refusals happen. Avoid the traps.",
+    author: "Tanim Ahmed",
+    body: "The Genuine Temporary Entrant statement is a short essay explaining why you chose Australia, your course, and how it fits your career plan back home.\n\nBe specific: name the subjects in the course, compare it with local options in Bangladesh, and connect it to a realistic job outcome. Generic praise about 'world-class education' reads as template writing.\n\nExplain every gap in your study history honestly — a documented job or family reason is fine; an unexplained gap is a red flag.\n\nNever copy a sample from Facebook groups. Case officers see the same recycled paragraphs daily, and similarity alone can sink an otherwise strong file.",
+  },
+];
+
+export const STUDY_SCHOLARSHIPS = [
+  { id: "sch_chev", name: "Chevening Scholarship", country: "United Kingdom", coverage: "Full — tuition, living, flights", deadline: "Nov 2026", eligibility: "Bachelor's + 2 yrs work experience" },
+  { id: "sch_comm", name: "Commonwealth Master's", country: "United Kingdom", coverage: "Full — tuition, stipend, airfare", deadline: "Dec 2026", eligibility: "First-class bachelor's, development subject" },
+  { id: "sch_daad", name: "DAAD EPOS", country: "Germany", coverage: "Full — tuition + €992/mo stipend", deadline: "Oct 2026", eligibility: "Bachelor's + 2 yrs work experience" },
+  { id: "sch_aus", name: "Australia Awards", country: "Australia", coverage: "Full — tuition, living, health cover", deadline: "Apr 2027", eligibility: "Bangladeshi citizens, development sectors" },
+  { id: "sch_fulb", name: "Fulbright Foreign Student", country: "United States", coverage: "Full — tuition, stipend, insurance", deadline: "May 2027", eligibility: "Bachelor's, strong academics & leadership" },
+];
+
+export const STUDY_COUNSELLORS = [
+  { id: "cns_1", name: "Sadia Rahman", countries: "UK · Canada", experienceYears: 8, phone: "01714-300500" },
+  { id: "cns_2", name: "Tanim Ahmed", countries: "Australia · New Zealand", experienceYears: 6, phone: "01714-300501" },
+  { id: "cns_3", name: "Farid Hossain", countries: "Germany · Europe", experienceYears: 10, phone: "01714-300502" },
+  { id: "cns_4", name: "Nusrat Sharmin", countries: "USA · Canada", experienceYears: 7, phone: "01714-300503" },
+];
+
+export const STUDY_PROMOS = [
+  { id: "pr_1", title: "Fall 2026 UK intake is open", tagline: "Free profile assessment with our UK counsellor this week — call now." },
+  { id: "pr_2", title: "Study in Germany for free", tagline: "Public universities, no tuition fees. Join Saturday's online session." },
 ];

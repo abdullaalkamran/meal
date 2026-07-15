@@ -22,6 +22,7 @@ export type IconKey =
   | "catalog"
   | "community"
   | "store"
+  | "studyabroad"
   | "settings";
 
 export interface NavItem {
@@ -74,6 +75,7 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/service", label: "Catalog", iconKey: "catalog" },
     { href: "/service/store", label: "Store", iconKey: "store" },
     { href: "/service/orders", label: "Orders", iconKey: "bill" },
+    { href: "/service/study-abroad", label: "Study", iconKey: "studyabroad" },
     { href: "/service/community", label: "Community", iconKey: "community" },
   ],
 };

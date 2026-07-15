@@ -21,18 +21,21 @@ import type {
   OrderRepository,
   CartRepository,
   ProductRepository,
+  PromoSettingsRepository,
   RatingRepository,
   Repositories,
   RoomRepository,
   ServiceCatalogRepository,
   ShoppingCostRepository,
   ShortageRepository,
+  StudyAbroadRepository,
+  StudyLeadRepository,
   SwapRepository,
   TransferRepository,
   UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem } from "../types";
 import { currentMonth, formatShortDate } from "../../utils/date";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { deliveryFeeFor } from "../../utils/store";
@@ -1560,6 +1563,111 @@ const orders: OrderRepository = {
   },
 };
 
+const studyAbroad: StudyAbroadRepository = {
+  async listAll() {
+    return [...store.data.studyAbroadItems];
+  },
+  async add(item) {
+    const created = {
+      ...item,
+      id: nextId("study"),
+      active: true,
+      createdAt: new Date().toISOString(),
+    } as StudyAbroadItem;
+    store.data.studyAbroadItems.push(created);
+    // Publishing a promo card doubles as a push to members: every hostel
+    // member gets a notification pointing them at the study-abroad hub.
+    if (created.kind === "promo") {
+      const now = new Date().toISOString();
+      for (const u of store.data.users) {
+        if (!isHostelMember(u.role)) continue;
+        store.data.notifications.push({
+          id: nextId("notif"),
+          userId: u.id,
+          title: `Study abroad: ${created.title}`,
+          body: `${created.tagline} — see Explore → Study Abroad.`,
+          read: false,
+          createdAt: now,
+        });
+        store.emit(`notifications:${u.id}`);
+      }
+    }
+    store.emit("studyAbroad");
+  },
+  async update(id, patch) {
+    const idx = store.data.studyAbroadItems.findIndex((i) => i.id === id);
+    if (idx === -1) return;
+    store.data.studyAbroadItems[idx] = { ...store.data.studyAbroadItems[idx], ...patch } as StudyAbroadItem;
+    store.emit("studyAbroad");
+  },
+  async toggleActive(id) {
+    const idx = store.data.studyAbroadItems.findIndex((i) => i.id === id);
+    if (idx === -1) return;
+    const item = store.data.studyAbroadItems[idx];
+    store.data.studyAbroadItems[idx] = { ...item, active: !item.active };
+    store.emit("studyAbroad");
+  },
+  async remove(id) {
+    store.data.studyAbroadItems = store.data.studyAbroadItems.filter((i) => i.id !== id);
+    store.emit("studyAbroad");
+  },
+  subscribe(cb) {
+    const fire = () => cb([...store.data.studyAbroadItems]);
+    fire();
+    return store.on("studyAbroad", fire);
+  },
+};
+
+const promoSettings: PromoSettingsRepository = {
+  async get() {
+    return { ...store.data.heroPromoSettings };
+  },
+  async update(patch) {
+    store.data.heroPromoSettings = {
+      ...store.data.heroPromoSettings,
+      ...patch,
+      sources: { ...store.data.heroPromoSettings.sources, ...patch.sources },
+    };
+    store.emit("promoSettings");
+  },
+  subscribe(cb) {
+    const fire = () => cb({ ...store.data.heroPromoSettings });
+    fire();
+    return store.on("promoSettings", fire);
+  },
+};
+
+const studyLeads: StudyLeadRepository = {
+  async listAll() {
+    return [...store.data.studyLeads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async add(lead) {
+    store.data.studyLeads.push({
+      ...lead,
+      id: nextId("lead"),
+      contacted: false,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit("studyLeads");
+  },
+  async setContacted(id, contacted) {
+    const idx = store.data.studyLeads.findIndex((l) => l.id === id);
+    if (idx === -1) return;
+    store.data.studyLeads[idx] = { ...store.data.studyLeads[idx], contacted };
+    store.emit("studyLeads");
+  },
+  async remove(id) {
+    store.data.studyLeads = store.data.studyLeads.filter((l) => l.id !== id);
+    store.emit("studyLeads");
+  },
+  subscribe(cb) {
+    const fire = () =>
+      cb([...store.data.studyLeads].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("studyLeads", fire);
+  },
+};
+
 const usedBooks: UsedBookRepository = {
   async listAll() {
     return [...store.data.usedBookListings].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1616,4 +1724,7 @@ export const mockRepositories: Repositories = {
   cart,
   orders,
   usedBooks,
+  studyAbroad,
+  studyLeads,
+  promoSettings,
 };

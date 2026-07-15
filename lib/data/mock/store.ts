@@ -19,6 +19,7 @@ import type {
   Expense,
   ExploreInteraction,
   GuestMealRequest,
+  HeroPromoSettings,
   Hostel,
   HostelTransferRequest,
   JoinRequest,
@@ -39,6 +40,8 @@ import type {
   ServiceListing,
   ShoppingCost,
   ShortageRequest,
+  StudyAbroadItem,
+  StudyLead,
   SwapRequest,
   UsedBookListing,
   User,
@@ -82,10 +85,13 @@ export interface Tables {
   cartItems: CartItem[];
   orders: Order[];
   usedBookListings: UsedBookListing[];
+  studyAbroadItems: StudyAbroadItem[];
+  studyLeads: StudyLead[];
+  heroPromoSettings: HeroPromoSettings;
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 26;
 
 interface Persisted {
   version: number;

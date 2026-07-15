@@ -8,6 +8,7 @@ import {
   MessagesSquare,
   Megaphone,
   Package,
+  Plane,
   Receipt,
   Settings,
   ShoppingBag,
@@ -43,5 +44,6 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   catalog: Package,
   community: MessagesSquare,
   store: ShoppingBag,
+  studyabroad: Plane,
   settings: Settings,
 };

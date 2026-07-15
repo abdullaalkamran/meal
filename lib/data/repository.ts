@@ -21,6 +21,7 @@ import type {
   Expense,
   ExploreInteraction,
   GuestMealRequest,
+  HeroPromoSettings,
   Hostel,
   HostelTransferRequest,
   JoinRequest,
@@ -49,6 +50,10 @@ import type {
   ShoppingCost,
   ShortageRequest,
   Stars,
+  NewStudyAbroadItem,
+  NewStudyLead,
+  StudyAbroadItem,
+  StudyLead,
   SwapRequest,
   UsedBookListing,
   User,
@@ -378,6 +383,32 @@ export interface OrderRepository {
   subscribeAll(cb: (list: Order[]) => void): Unsubscribe;
 }
 
+export interface StudyAbroadRepository {
+  listAll(): Promise<StudyAbroadItem[]>;
+  /** Adds an item. Adding a PROMO also sends every hostel member a
+   * notification — the promotional photo card push. */
+  add(item: NewStudyAbroadItem): Promise<void>;
+  update(id: string, patch: Partial<StudyAbroadItem>): Promise<void>;
+  toggleActive(id: string): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: StudyAbroadItem[]) => void): Unsubscribe;
+}
+
+export interface PromoSettingsRepository {
+  get(): Promise<HeroPromoSettings>;
+  update(patch: Partial<HeroPromoSettings>): Promise<void>;
+  subscribe(cb: (settings: HeroPromoSettings) => void): Unsubscribe;
+}
+
+export interface StudyLeadRepository {
+  listAll(): Promise<StudyLead[]>;
+  /** Member submits the "check your eligibility" form. */
+  add(lead: NewStudyLead): Promise<void>;
+  setContacted(id: string, contacted: boolean): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: StudyLead[]) => void): Unsubscribe;
+}
+
 export interface UsedBookRepository {
   listAll(): Promise<UsedBookListing[]>;
   add(book: NewUsedBook): Promise<void>;
@@ -418,4 +449,7 @@ export interface Repositories {
   cart: CartRepository;
   orders: OrderRepository;
   usedBooks: UsedBookRepository;
+  studyAbroad: StudyAbroadRepository;
+  studyLeads: StudyLeadRepository;
+  promoSettings: PromoSettingsRepository;
 }
