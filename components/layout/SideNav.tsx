@@ -4,16 +4,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import { NAV_ICONS } from "./navIcons";
+import { useVisibleNavItems } from "./useVisibleNavItems";
 import type { NavItem } from "./navItems";
 
 export function SideNav({ items, title }: { items: NavItem[]; title: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const visible = useVisibleNavItems(items);
 
   return (
     <nav className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-1 border-r border-border bg-card p-4 md:flex">
       <div className="mb-4 px-2 text-[16px] font-extrabold tracking-tight">{title}</div>
-      {items.map((item) => {
+      {visible.map((item) => {
         const active = pathname === item.href;
         return (
           <button

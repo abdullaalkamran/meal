@@ -16,6 +16,7 @@ import { Icon } from "@/components/ui/Icon";
 import { repo, type Bill, type BillTarget, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
 const TARGET_LABEL: Record<BillTarget, string> = {
   previousBalance: "Previous balance",
@@ -25,7 +26,7 @@ const TARGET_LABEL: Record<BillTarget, string> = {
   cookSalary: "Cook salary",
 };
 
-export default function ManagerApprovalsPage() {
+function ManagerApprovalsPage() {
   const { user, hostel, activeHostelId } = useSession();
   const users = useUsers(activeHostelId);
   const mealStops = useMealStops(activeHostelId).filter((r) => r.status === "pending");
@@ -314,5 +315,14 @@ export default function ManagerApprovalsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "approvals" flag.
+export default function GatedManagerApprovalsPage() {
+  return (
+    <PermissionGate permission="approvals" label="The approvals inbox">
+      <ManagerApprovalsPage />
+    </PermissionGate>
   );
 }

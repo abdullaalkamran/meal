@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import { useToast } from "@/components/ui/Toast";
@@ -9,15 +10,16 @@ import { Button } from "@/components/ui/Button";
 import { repo, type HostelTransferRequest, type User } from "@/lib/data";
 
 const OWNER_ROWS = [
-  "Managers & cooks",
-  "Roles & permissions",
-  "Hostel settings",
-  "Finance settings",
-  "Monthly closing",
-  "Backup & activity logs",
-];
+  { label: "Manager permissions", href: "/owner/hostels" },
+  { label: "Manage a hostel", href: "/owner/hostels" },
+  { label: "Duty rotations", href: "/owner/duties" },
+  { label: "Managers & cooks", href: null },
+  { label: "Finance settings", href: null },
+  { label: "Backup & activity logs", href: null },
+] as const;
 
 export default function OwnerMorePage() {
+  const router = useRouter();
   const { user } = useSession();
   const hostels = useHostelsByOwner(user?.id);
   const { toast } = useToast();
@@ -87,12 +89,14 @@ export default function OwnerMorePage() {
         <div className="flex flex-col">
           {OWNER_ROWS.map((row) => (
             <button
-              key={row}
+              key={row.label}
               type="button"
-              onClick={() => toast(`${row} — coming in a later build phase`)}
+              onClick={() =>
+                row.href ? router.push(row.href) : toast(`${row.label} — coming in a later build phase`)
+              }
               className="flex min-h-12 cursor-pointer items-center border-b border-border text-left text-[12px] font-bold last:border-b-0"
             >
-              {row}
+              {row.label}
             </button>
           ))}
         </div>

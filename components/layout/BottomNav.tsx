@@ -4,15 +4,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import { NAV_ICONS } from "./navIcons";
+import { useVisibleNavItems } from "./useVisibleNavItems";
 import type { NavItem } from "./navItems";
 
 export function BottomNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
   const router = useRouter();
+  const visible = useVisibleNavItems(items);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-nav-bg px-2 pb-7 pt-2 backdrop-blur-lg md:hidden">
-      {items.map((item) => {
+      {visible.map((item) => {
         const active = pathname === item.href;
         return (
           <button

@@ -30,6 +30,7 @@ import { MoveMemberSheet } from "@/components/manager/MoveMemberSheet";
 import { repo, type Bill, type BillSection, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, formatShortDate, lastDayOfMonth } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
 const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun }> = {
   mealCost: { label: "Meal cost", icon: Sun },
@@ -38,7 +39,7 @@ const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof S
   cookSalary: { label: "Cook salary", icon: ChefHat },
 };
 
-export default function MemberProfilePage() {
+function MemberProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { activeHostelId } = useSession();
@@ -416,5 +417,14 @@ export default function MemberProfilePage() {
       <RateMemberSheet open={rateOpen} onClose={() => setRateOpen(false)} member={member} />
       <MoveMemberSheet open={moveOpen} onClose={() => setMoveOpen(false)} member={member} />
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "members" flag.
+export default function GatedMemberProfilePage() {
+  return (
+    <PermissionGate permission="members" label="Member management">
+      <MemberProfilePage />
+    </PermissionGate>
   );
 }

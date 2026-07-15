@@ -4,6 +4,7 @@ import {
   Building2,
   CheckCircle2,
   ChefHat,
+  ClipboardList,
   LayoutDashboard,
   MessagesSquare,
   Megaphone,
@@ -45,5 +46,6 @@ export const NAV_ICONS: Record<IconKey, LucideIcon> = {
   community: MessagesSquare,
   store: ShoppingBag,
   studyabroad: Plane,
+  duties: ClipboardList,
   settings: Settings,
 };

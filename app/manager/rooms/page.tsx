@@ -15,8 +15,9 @@ import { MoveMemberSheet } from "@/components/manager/MoveMemberSheet";
 import { AssignRoomSheet } from "@/components/manager/AssignRoomSheet";
 import { repo, type Room, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
-export default function ManagerRoomsPage() {
+function ManagerRoomsPage() {
   const { activeHostelId, hostel } = useSession();
   const users = useUsers(activeHostelId);
   const rooms = useRooms(activeHostelId);
@@ -187,5 +188,14 @@ export default function ManagerRoomsPage() {
         room={assignRoom}
       />
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "rooms" flag.
+export default function GatedManagerRoomsPage() {
+  return (
+    <PermissionGate permission="rooms" label="Room management">
+      <ManagerRoomsPage />
+    </PermissionGate>
   );
 }

@@ -48,11 +48,34 @@ export interface Room {
   facilities?: string[];
 }
 
+/** What the hostel's MANAGER is allowed to do — set by the owner per hostel.
+ * Missing object or missing key means allowed (defaults are permissive).
+ * Owners themselves always bypass these flags. */
+export interface ManagerPermissions {
+  /** Room management (add/edit rooms, move/vacate members). */
+  rooms: boolean;
+  /** Member roster: join requests, ban/remove, member detail. */
+  members: boolean;
+  /** Approvals inbox (meal stops, guest meals, cook leave, transfers, payments). */
+  approvals: boolean;
+  /** Finance page: recording/removing expenses. */
+  finance: boolean;
+  /** Generating monthly bills. */
+  billing: boolean;
+  /** Editing the day's menu. */
+  menu: boolean;
+  /** Creating shopping/cleaning duty rotations. */
+  duties: boolean;
+  /** Posting announcements. */
+  announcements: boolean;
+}
+
 export interface HostelSettings {
   mealCutoff: { meal: MealSlot; time: string }[];
   guestMealPrice: number;
   mealStopRequiresApproval: boolean;
   shoppingRotationPolicy: "spin-wheel" | "manual";
+  managerPermissions?: ManagerPermissions;
 }
 
 export interface Hostel {

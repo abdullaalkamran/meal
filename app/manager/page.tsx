@@ -26,6 +26,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
+import { hasManagerPermission, type ManagerPermissionKey } from "@/lib/auth/permissions";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useCookLeaveRequests } from "@/hooks/useCookLeaveRequests";
 import { useMealStops } from "@/hooks/useMealStops";
@@ -87,8 +88,23 @@ const QUICK_ACTIONS = [
   { key: "community", label: "Hostel community", icon: MessagesSquare, tone: "bg-primary-soft text-primary", href: "/explore/community" },
 ] as const;
 
+// Quick actions that need an owner-granted permission when the viewer is a
+// real manager (owners in manage mode always see everything).
+const ACTION_PERMISSION: Partial<Record<(typeof QUICK_ACTIONS)[number]["key"], ManagerPermissionKey>> = {
+  expense: "finance",
+  announce: "announcements",
+  menu: "menu",
+  bills: "billing",
+  shopDuty: "duties",
+  cleanDuty: "duties",
+};
+
 export default function ManagerDashboardPage() {
   const { user, hostel, activeHostelId, setViewRole } = useSession();
+  const visibleActions = QUICK_ACTIONS.filter((a) => {
+    const permission = ACTION_PERMISSION[a.key];
+    return !permission || hasManagerPermission(user, hostel, permission);
+  });
   const { day } = useMealDay(activeHostelId, today());
   const cookLeaveRequests = useCookLeaveRequests(activeHostelId);
   const mealStops = useMealStops(activeHostelId);
@@ -358,7 +374,7 @@ export default function ManagerDashboardPage() {
       <div>
         <div className="mb-2 text-[13.5px] font-extrabold">Quick actions</div>
         <div className="grid grid-cols-2 gap-2.5">
-          {QUICK_ACTIONS.map((action) => {
+          {visibleActions.map((action) => {
             const content = (
               <div className="flex items-center gap-3 rounded-card border border-border bg-card px-4 py-3.5 shadow-chip">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${action.tone}`}>

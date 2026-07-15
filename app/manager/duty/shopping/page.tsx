@@ -13,8 +13,9 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { repo } from "@/lib/data";
 import { buildEqualBlocks } from "@/lib/duty";
 import { today } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
-export default function ManagerShoppingDutyPage() {
+function ManagerShoppingDutyPage() {
   const { activeHostelId } = useSession();
   const users = useUsers(activeHostelId);
   const plans = useDutyPlans(activeHostelId);
@@ -195,5 +196,14 @@ export default function ManagerShoppingDutyPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "duties" flag.
+export default function GatedManagerShoppingDutyPage() {
+  return (
+    <PermissionGate permission="duties" label="Duty rotation setup">
+      <ManagerShoppingDutyPage />
+    </PermissionGate>
   );
 }

@@ -32,6 +32,8 @@ import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditShee
 import { repo, type Bill, type BillSection } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
+import { hasManagerPermission } from "@/lib/auth/permissions";
 
 const CATEGORY_META: Record<string, { icon: LucideIcon; bar: string; tone: string }> = {
   Grocery: { icon: ShoppingCart, bar: "bg-primary", tone: "bg-primary-soft text-primary" },
@@ -67,8 +69,9 @@ const SECTION_NOTE: Record<BillSection["label"], string> = {
   cookSalary: "Collected on behalf of the cook.",
 };
 
-export default function ManagerFinancePage() {
-  const { activeHostelId } = useSession();
+function ManagerFinancePage() {
+  const { user, hostel, activeHostelId } = useSession();
+  const canGenerateBills = hasManagerPermission(user, hostel, "billing");
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -167,7 +170,11 @@ export default function ManagerFinancePage() {
         }}
       />
 
-      {isFutureMonth ? (
+      {!canGenerateBills ? (
+        <div className="rounded-btn bg-bg px-4 py-3 text-center text-[11px] font-semibold text-text-secondary">
+          Bill generation is turned off for managers — the hostel owner handles it.
+        </div>
+      ) : isFutureMonth ? (
         <div className="rounded-btn bg-bg px-4 py-3 text-center text-[11px] font-semibold text-text-secondary">
           Bills for {formatMonthLabel(monthStr)} can&rsquo;t be generated yet — pick the current or a past month.
         </div>
@@ -505,5 +512,14 @@ export default function ManagerFinancePage() {
         onSettled={refreshBills}
       />
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "finance" flag.
+export default function GatedManagerFinancePage() {
+  return (
+    <PermissionGate permission="finance" label="Finance">
+      <ManagerFinancePage />
+    </PermissionGate>
   );
 }

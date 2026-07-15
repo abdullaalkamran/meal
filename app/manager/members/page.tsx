@@ -15,8 +15,9 @@ import { AddMemberSheet } from "@/components/manager/AddMemberSheet";
 import { repo, type Bill } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
-export default function ManagerMembersPage() {
+function ManagerMembersPage() {
   const { activeHostelId, hostel } = useSession();
   // Cook is staff and owner is cross-hostel management — neither is a boarder.
   // Manager is included since they're also a boarder (dual identity).
@@ -249,5 +250,14 @@ export default function ManagerMembersPage() {
         hostelId={activeHostelId}
       />
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "members" flag.
+export default function GatedManagerMembersPage() {
+  return (
+    <PermissionGate permission="members" label="Member management">
+      <ManagerMembersPage />
+    </PermissionGate>
   );
 }

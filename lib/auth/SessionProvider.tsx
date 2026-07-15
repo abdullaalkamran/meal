@@ -27,7 +27,8 @@ interface SessionContextValue {
   user: User | undefined;
   hostel: Hostel | undefined;
   /** The role whose screens are currently being viewed — differs from
-   * user.role only for a manager using "switch to my boarder view". */
+   * user.role for a manager using "switch to my boarder view" or an owner
+   * managing one of their hostels through the manager screens. */
   viewRole: Role | undefined;
   setViewRole: (role: Role) => void;
   activeHostelId: string | undefined;
@@ -111,10 +112,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const setViewRole = useCallback(
     (role: Role) => {
       if (!user) return;
-      // Only a manager may switch into the student view of themself; any
-      // other combination just snaps back to the account's real role.
+      // Two sanctioned cross-role views: a manager browsing as a boarder of
+      // themself, and an owner managing one of their hostels through the
+      // manager screens. Any other combination snaps back to the real role.
       if (role === "student" && user.role === "manager") {
         setViewRoleState("student");
+      } else if (role === "manager" && user.role === "owner") {
+        setViewRoleState("manager");
       } else {
         setViewRoleState(user.role);
       }

@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { repo, type Menu, type MealSlot } from "@/lib/data";
 import { today } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
 const MEAL_LABEL: Record<MealSlot, string> = {
   breakfast: "Breakfast",
@@ -15,7 +16,7 @@ const MEAL_LABEL: Record<MealSlot, string> = {
   dinner: "Dinner",
 };
 
-export default function ManagerEditMenuPage() {
+function ManagerEditMenuPage() {
   const { activeHostelId } = useSession();
   const date = today();
   const menu = useMenu(activeHostelId, date);
@@ -65,5 +66,14 @@ export default function ManagerEditMenuPage() {
         Save menu
       </Button>
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "menu" flag.
+export default function GatedManagerEditMenuPage() {
+  return (
+    <PermissionGate permission="menu" label="Menu editing">
+      <ManagerEditMenuPage />
+    </PermissionGate>
   );
 }

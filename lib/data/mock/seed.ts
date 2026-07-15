@@ -68,6 +68,7 @@ export function buildSeed(): Tables {
         guestMealPrice: 80,
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
+        managerPermissions: { rooms: true, members: true, approvals: true, finance: true, billing: true, menu: true, duties: true, announcements: true },
       },
     },
     {
@@ -89,6 +90,7 @@ export function buildSeed(): Tables {
         guestMealPrice: 80,
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
+        managerPermissions: { rooms: true, members: true, approvals: true, finance: true, billing: true, menu: true, duties: true, announcements: true },
       },
     },
   ];

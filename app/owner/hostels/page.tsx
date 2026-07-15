@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ShieldCheck, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
+import { Icon } from "@/components/ui/Icon";
+import { ManagerPermissionsSheet } from "@/components/owner/ManagerPermissionsSheet";
 import { repo, type Hostel, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
@@ -17,10 +21,18 @@ interface HostelStats {
 }
 
 export default function OwnerHostelsPage() {
-  const { user, activeHostelId, switchHostel } = useSession();
+  const router = useRouter();
+  const { user, activeHostelId, switchHostel, setViewRole } = useSession();
   const hostels = useHostelsByOwner(user?.id);
   const { toast } = useToast();
   const [stats, setStats] = useState<Record<string, HostelStats>>({});
+  const [permsHostelId, setPermsHostelId] = useState<string | null>(null);
+
+  const manageHostel = (hostelId: string) => {
+    switchHostel(hostelId);
+    setViewRole("manager");
+    router.push("/manager");
+  };
 
   useEffect(() => {
     if (hostels.length === 0) return;
@@ -94,7 +106,7 @@ export default function OwnerHostelsPage() {
               <div className="text-[11.5px] font-extrabold">{formatBDT(s?.due ?? 0)}</div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            <div className="mb-3 flex flex-wrap gap-1.5">
               <Chip>
                 Guest meal {formatBDT(h.settings.guestMealPrice)}
               </Chip>
@@ -110,9 +122,33 @@ export default function OwnerHostelsPage() {
                 </Chip>
               ))}
             </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => manageHostel(h.id)}
+                className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+              >
+                <Icon icon={Wrench} size={14} /> Manage hostel
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermsHostelId(h.id)}
+                className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-btn bg-[#7C6CF6]/10 text-[11.5px] font-extrabold text-[#7C6CF6]"
+              >
+                <Icon icon={ShieldCheck} size={14} /> Manager permissions
+              </button>
+            </div>
           </Card>
         );
       })}
+
+      <ManagerPermissionsSheet
+        open={!!permsHostelId}
+        onClose={() => setPermsHostelId(null)}
+        hostelId={permsHostelId}
+        managerName={permsHostelId ? stats[permsHostelId]?.managerName : undefined}
+      />
     </div>
   );
 }

@@ -14,8 +14,9 @@ import { Icon } from "@/components/ui/Icon";
 import { repo } from "@/lib/data";
 import { buildFixedBlocks } from "@/lib/duty";
 import { today } from "@/lib/utils/date";
+import { PermissionGate } from "@/components/manager/PermissionGate";
 
-export default function ManagerCleaningDutyPage() {
+function ManagerCleaningDutyPage() {
   const { activeHostelId } = useSession();
   const users = useUsers(activeHostelId);
   const plans = useDutyPlans(activeHostelId);
@@ -157,5 +158,14 @@ export default function ManagerCleaningDutyPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// Owner-configured permission gate: real managers need the "duties" flag.
+export default function GatedManagerCleaningDutyPage() {
+  return (
+    <PermissionGate permission="duties" label="Duty rotation setup">
+      <ManagerCleaningDutyPage />
+    </PermissionGate>
   );
 }

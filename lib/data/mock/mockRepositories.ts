@@ -212,9 +212,12 @@ const hostels: HostelRepository = {
     return store.data.hostels;
   },
   async updateSettings(hostelId, patch) {
-    const h = store.data.hostels.find((x) => x.id === hostelId);
-    if (!h) return;
-    h.settings = { ...h.settings, ...patch };
+    const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
+    if (idx === -1) return;
+    // Replace the hostel object (not mutate in place) — subscribers hand the
+    // record straight to React setState, which bails out on identical refs.
+    const h = store.data.hostels[idx];
+    store.data.hostels[idx] = { ...h, settings: { ...h.settings, ...patch } };
     store.emit(`hostel:${hostelId}`);
   },
   async setSuspended(hostelId, suspended) {
