@@ -76,6 +76,9 @@ export interface HostelSettings {
   mealStopRequiresApproval: boolean;
   shoppingRotationPolicy: "spin-wheel" | "manual";
   managerPermissions?: ManagerPermissions;
+  /** Flat monthly service charge (৳) billed to EACH boarder, set by the OWNER
+   * only — managers see it on bills but cannot change it. 0/undefined = none. */
+  serviceChargeMonthly?: number;
 }
 
 export interface Hostel {
@@ -94,6 +97,8 @@ export interface Hostel {
    * the admin directory; kept out of "active hostels" counts. */
   suspended?: boolean;
 }
+
+export type NewHostel = Omit<Hostel, "id">;
 
 export interface MealEntry {
   on: boolean;
@@ -119,7 +124,7 @@ export interface Rating {
   userId: string;
   date: string;
   meal: MealSlot;
-  target: "menu" | "cook";
+  target: "menu" | "cook" | "manager";
   stars: Stars;
 }
 

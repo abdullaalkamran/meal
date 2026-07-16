@@ -19,13 +19,11 @@ export function useHostelsByOwner(ownerId: string | undefined) {
 
   useEffect(() => {
     if (!ownerId) return;
-    let cancelled = false;
-    repo.hostels.listByOwner(ownerId).then((list) => {
-      if (!cancelled) setHostels(list);
-    });
-    return () => {
-      cancelled = true;
-    };
+    // Live subscription (not a one-shot fetch) so a hostel the owner just
+    // created shows up immediately on every owner page.
+    return repo.hostels.subscribeAll((all) =>
+      setHostels(all.filter((h) => h.ownerId === ownerId))
+    );
   }, [ownerId]);
 
   return hostels;

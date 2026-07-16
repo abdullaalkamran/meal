@@ -61,7 +61,7 @@ export default function StudentMenuPage() {
   const users = useUsers(activeHostelId);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
   const [manager, setManager] = useState<User | undefined>(undefined);
-  const [ratings, setRatings] = useState<{ userId: string; meal: MealSlot; target: "menu" | "cook"; stars: number }[]>([]);
+  const [ratings, setRatings] = useState<{ userId: string; meal: MealSlot; target: "menu" | "cook" | "manager"; stars: number }[]>([]);
   const [commentText, setCommentText] = useState("");
 
   useEffect(() => {
@@ -95,10 +95,10 @@ export default function StudentMenuPage() {
 
   const dayStrip = Array.from({ length: 7 }, (_, i) => addDays(today(), i - 3));
 
-  const myRating = (meal: MealSlot, target: "menu" | "cook") =>
+  const myRating = (meal: MealSlot, target: "menu" | "cook" | "manager") =>
     ratings.find((r) => r.userId === user?.id && r.meal === meal && r.target === target)?.stars ?? 0;
 
-  const setRating = (meal: MealSlot, target: "menu" | "cook", stars: Stars) => {
+  const setRating = (meal: MealSlot, target: "menu" | "cook" | "manager", stars: Stars) => {
     if (!activeHostelId || !user) return;
     repo.ratings.rate({ hostelId: activeHostelId, userId: user.id, date: selectedDate, meal, target, stars });
   };
@@ -114,8 +114,11 @@ export default function StudentMenuPage() {
     setCommentText("");
   };
 
+  // Day's food-quality average — manager ratings are about service, not food,
+  // so they stay out of this number.
+  const foodRatings = ratings.filter((r) => r.target !== "manager");
   const avgRating =
-    ratings.length > 0 ? ratings.reduce((sum, r) => sum + r.stars, 0) / ratings.length : 0;
+    foodRatings.length > 0 ? foodRatings.reduce((sum, r) => sum + r.stars, 0) / foodRatings.length : 0;
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -203,21 +206,33 @@ export default function StudentMenuPage() {
             </Card>
           )}
           {manager && (
-            <Card className="flex items-center gap-3">
-              <Avatar name={manager.name} seed={manager.avatarSeed} size={40} />
-              <div className="min-w-0 flex-1">
-                <div className="text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
-                  Manager
+            <Card>
+              <div className="flex items-center gap-3">
+                <Avatar name={manager.name} seed={manager.avatarSeed} size={40} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
+                    Manager
+                  </div>
+                  <div className="text-[12px] font-extrabold">{manager.name}</div>
+                  <div className="text-[10px] font-semibold text-text-secondary">{manager.phone}</div>
                 </div>
-                <div className="text-[12px] font-extrabold">{manager.name}</div>
-                <div className="text-[10px] font-semibold text-text-secondary">{manager.phone}</div>
+                <a
+                  href={`tel:${manager.phone}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary"
+                >
+                  <Icon icon={Phone} size={15} />
+                </a>
               </div>
-              <a
-                href={`tel:${manager.phone}`}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary"
-              >
-                <Icon icon={Phone} size={15} />
-              </a>
+              {user?.role === "student" && (
+                <div className="mt-2.5 flex items-center justify-between border-t border-border pt-2.5">
+                  <div className="text-[10.5px] font-bold text-text-secondary">Rate your manager</div>
+                  <StarRating
+                    value={myRating("lunch", "manager")}
+                    onChange={(s) => setRating("lunch", "manager", s)}
+                    size={16}
+                  />
+                </div>
+              )}
             </Card>
           )}
         </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Building2, ClipboardCheck, UtensilsCrossed, Users } from "lucide-react";
+import { ArrowLeftRight, Building2, ChefHat, ClipboardCheck, DoorOpen, UtensilsCrossed, Users } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import {
@@ -145,6 +145,26 @@ export default function OwnerDashboardPage() {
               <div className="mt-1 text-[9.5px] font-semibold text-primary">{s.sub}</div>
             )}
           </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          { href: "/owner/rooms", label: "Rooms", icon: DoorOpen },
+          { href: "/owner/members", label: "Members", icon: Users },
+          { href: "/owner/meals", label: "Meals", icon: UtensilsCrossed },
+          { href: "/owner/staff", label: "Staff", icon: ChefHat },
+        ].map((a) => (
+          <Link
+            key={a.href}
+            href={a.href}
+            className="flex flex-col items-center gap-1.5 rounded-card border border-border bg-card py-3 shadow-chip"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary">
+              <Icon icon={a.icon} size={16} />
+            </div>
+            <div className="text-[10px] font-extrabold">{a.label}</div>
+          </Link>
         ))}
       </div>
 

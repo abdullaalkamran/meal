@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { ShoppingCart, Sparkles, ShoppingBag } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
-import { useHostelsByOwner } from "@/hooks/useHostel";
+import { HostelPicker } from "@/components/hostel/HostelPicker";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useUsers } from "@/hooks/useUsers";
 import { Card } from "@/components/ui/Card";
@@ -17,8 +17,7 @@ import { formatShortDate, today } from "@/lib/utils/date";
  * hostels — no creation or editing here (that stays with the manager,
  * or the owner via manage mode). */
 export default function OwnerDutiesPage() {
-  const { user, activeHostelId, switchHostel } = useSession();
-  const hostels = useHostelsByOwner(user?.id);
+  const { activeHostelId } = useSession();
   const plans = useDutyPlans(activeHostelId);
   const users = useUsers(activeHostelId);
   const [history, setHistory] = useState<ShoppingCost[]>([]);
@@ -103,21 +102,7 @@ export default function OwnerDutiesPage() {
         </div>
       </div>
 
-      {/* Hostel picker */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-        {hostels.map((h) => (
-          <button
-            key={h.id}
-            type="button"
-            onClick={() => switchHostel(h.id)}
-            className={`shrink-0 rounded-pill px-3.5 py-2 text-[11px] font-extrabold ${
-              h.id === activeHostelId ? "bg-primary text-white" : "bg-card text-text-secondary shadow-chip"
-            }`}
-          >
-            {h.name}
-          </button>
-        ))}
-      </div>
+      <HostelPicker />
 
       {renderPlan(activePlan("shopping"), "Shopping duty", ShoppingCart, "bg-orange-soft text-orange")}
       {renderPlan(activePlan("cleaning"), "Cleaning duty", Sparkles, "bg-blue-soft text-blue")}

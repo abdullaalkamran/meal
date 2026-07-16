@@ -69,6 +69,7 @@ export function buildSeed(): Tables {
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
         managerPermissions: { rooms: true, members: true, approvals: true, finance: true, billing: true, menu: true, duties: true, announcements: true },
+        serviceChargeMonthly: 200,
       },
     },
     {
@@ -91,6 +92,7 @@ export function buildSeed(): Tables {
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
         managerPermissions: { rooms: true, members: true, approvals: true, finance: true, billing: true, menu: true, duties: true, announcements: true },
+        serviceChargeMonthly: 100,
       },
     },
   ];
@@ -368,6 +370,16 @@ export function buildSeed(): Tables {
     { id: "rating_7", hostelId: "hostel_bright", userId: "u_student_2", date: addDays(T, -5), meal: "lunch", target: "menu", stars: 4 },
     { id: "rating_8", hostelId: "hostel_bright", userId: "u_student_3", date: addDays(T, -5), meal: "dinner", target: "menu", stars: 4 },
     { id: "rating_9", hostelId: "hostel_bright", userId: "u_manager_bright", date: addDays(T, -5), meal: "breakfast", target: "menu", stars: 4 },
+    // Cook ratings — feed the owner's Managers & cooks staff-page averages.
+    { id: "rating_10", hostelId: "hostel_bright", userId: "u_student_1", date: addDays(T, -3), meal: "dinner", target: "cook", stars: 4 },
+    { id: "rating_11", hostelId: "hostel_bright", userId: "u_student_2", date: addDays(T, -4), meal: "lunch", target: "cook", stars: 5 },
+    { id: "rating_12", hostelId: "hostel_green", userId: "u_student_4", date: addDays(T, -3), meal: "dinner", target: "cook", stars: 4 },
+    // Students rating their MANAGER (service/behaviour) — aggregated on the
+    // owner's staff page. `meal` is nominal for these.
+    { id: "rating_13", hostelId: "hostel_bright", userId: "u_student_1", date: addDays(T, -3), meal: "lunch", target: "manager", stars: 5 },
+    { id: "rating_14", hostelId: "hostel_bright", userId: "u_student_2", date: addDays(T, -4), meal: "lunch", target: "manager", stars: 4 },
+    { id: "rating_15", hostelId: "hostel_bright", userId: "u_student_3", date: addDays(T, -6), meal: "lunch", target: "manager", stars: 4 },
+    { id: "rating_16", hostelId: "hostel_green", userId: "u_student_4", date: addDays(T, -4), meal: "lunch", target: "manager", stars: 5 },
   ];
 
   const dutyPlans: DutyPlan[] = [

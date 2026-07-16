@@ -32,6 +32,7 @@ import type {
   MealSlot,
   MealStopRequest,
   Menu,
+  NewHostel,
   NewProduct,
   NewUsedBook,
   Notification,
@@ -65,6 +66,10 @@ export interface UserRepository {
   getUser(userId: string): Promise<User | undefined>;
   listByHostel(hostelId: string): Promise<User[]>;
   listAll(): Promise<User[]>;
+  /** Creates a user record directly — used by the owner when adding a hostel
+   * (its manager/cook) or assigning new staff. Boarders still arrive through
+   * join requests, not this. */
+  create(user: Omit<User, "id">): Promise<User>;
   updateUser(userId: string, patch: Partial<User>): Promise<void>;
   /** Ban/un-ban a member from their hostel. Banning evicts them from their
    * room seat and turns meals off; the user record is kept so they can still
@@ -96,10 +101,20 @@ export interface HostelRepository {
   getHostel(hostelId: string): Promise<Hostel | undefined>;
   listByOwner(ownerId: string): Promise<Hostel[]>;
   listAll(): Promise<Hostel[]>;
+  /** Owner creates a new hostel. */
+  create(hostel: NewHostel): Promise<Hostel>;
+  /** Owner edits top-level hostel fields (staff assignment, meal rate, …) —
+   * settings changes go through updateSettings instead. */
+  update(
+    hostelId: string,
+    patch: Partial<Omit<Hostel, "id" | "settings">>
+  ): Promise<void>;
   updateSettings(hostelId: string, patch: Partial<Hostel["settings"]>): Promise<void>;
   /** Super Admin suspend/reactivate a hostel on the platform. */
   setSuspended(hostelId: string, suspended: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (hostel: Hostel) => void): Unsubscribe;
+  /** Fires on any hostel-list change (create/update/suspend). */
+  subscribeAll(cb: (hostels: Hostel[]) => void): Unsubscribe;
 }
 
 export interface MealRepository {

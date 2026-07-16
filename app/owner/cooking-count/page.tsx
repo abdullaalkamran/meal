@@ -2,10 +2,10 @@
 
 import { CookingCountScreen } from "@/components/hostel/CookingCountScreen";
 
-export default function ManagerCookingCountPage() {
+export default function OwnerCookingCountPage() {
   return (
     <div className="pt-2">
-      <CookingCountScreen />
+      <CookingCountScreen readOnly />
     </div>
   );
 }

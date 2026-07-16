@@ -8,13 +8,17 @@ import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { repo, type HostelTransferRequest, type User } from "@/lib/data";
+import { Sheet } from "@/components/ui/Sheet";
+import { FinanceSettingsSheet } from "@/components/owner/FinanceSettingsSheet";
 
 const OWNER_ROWS = [
   { label: "Manager permissions", href: "/owner/hostels" },
   { label: "Manage a hostel", href: "/owner/hostels" },
   { label: "Duty rotations", href: "/owner/duties" },
-  { label: "Managers & cooks", href: null },
-  { label: "Finance settings", href: null },
+  { label: "Rooms", href: "/owner/rooms" },
+  { label: "Members", href: "/owner/members" },
+  { label: "Managers & cooks", href: "/owner/staff" },
+  { label: "Finance settings", href: "finance-settings" },
   { label: "Backup & activity logs", href: null },
 ] as const;
 
@@ -25,6 +29,8 @@ export default function OwnerMorePage() {
   const { toast } = useToast();
   const [transfers, setTransfers] = useState<HostelTransferRequest[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [pickingFinanceHostel, setPickingFinanceHostel] = useState(false);
+  const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
 
   useEffect(() => {
     if (hostels.length === 0) return;
@@ -91,9 +97,17 @@ export default function OwnerMorePage() {
             <button
               key={row.label}
               type="button"
-              onClick={() =>
-                row.href ? router.push(row.href) : toast(`${row.label} — coming in a later build phase`)
-              }
+              onClick={() => {
+                if (row.href === "finance-settings") {
+                  // One hostel: open its settings directly; several: pick first.
+                  if (hostels.length === 1) setFinanceHostelId(hostels[0].id);
+                  else setPickingFinanceHostel(true);
+                } else if (row.href) {
+                  router.push(row.href);
+                } else {
+                  toast(`${row.label} — coming in a later build phase`);
+                }
+              }}
               className="flex min-h-12 cursor-pointer items-center border-b border-border text-left text-[12px] font-bold last:border-b-0"
             >
               {row.label}
@@ -101,6 +115,35 @@ export default function OwnerMorePage() {
           ))}
         </div>
       </Card>
+
+      <Sheet
+        open={pickingFinanceHostel}
+        onClose={() => setPickingFinanceHostel(false)}
+        title="Finance settings — pick a hostel"
+      >
+        <div className="flex flex-col gap-2">
+          {hostels.map((h) => (
+            <Button
+              key={h.id}
+              fullWidth
+              variant="secondary"
+              onClick={() => {
+                setPickingFinanceHostel(false);
+                setFinanceHostelId(h.id);
+              }}
+            >
+              {h.name}
+            </Button>
+          ))}
+        </div>
+      </Sheet>
+
+      <FinanceSettingsSheet
+        open={financeHostelId !== null}
+        onClose={() => setFinanceHostelId(null)}
+        hostelId={financeHostelId}
+        onSaved={() => toast("Finance settings saved")}
+      />
     </div>
   );
 }

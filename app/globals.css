@@ -148,3 +148,23 @@ body.font-bn {
   width: 0;
   height: 0;
 }
+
+/* ---- Report print-to-PDF: only the open report table prints ---- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .report-print-area,
+  .report-print-area * {
+    visibility: visible;
+  }
+  .report-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .report-print-area .overflow-x-auto {
+    overflow: visible;
+  }
+}

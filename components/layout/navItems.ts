@@ -57,6 +57,7 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/owner", label: "Overview", iconKey: "overview" },
     { href: "/owner/hostels", label: "Hostels", iconKey: "hostels" },
     { href: "/owner/duties", label: "Duties", iconKey: "duties" },
+    { href: "/owner/meals", label: "Meals", iconKey: "meals" },
     { href: "/owner/reports", label: "Reports", iconKey: "reports" },
     { href: "/owner/more", label: "More", iconKey: "more" },
   ],

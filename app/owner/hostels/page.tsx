@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Wrench } from "lucide-react";
+import { Banknote, ShieldCheck, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import { useToast } from "@/components/ui/Toast";
@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { ManagerPermissionsSheet } from "@/components/owner/ManagerPermissionsSheet";
+import { AddHostelSheet } from "@/components/owner/AddHostelSheet";
+import { FinanceSettingsSheet } from "@/components/owner/FinanceSettingsSheet";
 import { repo, type Hostel, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
@@ -27,6 +29,8 @@ export default function OwnerHostelsPage() {
   const { toast } = useToast();
   const [stats, setStats] = useState<Record<string, HostelStats>>({});
   const [permsHostelId, setPermsHostelId] = useState<string | null>(null);
+  const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const manageHostel = (hostelId: string) => {
     switchHostel(hostelId);
@@ -56,7 +60,7 @@ export default function OwnerHostelsPage() {
         <div className="text-[17.5px] font-extrabold tracking-tight">Hostels</div>
         <button
           type="button"
-          onClick={() => toast("Add hostel — coming in a later build phase")}
+          onClick={() => setAddOpen(true)}
           className="text-[11.5px] font-extrabold text-primary"
         >
           + Add
@@ -139,6 +143,17 @@ export default function OwnerHostelsPage() {
                 <Icon icon={ShieldCheck} size={14} /> Manager permissions
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setFinanceHostelId(h.id)}
+              className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-btn bg-bg text-[11.5px] font-extrabold text-text-secondary"
+            >
+              <Icon icon={Banknote} size={14} /> Finance settings
+              {h.settings.serviceChargeMonthly ? (
+                <span className="font-bold">· service charge {formatBDT(h.settings.serviceChargeMonthly)}/mo</span>
+              ) : null}
+            </button>
           </Card>
         );
       })}
@@ -149,6 +164,22 @@ export default function OwnerHostelsPage() {
         hostelId={permsHostelId}
         managerName={permsHostelId ? stats[permsHostelId]?.managerName : undefined}
       />
+
+      <FinanceSettingsSheet
+        open={!!financeHostelId}
+        onClose={() => setFinanceHostelId(null)}
+        hostelId={financeHostelId}
+        onSaved={() => toast("Finance settings saved")}
+      />
+
+      {user && (
+        <AddHostelSheet
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          owner={user}
+          onCreated={(name) => toast(`${name} created — it's live for you now`)}
+        />
+      )}
     </div>
   );
 }

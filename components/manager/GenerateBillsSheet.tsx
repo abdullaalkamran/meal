@@ -7,6 +7,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { repo, type Expense } from "@/lib/data";
+import { useHostel } from "@/hooks/useHostel";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, lastDayOfMonth } from "@/lib/utils/date";
 import { isServiceChargeCategory } from "@/lib/utils/expenseCategories";
@@ -151,6 +152,8 @@ export function GenerateBillsSheet({
   month: string;
   onGenerated: (count: number) => void;
 }) {
+  const hostel = useHostel(hostelId);
+  const ownerServiceCharge = hostel?.settings.serviceChargeMonthly ?? 0;
   const [newUtilities, setNewUtilities] = useState<Expense[]>([]);
   const [billedUtilities, setBilledUtilities] = useState<Expense[]>([]);
   const [includedUtilityIds, setIncludedUtilityIds] = useState<Set<string>>(new Set());
@@ -219,6 +222,23 @@ export function GenerateBillsSheet({
         Meal cost is calculated automatically from each member&rsquo;s own meals and guest meals —
         nothing to set there.
       </div>
+
+      {ownerServiceCharge > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-[11.5px] font-bold">Monthly service charge</div>
+            <div className="text-[9.5px] font-semibold text-text-secondary">
+              Set by the owner — always included, per boarder
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="text-[11.5px] font-extrabold">{formatBDT(ownerServiceCharge)}</div>
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-card text-text-secondary">
+              <Icon icon={Lock} size={12} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <ExpenseToggleList
         title="service charges this month"

@@ -91,6 +91,12 @@ const users: UserRepository = {
   async listAll() {
     return store.data.users;
   },
+  async create(user) {
+    const created = { ...user, id: nextId("user") };
+    store.data.users.push(created);
+    store.emit(`users:${created.hostelId}`);
+    return created;
+  },
   async updateUser(userId, patch) {
     const idx = store.data.users.findIndex((x) => x.id === userId);
     if (idx === -1) return;
@@ -211,6 +217,19 @@ const hostels: HostelRepository = {
   async listAll() {
     return store.data.hostels;
   },
+  async create(hostel) {
+    const created = { ...hostel, id: nextId("hostel") };
+    store.data.hostels.push(created);
+    store.emit("hostels");
+    return created;
+  },
+  async update(hostelId, patch) {
+    const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
+    if (idx === -1) return;
+    store.data.hostels[idx] = { ...store.data.hostels[idx], ...patch };
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+  },
   async updateSettings(hostelId, patch) {
     const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
     if (idx === -1) return;
@@ -234,6 +253,11 @@ const hostels: HostelRepository = {
     };
     fire();
     return store.on(`hostel:${hostelId}`, fire);
+  },
+  subscribeAll(cb) {
+    const fire = () => cb(store.data.hostels);
+    fire();
+    return store.on("hostels", fire);
   },
 };
 
@@ -661,8 +685,10 @@ const bills: BillRepository = {
     // Never bill a future month — there are no meals/expenses to charge yet.
     if (month > currentMonth()) return [];
 
+    // Boarders only — cooks are staff, and owner/platform-team accounts merely
+    // carry a nominal hostelId (isHostelMember), so none of them get billed.
     const allBoarders = store.data.users.filter(
-      (u) => u.hostelId === hostelId && u.role !== "cook" && u.role !== "owner" && !u.banned
+      (u) => u.hostelId === hostelId && u.role !== "cook" && isHostelMember(u.role) && !u.banned
     );
     const rooms = store.data.rooms.filter((r) => r.hostelId === hostelId);
     const [year, mon] = month.split("-").map(Number);
@@ -736,6 +762,12 @@ const bills: BillRepository = {
       const mealCostTotal = (ownMeals + guestMeals) * hostel.mealRate;
 
       const serviceItems = expenseItemsFor(utilityExpenses, u.id);
+      // Owner-set flat monthly service charge — not expense-backed, so it
+      // re-applies idempotently every (re)generation.
+      const ownerCharge = hostel.settings.serviceChargeMonthly ?? 0;
+      if (ownerCharge > 0) {
+        serviceItems.unshift({ label: "Monthly service charge (set by owner)", amount: ownerCharge });
+      }
       const serviceTotal = serviceItems.reduce((sum, i) => sum + i.amount, 0);
 
       const salaryItems = expenseItemsFor(salaryExpenses, u.id);
