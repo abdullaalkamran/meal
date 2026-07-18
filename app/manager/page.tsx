@@ -165,8 +165,8 @@ export default function ManagerDashboardPage() {
 
   const cookingCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0);
-    const guestCount = entries.reduce((sum, e) => sum + (e[meal].on ? e[meal].guestCount : 0), 0);
+    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
+    const guestCount = entries.reduce((sum, e) => sum + e[meal].guestCount, 0);
     return { meal, count, guestCount };
   });
   const totalToCook = cookingCounts.reduce((sum, c) => sum + c.count, 0);

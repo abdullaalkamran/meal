@@ -30,7 +30,7 @@ function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): History
     .map((d) => {
       const entries = Object.values(d.entries);
       const total = MEAL_SLOTS.reduce(
-        (sum, meal) => sum + entries.reduce((s, e) => s + (e[meal].on ? 1 + e[meal].guestCount : 0), 0),
+        (sum, meal) => sum + entries.reduce((s, e) => s + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0),
         0
       );
       const cancelledMeals = MEAL_SLOTS.filter((meal) =>
@@ -75,7 +75,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
     const boardersOn = entries.filter((e) => e[meal].on).length;
     // "count" is heads to actually cook for (boarders + their guests) — can
     // exceed totalBoarders, so the percentage is based on boarders-on only.
-    const count = entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0);
+    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
     const pct = totalBoarders > 0 ? Math.round((boardersOn / totalBoarders) * 100) : 0;
     return { meal, count, pct };
   });

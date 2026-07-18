@@ -90,6 +90,8 @@ export interface ManagerPermissions {
 
 export interface HostelSettings {
   mealCutoff: { meal: MealSlot; time: string }[];
+  /** DEPRECATED — guest meals are billed at Hostel.mealRate (same as member
+   * meals); kept equal to it for legacy data. Do not display separately. */
   guestMealPrice: number;
   mealStopRequiresApproval: boolean;
   shoppingRotationPolicy: "spin-wheel" | "manual";

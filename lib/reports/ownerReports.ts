@@ -65,7 +65,7 @@ function dailyReport(inputs: ReportInputs): ReportTable {
     const day = inputs.mealDaysByHostel[h.id]?.find((d) => d.date === inputs.date);
     const entries = day ? Object.values(day.entries) : [];
     const counts = SLOTS.map((meal) =>
-      entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0)
+      entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0)
     );
     const expensesToday = (inputs.expensesByHostel[h.id] ?? [])
       .filter((e) => e.dateFrom <= inputs.date && inputs.date <= e.dateTo)
@@ -96,10 +96,9 @@ function mealReport(inputs: ReportInputs): ReportTable {
         const entry = day.entries[u.id];
         if (!entry) continue;
         for (const slot of SLOTS) {
-          if (entry[slot].on) {
-            own += 1;
-            guests += entry[slot].guestCount;
-          }
+          if (entry[slot].on) own += 1;
+          // Guests count even when the host's own meal is off.
+          guests += entry[slot].guestCount;
         }
       }
       rows.push([h.name, u.name, own, guests, own + guests]);

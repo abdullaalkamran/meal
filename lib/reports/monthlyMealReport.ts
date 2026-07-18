@@ -86,11 +86,10 @@ export async function buildMonthlyMealReport(
     for (const [userId, entry] of Object.entries(day.entries)) {
       if (!boarderIds.has(userId)) continue;
       for (const slot of SLOTS) {
-        if (entry[slot].on) {
-          const eaten = 1 + entry[slot].guestCount;
-          mealsBy[userId] = (mealsBy[userId] ?? 0) + eaten;
-          totalMeals += eaten;
-        }
+        // Guests count even when the host's own meal is off.
+        const eaten = (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
+        mealsBy[userId] = (mealsBy[userId] ?? 0) + eaten;
+        totalMeals += eaten;
       }
     }
   }

@@ -70,9 +70,9 @@ export default function OwnerDashboardPage() {
           Object.values(day.entries).reduce(
             (s, e) =>
               s +
-              (e.breakfast.on ? 1 + e.breakfast.guestCount : 0) +
-              (e.lunch.on ? 1 + e.lunch.guestCount : 0) +
-              (e.dinner.on ? 1 + e.dinner.guestCount : 0),
+              ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
+              ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
+              ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
             0
           ),
         0

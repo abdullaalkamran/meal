@@ -85,15 +85,15 @@ export default function StudentMealsPage() {
     ? Object.values(day.entries).reduce(
         (sum, e) =>
           sum +
-          (e.breakfast.on ? 1 + e.breakfast.guestCount : 0) +
-          (e.lunch.on ? 1 + e.lunch.guestCount : 0) +
-          (e.dinner.on ? 1 + e.dinner.guestCount : 0),
+          ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
+          ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
+          ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
         0
       )
     : 0;
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0);
+    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
     return { meal, count };
   });
 
@@ -111,9 +111,9 @@ export default function StudentMealsPage() {
     return Object.values(d.entries).reduce(
       (sum, e) =>
         sum +
-        (e.breakfast.on ? 1 + e.breakfast.guestCount : 0) +
-        (e.lunch.on ? 1 + e.lunch.guestCount : 0) +
-        (e.dinner.on ? 1 + e.dinner.guestCount : 0),
+        ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
+        ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
+        ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
       0
     );
   };

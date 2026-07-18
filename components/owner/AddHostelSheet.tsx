@@ -45,7 +45,6 @@ export function AddHostelSheet({
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
   const [mealRate, setMealRate] = useState("95");
-  const [guestMealPrice, setGuestMealPrice] = useState("80");
   const [kitchenLocation, setKitchenLocation] = useState("");
   const [managerName, setManagerName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
@@ -75,7 +74,9 @@ export function AddHostelSheet({
           { meal: "lunch", time: "09:00" },
           { meal: "dinner", time: "15:00" },
         ],
-        guestMealPrice: Number(guestMealPrice) || 0,
+        // Guest meals are billed at the member meal rate — kept equal here so
+        // any legacy display of this setting can never contradict the bill.
+        guestMealPrice: Number(mealRate),
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
         managerPermissions: { ...DEFAULT_MANAGER_PERMISSIONS },
@@ -123,10 +124,7 @@ export function AddHostelSheet({
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
       <Field label="Area" value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Uttara, Dhaka" />
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Meal rate (৳)" type="number" min={1} inputMode="numeric" value={mealRate} onChange={(e) => setMealRate(e.target.value)} />
-        <Field label="Guest meal (৳)" type="number" min={0} inputMode="numeric" value={guestMealPrice} onChange={(e) => setGuestMealPrice(e.target.value)} />
-      </div>
+      <Field label="Meal rate (৳) — members & guests pay the same" type="number" min={1} inputMode="numeric" value={mealRate} onChange={(e) => setMealRate(e.target.value)} />
       <Field label="Kitchen location" optional value={kitchenLocation} onChange={(e) => setKitchenLocation(e.target.value)} placeholder="e.g. Room 101 · GF" />
 
       <div className="mb-3 mt-1 rounded-btn bg-bg px-3 py-2.5 text-[10.5px] font-bold text-text-secondary">

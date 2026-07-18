@@ -114,7 +114,7 @@ export default function OwnerHostelsPage() {
 
             <div className="mb-3 flex flex-wrap gap-1.5">
               <Chip>
-                Guest meal {formatBDT(h.settings.guestMealPrice)}
+                Guest meal {formatBDT(h.mealRate)} · member rate
               </Chip>
               <Chip>
                 {h.settings.mealStopRequiresApproval ? "Meal stop needs approval" : "Meal stop auto"}

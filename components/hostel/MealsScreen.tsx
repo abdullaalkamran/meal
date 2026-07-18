@@ -182,7 +182,7 @@ export function MealsScreen({
   const shoppingPlan = plans.find((p) => p.type === "shopping");
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + (e[meal].on ? 1 + e[meal].guestCount : 0), 0);
+    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
     return { meal, count };
   });
   const dayTotal = mealCounts.reduce((sum, c) => sum + c.count, 0);
@@ -193,7 +193,7 @@ export function MealsScreen({
       (s, e) =>
         s +
         (["breakfast", "lunch", "dinner"] as MealSlot[]).reduce(
-          (ss, meal) => ss + (e[meal].on ? 1 + e[meal].guestCount : 0),
+          (ss, meal) => ss + ((e[meal].on ? 1 : 0) + e[meal].guestCount),
           0
         ),
       0

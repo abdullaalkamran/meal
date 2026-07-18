@@ -93,7 +93,7 @@ export interface Tables {
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 interface Persisted {
   version: number;

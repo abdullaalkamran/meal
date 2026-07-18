@@ -154,7 +154,7 @@ function ManagerApprovalsPage() {
                       {r.meal} · {r.date} · {r.qty} guest{r.qty > 1 ? "s" : ""}
                     </div>
                   </div>
-                  <div className="text-[12.5px] font-extrabold">{formatBDT(80 * r.qty)}</div>
+                  <div className="text-[12.5px] font-extrabold">{formatBDT((hostel?.mealRate ?? 0) * r.qty)}</div>
                 </div>
                 <div className="flex gap-2">
                   <button

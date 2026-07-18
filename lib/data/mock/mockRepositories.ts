@@ -856,10 +856,10 @@ const bills: BillRepository = {
         const entry = day.entries[u.id];
         if (!entry) continue;
         for (const slot of slots) {
-          if (entry[slot].on) {
-            ownMeals += 1;
-            guestMeals += entry[slot].guestCount;
-          }
+          // Guests are billed even when the HOST's own meal is off — an
+          // approved guest ate regardless of whether the member did.
+          if (entry[slot].on) ownMeals += 1;
+          guestMeals += entry[slot].guestCount;
         }
       }
 

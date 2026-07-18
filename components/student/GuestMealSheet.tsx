@@ -37,7 +37,9 @@ export function GuestMealSheet({
   const [guestName, setGuestName] = useState("");
   const [qty, setQty] = useState(1);
 
-  const price = hostel?.settings.guestMealPrice ?? 80;
+  // Guest meals cost the SAME as a member meal — bills charge them at the
+  // hostel meal rate, so the sheet must quote that rate, nothing else.
+  const price = hostel?.mealRate ?? 0;
   const total = price * qty;
 
   const submit = async () => {
@@ -98,11 +100,16 @@ export function GuestMealSheet({
         </label>
       </div>
 
-      <div className="mb-4 flex items-center justify-between rounded-btn bg-bg px-4 py-3">
-        <div className="text-[11.5px] font-bold text-text-secondary">
-          {qty} × {formatBDT(price)}
+      <div className="mb-4 rounded-btn bg-bg px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[11.5px] font-bold text-text-secondary">
+            {qty} × {formatBDT(price)}
+          </div>
+          <div className="text-[13.5px] font-extrabold">Total {formatBDT(total)}</div>
         </div>
-        <div className="text-[13.5px] font-extrabold">Total {formatBDT(total)}</div>
+        <div className="mt-1 text-[9.5px] font-semibold text-text-secondary">
+          Guest meals are billed at the same rate as member meals.
+        </div>
       </div>
 
       <Button fullWidth onClick={submit} disabled={!guestName.trim()}>

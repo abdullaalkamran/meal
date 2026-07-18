@@ -81,12 +81,10 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
         const entry = day.entries[id];
         if (!entry) continue;
         for (const slot of ["breakfast", "lunch", "dinner"] as const) {
-          if (entry[slot].on) {
-            eaten += 1;
-            guests += entry[slot].guestCount;
-          } else {
-            off += 1;
-          }
+          if (entry[slot].on) eaten += 1;
+          else off += 1;
+          // Guests count even when the host's own meal is off.
+          guests += entry[slot].guestCount;
         }
       }
       setMealStats({ eaten, off, guests });
