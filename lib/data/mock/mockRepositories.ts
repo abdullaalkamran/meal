@@ -1,4 +1,5 @@
 import type {
+  ActivityRepository,
   AnnouncementRepository,
   BillRepository,
   CampaignRepository,
@@ -36,7 +37,8 @@ import type {
   UserRepository,
 } from "../repository";
 import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem } from "../types";
-import { currentMonth, formatShortDate } from "../../utils/date";
+import { addDays, currentMonth, formatShortDate, today } from "../../utils/date";
+import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { deliveryFeeFor } from "../../utils/store";
 import { nextId, store } from "./store";
@@ -45,6 +47,11 @@ import { nextId, store } from "./store";
 // member/boarder listings (owner + platform-team operators).
 const NON_HOSTEL_ROLES: Role[] = ["owner", "superadmin", "marketing", "service"];
 const isHostelMember = (role: Role) => !NON_HOSTEL_ROLES.includes(role);
+
+
+/** Per-user record channel — fired on ANY mutation of one user so the session
+ * mirror works even for users with no hostel (new signups). */
+const emitUser = (userId: string) => store.emit(`user-rec:${userId}`);
 
 function emptyMealDay(hostelId: string, date: string): MealDay {
   return { hostelId, date, entries: {} };
@@ -67,12 +74,49 @@ function ensureMealDay(hostelId: string, date: string): MealDay {
   return cloned;
 }
 
+// ── Activity log ────────────────────────────────────────────────────────────
+// The mock layer records who performed each audited action. The session
+// provider registers the signed-in user here; a real backend would derive
+// the actor from the auth token instead.
+let actingUser: { id: string; name: string } | null = null;
+export function setActingUser(user: { id: string; name: string } | undefined) {
+  actingUser = user ?? null;
+}
+
+/** Login-page helper: swap the clean state for the rich demo dataset. */
+export function loadDemoData() {
+  store.loadDemo();
+}
+
+function logActivity(hostelId: string, action: string, detail?: string) {
+  if (!hostelId) return;
+  store.data.activityLogs.push({
+    id: nextId("act"),
+    hostelId,
+    actorId: actingUser?.id ?? "system",
+    actorName: actingUser?.name ?? "System",
+    action,
+    detail,
+    createdAt: new Date().toISOString(),
+  });
+  store.emit(`activity:${hostelId}`);
+}
+
+/** True when the hostel currently cooks this meal slot at all (master meal
+ * on/off, set by the manager/owner). Missing settings mean offered. */
+function isMealOffered(hostelId: string, meal: MealSlot): boolean {
+  const hostel = store.data.hostels.find((h) => h.id === hostelId);
+  return hostel?.settings.mealsOffered?.[meal] ?? true;
+}
+
 function ensureMealEntry(day: MealDay, userId: string) {
   if (!day.entries[userId]) {
+    // New entries default on only for slots the hostel actually offers —
+    // a closed slot never silently accrues meals.
     day.entries[userId] = {
-      breakfast: { on: true, guestCount: 0 },
-      lunch: { on: true, guestCount: 0 },
-      dinner: { on: true, guestCount: 0 },
+      breakfast: { on: isMealOffered(day.hostelId, "breakfast"), guestCount: 0 },
+      lunch: { on: isMealOffered(day.hostelId, "lunch"), guestCount: 0 },
+      dinner: { on: isMealOffered(day.hostelId, "dinner"), guestCount: 0 },
     };
   }
   return day.entries[userId];
@@ -106,6 +150,7 @@ const users: UserRepository = {
     const updated = { ...store.data.users[idx], ...patch };
     store.data.users[idx] = updated;
     store.emit(`users:${updated.hostelId}`);
+    emitUser(userId);
   },
   async setBanned(userId, banned) {
     const idx = store.data.users.findIndex((x) => x.id === userId);
@@ -123,8 +168,10 @@ const users: UserRepository = {
     } else {
       store.data.users[idx] = { ...user, banned: false };
     }
+    logActivity(user.hostelId, banned ? "Member banned" : "Member un-banned", user.name);
     store.emit(`users:${user.hostelId}`);
     store.emit(`rooms:${user.hostelId}`);
+    emitUser(userId);
   },
   async remove(userId) {
     const user = store.data.users.find((u) => u.id === userId);
@@ -135,6 +182,7 @@ const users: UserRepository = {
       }
     });
     store.data.users = store.data.users.filter((u) => u.id !== userId);
+    logActivity(user.hostelId, "Member removed", user.name);
     store.emit(`users:${user.hostelId}`);
     store.emit(`rooms:${user.hostelId}`);
   },
@@ -153,6 +201,14 @@ const users: UserRepository = {
       cb(store.data.users.filter((u) => u.hostelId === hostelId && isHostelMember(u.role)));
     fire();
     return store.on(`users:${hostelId}`, fire);
+  },
+  subscribeUser(userId, cb) {
+    const fire = () => {
+      const u = store.data.users.find((x) => x.id === userId);
+      if (u) cb(u);
+    };
+    fire();
+    return store.on(`user-rec:${userId}`, fire);
   },
 };
 
@@ -173,6 +229,7 @@ const rooms: RoomRepository = {
     }
     store.emit(`rooms:${room.hostelId}`);
     store.emit(`users:${room.hostelId}`);
+    emitUser(userId);
   },
   async vacate(userId) {
     const user = store.data.users.find((u) => u.id === userId);
@@ -188,9 +245,11 @@ const rooms: RoomRepository = {
     }
     store.emit(`rooms:${user.hostelId}`);
     store.emit(`users:${user.hostelId}`);
+    emitUser(userId);
   },
   async create(room) {
     store.data.rooms.push({ ...room, id: nextId("room"), occupantIds: [] });
+    logActivity(room.hostelId, "Room added", `Room ${room.number} · ${room.capacity} seats`);
     store.emit(`rooms:${room.hostelId}`);
   },
   async update(roomId, patch) {
@@ -198,6 +257,7 @@ const rooms: RoomRepository = {
     if (idx === -1) return;
     const updated = { ...store.data.rooms[idx], ...patch };
     store.data.rooms[idx] = updated;
+    logActivity(updated.hostelId, "Room updated", `Room ${updated.number}`);
     store.emit(`rooms:${updated.hostelId}`);
   },
   subscribe(hostelId, cb) {
@@ -227,6 +287,12 @@ const hostels: HostelRepository = {
     const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
     if (idx === -1) return;
     store.data.hostels[idx] = { ...store.data.hostels[idx], ...patch };
+    if ("managerId" in patch || "cookId" in patch) {
+      logActivity(hostelId, "Staff assignment changed");
+    }
+    if ("mealRate" in patch) {
+      logActivity(hostelId, "Meal rate updated", `৳${patch.mealRate}/meal`);
+    }
     store.emit(`hostel:${hostelId}`);
     store.emit("hostels");
   },
@@ -237,7 +303,47 @@ const hostels: HostelRepository = {
     // record straight to React setState, which bails out on identical refs.
     const h = store.data.hostels[idx];
     store.data.hostels[idx] = { ...h, settings: { ...h.settings, ...patch } };
+    if ("managerPermissions" in patch) {
+      logActivity(hostelId, "Manager permissions changed");
+    }
+    if ("serviceChargeMonthly" in patch) {
+      logActivity(hostelId, "Service charge updated", `৳${patch.serviceChargeMonthly}/month per boarder`);
+    }
     store.emit(`hostel:${hostelId}`);
+  },
+  async setMealOffered(hostelId, meal, offered) {
+    const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
+    if (idx === -1) return;
+    const h = store.data.hostels[idx];
+    store.data.hostels[idx] = {
+      ...h,
+      settings: {
+        ...h.settings,
+        mealsOffered: { ...h.settings.mealsOffered, [meal]: offered },
+      },
+    };
+    if (!offered) {
+      // Closing takes effect from TOMORROW onward: today's entries are left
+      // untouched because meals (incl. guest meals) may already have been
+      // eaten and must stay billable. Past days always keep their data.
+      const from = addDays(today(), 1);
+      store.data.mealDays = store.data.mealDays.map((d) => {
+        if (d.hostelId !== hostelId || d.date < from) return d;
+        const entries = Object.fromEntries(
+          Object.entries(d.entries).map(([uid, e]) => [
+            uid,
+            { ...e, [meal]: { on: false, guestCount: 0 } },
+          ])
+        );
+        return { ...d, entries };
+      });
+    }
+    // Reopening changes only the setting — future days default on again for
+    // new entries, and members switch existing days back on themselves.
+    logActivity(hostelId, offered ? "Meal opened (master)" : "Meal closed (master)", meal);
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+    store.emit(`mealDay:${hostelId}`);
   },
   async setSuspended(hostelId, suspended) {
     const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
@@ -271,12 +377,15 @@ const meals: MealRepository = {
     );
   },
   async setMemberMealToggle(hostelId, userId, date, meal, on) {
+    // A slot the hostel doesn't offer can never be turned on.
+    if (on && !isMealOffered(hostelId, meal)) return;
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);
     entry[meal].on = on;
     store.emit(`mealDay:${hostelId}`);
   },
   async addGuestMeal(hostelId, userId, date, meal, count) {
+    if (!isMealOffered(hostelId, meal)) return;
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);
     entry[meal].guestCount += count;
@@ -288,7 +397,8 @@ const meals: MealRepository = {
     while (d <= to) {
       const day = ensureMealDay(hostelId, d);
       const entry = ensureMealEntry(day, userId);
-      for (const slot of slots) entry[slot].on = on;
+      // Resuming meals must not switch on slots the hostel has closed.
+      for (const slot of slots) entry[slot].on = on && isMealOffered(hostelId, slot);
       const next = new Date(`${d}T00:00:00Z`);
       next.setUTCDate(next.getUTCDate() + 1);
       d = next.toISOString().slice(0, 10);
@@ -310,6 +420,7 @@ const meals: MealRepository = {
       });
       store.emit(`users:${updated.hostelId}`);
       store.emit(`notifications:${userId}`);
+      emitUser(userId);
     }
     store.emit(`mealDay:${hostelId}`);
   },
@@ -835,6 +946,7 @@ const bills: BillRepository = {
       store.emit(`expenses:${hostelId}`);
     }
 
+    logActivity(hostelId, "Bills generated", `${month} · ${bills.length} member bills`);
     store.emit(`bills:${hostelId}`);
     for (const b of bills) store.emit(`bill:${b.userId}`);
     return bills;
@@ -1095,6 +1207,15 @@ const notifications: NotificationRepository = {
       .filter((n) => n.userId === userId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
+  async create(n) {
+    store.data.notifications.push({
+      ...n,
+      id: nextId("notif"),
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`notifications:${n.userId}`);
+  },
   async markRead(id) {
     const n = store.data.notifications.find((x) => x.id === id);
     if (!n) return;
@@ -1113,18 +1234,46 @@ const notifications: NotificationRepository = {
   },
 };
 
+const activity: ActivityRepository = {
+  async listByHostel(hostelId) {
+    return store.data.activityLogs
+      .filter((a) => a.hostelId === hostelId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async log(entry) {
+    store.data.activityLogs.push({
+      ...entry,
+      id: nextId("act"),
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`activity:${entry.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () =>
+      cb(
+        store.data.activityLogs
+          .filter((a) => a.hostelId === hostelId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      );
+    fire();
+    return store.on(`activity:${hostelId}`, fire);
+  },
+};
+
 const expenses: ExpenseRepository = {
   async listByHostel(hostelId) {
     return store.data.expenses.filter((e) => e.hostelId === hostelId);
   },
   async add(expense) {
     store.data.expenses.push({ ...expense, id: nextId("exp") });
+    logActivity(expense.hostelId, "Expense recorded", `${expense.category} · ৳${expense.amount}${expense.note ? ` — ${expense.note}` : ""}`);
     store.emit(`expenses:${expense.hostelId}`);
   },
   async remove(id) {
     const expense = store.data.expenses.find((e) => e.id === id);
     if (!expense) return;
     store.data.expenses = store.data.expenses.filter((e) => e.id !== id);
+    logActivity(expense.hostelId, "Expense removed", `${expense.category} · ৳${expense.amount}`);
     store.emit(`expenses:${expense.hostelId}`);
   },
   subscribe(hostelId, cb) {
@@ -1200,6 +1349,9 @@ const joinRequests: JoinRequestRepository = {
   async listByHostel(hostelId) {
     return store.data.joinRequests.filter((r) => r.hostelId === hostelId);
   },
+  async listByUser(userId) {
+    return store.data.joinRequests.filter((r) => r.userId === userId);
+  },
   async create(req) {
     store.data.joinRequests.push({
       ...req,
@@ -1213,23 +1365,88 @@ const joinRequests: JoinRequestRepository = {
     const req = store.data.joinRequests.find((r) => r.id === id);
     if (!req) return;
     req.status = status;
+
+    const pushNotification = (userId: string, title: string, body: string) => {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId,
+        title,
+        body,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${userId}`);
+    };
+
+    // Attaches an EXISTING account to this hostel/room: frees any previous
+    // room seat first (a member can never occupy two seats) and cancels the
+    // user's other pending requests so a second hostel can't also approve.
+    const attachExisting = (userId: string, room: (typeof store.data.rooms)[number]) => {
+      const idx = store.data.users.findIndex((u) => u.id === userId);
+      if (idx === -1) return false;
+      store.data.rooms.forEach((r) => {
+        if (r.occupantIds.includes(userId)) {
+          r.occupantIds = r.occupantIds.filter((x) => x !== userId);
+          store.emit(`rooms:${r.hostelId}`);
+        }
+      });
+      store.data.users[idx] = {
+        ...store.data.users[idx],
+        hostelId: req.hostelId,
+        roomId: room.id,
+        joinedAt: new Date().toISOString().slice(0, 10),
+      };
+      room.occupantIds.push(userId);
+      store.data.joinRequests.forEach((r2) => {
+        if (r2.userId === userId && r2.id !== req.id && r2.status === "pending") {
+          r2.status = "denied";
+          store.emit(`joinRequests:${r2.hostelId}`);
+        }
+      });
+      pushNotification(
+        userId,
+        "Join request approved",
+        "Welcome! Your join request was approved and a room seat is assigned — your hostel dashboard is ready."
+      );
+      emitUser(userId);
+      return true;
+    };
+
     if (status === "approved" && roomId) {
       const room = store.data.rooms.find((r) => r.id === roomId);
       if (room) {
-        const newUser = {
-          id: nextId("user"),
-          hostelId: req.hostelId,
-          name: req.name,
-          phone: req.phone,
-          role: "student" as const,
-          roomId,
-          avatarSeed: req.name,
-        };
-        store.data.users.push(newUser);
-        room.occupantIds.push(newUser.id);
+        // Account-linked request (find-hostel / QR flow), or a walk-in whose
+        // phone already has a signed-up account — attach that account. Only
+        // a genuinely unknown phone creates a fresh user.
+        const linkedId =
+          req.userId ??
+          store.data.users.find(
+            (u) => u.role === "student" && normalizePhone(u.phone) === normalizePhone(req.phone)
+          )?.id;
+        if (linkedId) {
+          attachExisting(linkedId, room);
+        } else {
+          const newUser = {
+            id: nextId("user"),
+            hostelId: req.hostelId,
+            name: req.name,
+            phone: req.phone,
+            role: "student" as const,
+            roomId,
+            avatarSeed: req.name,
+          };
+          store.data.users.push(newUser);
+          room.occupantIds.push(newUser.id);
+        }
         store.emit(`users:${req.hostelId}`);
         store.emit(`rooms:${req.hostelId}`);
       }
+    } else if (status === "denied" && req.userId) {
+      pushNotification(
+        req.userId,
+        "Join request declined",
+        "Your join request was declined by the hostel manager. You can request a different hostel."
+      );
     }
     store.emit(`joinRequests:${req.hostelId}`);
   },
@@ -1729,6 +1946,7 @@ const usedBooks: UsedBookRepository = {
 
 export const mockRepositories: Repositories = {
   users,
+  activity,
   rooms,
   hostels,
   meals,

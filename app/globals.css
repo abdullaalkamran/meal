@@ -149,8 +149,13 @@ body.font-bn {
   height: 0;
 }
 
-/* ---- Report print-to-PDF: only the open report table prints ---- */
+/* ---- Report print-to-PDF: only the open report prints, and the full table
+   must fit the page — no horizontal clipping of bill columns. ---- */
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
   body * {
     visibility: hidden;
   }
@@ -165,6 +170,26 @@ body.font-bn {
     width: 100%;
   }
   .report-print-area .overflow-x-auto {
-    overflow: visible;
+    overflow: visible !important;
+  }
+  /* The screen table is wider than a page (min-w-max + nowrap). In print,
+     shrink it to the paper width so EVERY bill column is on the PDF. */
+  .report-print-area table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: auto;
+    font-size: 7.5px;
+  }
+  .report-print-area th,
+  .report-print-area td {
+    white-space: normal !important;
+    padding: 3px 4px !important;
+    font-size: 7.5px !important;
+  }
+  .report-print-area .sticky {
+    position: static !important;
+  }
+  .report-print-area tr {
+    break-inside: avoid;
   }
 }

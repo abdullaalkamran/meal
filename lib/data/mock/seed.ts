@@ -47,7 +47,88 @@ import {
 
 const T = today();
 
+/** Platform staff accounts — the only users that exist on a clean install
+ * (owners and members sign up themselves; platform accounts are provisioned). */
+const PLATFORM_TEAM: User[] = [
+  {
+    id: "u_superadmin",
+    hostelId: "",
+    name: "Shahin Alam",
+    phone: "01700-000010",
+    role: "superadmin",
+    avatarSeed: "admin-shahin",
+  },
+  {
+    id: "u_marketing",
+    hostelId: "",
+    name: "Farhana Haque",
+    phone: "01700-000011",
+    role: "marketing",
+    avatarSeed: "marketing-farhana",
+  },
+  {
+    id: "u_service",
+    hostelId: "",
+    name: "Imran Hossain",
+    phone: "01700-000012",
+    role: "service",
+    avatarSeed: "service-imran",
+  },
+];
+
+/** CLEAN production seed — no hostels, no members, no fake data. The first
+ * owner signs up, creates their hostel, and invites members (QR / find-hostel).
+ * The rich demo data lives in buildDemoSeed(), loadable from the login page. */
 export function buildSeed(): Tables {
+  return {
+    users: [...PLATFORM_TEAM],
+    activityLogs: [],
+    rooms: [],
+    hostels: [],
+    mealDays: [],
+    menus: [],
+    ratings: [],
+    comments: [],
+    reactions: [],
+    dutyPlans: [],
+    swapRequests: [],
+    shoppingCosts: [],
+    shortageRequests: [],
+    bills: [],
+    payments: [],
+    billAdjustments: [],
+    cookLeaveRequests: [],
+    cookAttendanceReports: [],
+    cookAttendanceVotes: [],
+    mealEditRequests: [],
+    mealEditVotes: [],
+    announcements: [],
+    notifications: [],
+    expenses: [],
+    transferRequests: [],
+    joinRequests: [],
+    mealStopRequests: [],
+    guestMealRequests: [],
+    exploreInteractions: [],
+    communityPosts: [],
+    serviceListings: [],
+    campaigns: [],
+    marketingTargets: [],
+    products: [],
+    cartItems: [],
+    orders: [],
+    usedBookListings: [],
+    studyAbroadItems: [],
+    studyLeads: [],
+    heroPromoSettings: {
+      sources: { study: true, offers: true, grocery: true, books: true },
+      intervalSec: 4,
+      photoHeightPx: 150,
+    },
+  };
+}
+
+export function buildDemoSeed(): Tables {
   const hostels: Hostel[] = [
     {
       id: "hostel_bright",
@@ -803,6 +884,7 @@ export function buildSeed(): Tables {
 
   return {
     users,
+    activityLogs: [],
     rooms,
     hostels,
     mealDays,

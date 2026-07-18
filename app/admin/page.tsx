@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BedDouble, ChevronRight, Megaphone, Package, Users } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import { repo, type Bill, type Hostel, type User } from "@/lib/data";
+import { repo, type Bill, type Hostel, type Order, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, today } from "@/lib/utils/date";
 
@@ -14,12 +14,21 @@ export default function AdminDashboardPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [billsByHostel, setBillsByHostel] = useState<Bill[]>([]);
   const [mealsToday, setMealsToday] = useState(0);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [leadCount, setLeadCount] = useState(0);
 
   useEffect(() => {
     (async () => {
-      const [hs, us] = await Promise.all([repo.hostels.listAll(), repo.users.listAll()]);
+      const [hs, us, allOrders, leads] = await Promise.all([
+        repo.hostels.listAll(),
+        repo.users.listAll(),
+        repo.orders.listAll(),
+        repo.studyLeads.listAll(),
+      ]);
       setHostels(hs);
       setAllUsers(us);
+      setOrders(allOrders);
+      setLeadCount(leads.length);
       const [billLists, mealDays] = await Promise.all([
         Promise.all(hs.map((h) => repo.bills.listByHostel(h.id, currentMonth()))),
         Promise.all(hs.map((h) => repo.meals.getMealDay(h.id, today()))),
@@ -52,6 +61,12 @@ export default function AdminDashboardPage() {
     ["superadmin", "marketing", "service"].includes(u.role)
   );
 
+  // Platform e-commerce revenue — delivered orders are realized money; the
+  // rest of the pipeline is shown separately.
+  const deliveredOrders = orders.filter((o) => o.status === "delivered");
+  const storeRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0);
+  const pipelineOrders = orders.filter((o) => o.status === "placed" || o.status === "confirmed");
+
   const tiles = [
     { label: "Active hostels", value: String(activeHostels), sub: `${hostels.length} total`, color: "text-primary" },
     { label: "Owners", value: String(owners), sub: "", color: "text-blue" },
@@ -59,6 +74,8 @@ export default function AdminDashboardPage() {
     { label: "Meals today", value: String(mealsToday), sub: "across hostels", color: "text-orange" },
     { label: "Revenue · Jul", value: formatBDT(revenue), sub: "collected", color: "text-primary", wide: true },
     { label: "Outstanding", value: formatBDT(outstanding), sub: "unpaid", color: "text-danger", wide: true },
+    { label: "Store revenue", value: formatBDT(storeRevenue), sub: `${deliveredOrders.length} delivered orders`, color: "text-primary", wide: true },
+    { label: "Order pipeline", value: String(pipelineOrders.length), sub: `${orders.length} orders total · ${leadCount} study leads`, color: "text-blue", wide: true },
   ];
 
   return (

@@ -7,6 +7,7 @@
 // should change.
 
 import type {
+  ActivityLog,
   Announcement,
   Bill,
   BillAdjustment,
@@ -80,6 +81,10 @@ export interface UserRepository {
   /** Manager's conduct/reliability rating of a member (1–5 + optional note). */
   rate(userId: string, stars: Stars, note?: string): Promise<void>;
   subscribe(hostelId: string, cb: (users: User[]) => void): Unsubscribe;
+  /** Live mirror of ONE user's record — fires on any change to that user
+   * (profile edits, join approval, ban, room moves), regardless of which
+   * hostel they're in (or none). The session provider uses this. */
+  subscribeUser(userId: string, cb: (user: User) => void): Unsubscribe;
 }
 
 export interface RoomRepository {
@@ -110,6 +115,10 @@ export interface HostelRepository {
     patch: Partial<Omit<Hostel, "id" | "settings">>
   ): Promise<void>;
   updateSettings(hostelId: string, patch: Partial<Hostel["settings"]>): Promise<void>;
+  /** Master meal on/off (manager or owner): sets whether the hostel offers a
+   * meal slot at all. Closing also turns that slot off on every stored day
+   * from TODAY onward — past days are untouched so accounts stay correct. */
+  setMealOffered(hostelId: string, meal: MealSlot, offered: boolean): Promise<void>;
   /** Super Admin suspend/reactivate a hostel on the platform. */
   setSuspended(hostelId: string, suspended: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (hostel: Hostel) => void): Unsubscribe;
@@ -280,6 +289,8 @@ export interface AnnouncementRepository {
 
 export interface NotificationRepository {
   listByUser(userId: string): Promise<Notification[]>;
+  /** Pushes a notification directly (e.g. the month-end report reminder). */
+  create(n: Omit<Notification, "id" | "read" | "createdAt">): Promise<void>;
   markRead(id: string): Promise<void>;
   subscribe(userId: string, cb: (list: Notification[]) => void): Unsubscribe;
 }
@@ -301,6 +312,8 @@ export interface TransferRepository {
 
 export interface JoinRequestRepository {
   listByHostel(hostelId: string): Promise<JoinRequest[]>;
+  /** All requests made by one signed-up account (the find-hostel flow). */
+  listByUser(userId: string): Promise<JoinRequest[]>;
   create(req: Omit<JoinRequest, "id" | "status" | "createdAt">): Promise<void>;
   decide(id: string, status: "approved" | "denied", roomId?: string): Promise<void>;
   subscribe(hostelId: string, cb: (list: JoinRequest[]) => void): Unsubscribe;
@@ -432,8 +445,16 @@ export interface UsedBookRepository {
   subscribe(cb: (list: UsedBookListing[]) => void): Unsubscribe;
 }
 
+export interface ActivityRepository {
+  listByHostel(hostelId: string): Promise<ActivityLog[]>;
+  /** Records one audited hostel action for the owner's activity log. */
+  log(entry: Omit<ActivityLog, "id" | "createdAt">): Promise<void>;
+  subscribe(hostelId: string, cb: (list: ActivityLog[]) => void): Unsubscribe;
+}
+
 export interface Repositories {
   users: UserRepository;
+  activity: ActivityRepository;
   rooms: RoomRepository;
   hostels: HostelRepository;
   meals: MealRepository;

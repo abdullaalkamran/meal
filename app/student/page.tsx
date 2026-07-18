@@ -36,6 +36,7 @@ import { useToast } from "@/components/ui/Toast";
 import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
+import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSheet";
 import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
@@ -76,6 +77,7 @@ export default function StudentHomePage() {
   const rooms = useRooms(activeHostelId);
   const notifications = useNotifications(user?.id);
   const [sheet, setSheet] = useState<"stop" | "guest" | null>(null);
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const { toast } = useToast();
 
   const myEntry = user && day?.entries[user.id];
@@ -144,7 +146,7 @@ export default function StudentHomePage() {
 
           <button
             type="button"
-            onClick={() => toast("Notification preferences — coming in a later build phase")}
+            onClick={() => setPrefsOpen(true)}
             className="mt-3 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-pill bg-[#7C6CF6]/10 text-[11.5px] font-extrabold text-[#7C6CF6]"
           >
             <Icon icon={Bell} size={15} />
@@ -256,6 +258,7 @@ export default function StudentHomePage() {
 
       <StopMealSheet open={sheet === "stop"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <GuestMealSheet open={sheet === "guest"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
+      <NotificationPrefsSheet open={prefsOpen} onClose={() => setPrefsOpen(false)} user={user} />
     </div>
   );
 }

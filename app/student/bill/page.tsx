@@ -4,13 +4,13 @@ import { useState } from "react";
 import { ChefHat, Home, Sun, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useBill } from "@/hooks/useBill";
-import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
+import { printReport } from "@/lib/reports/export";
 import type { BillSection, BillTarget } from "@/lib/data";
 
 const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun; tone: string }> = {
@@ -42,7 +42,6 @@ export default function StudentBillPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const monthStr = `${year}-${String(month).padStart(2, "0")}`;
   const { bill, payments, adjustments } = useBill(activeHostelId, user?.id, monthStr);
-  const { toast } = useToast();
   const [payOpen, setPayOpen] = useState(false);
 
   const monthNav = (
@@ -81,6 +80,11 @@ export default function StudentBillPage() {
       <div className="text-[17.5px] font-extrabold tracking-tight">{formatMonthLabel(bill.month)} Bill</div>
 
       {monthNav}
+
+      <div className="report-print-area flex flex-col gap-5">
+      <div className="hidden text-[13px] font-extrabold print:block">
+        {formatMonthLabel(bill.month)} Bill · {user?.name}
+      </div>
 
       <div
         className="rounded-card p-5 text-white"
@@ -167,6 +171,7 @@ export default function StudentBillPage() {
         <div className="text-[13.5px] font-extrabold">Total</div>
         <div className="text-[15px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
       </Card>
+      </div>
 
       <div className="flex gap-2.5">
         <button
@@ -180,7 +185,7 @@ export default function StudentBillPage() {
         </button>
         <button
           type="button"
-          onClick={() => toast("PDF export — coming in a later build phase")}
+          onClick={() => printReport()}
           className="min-h-11 cursor-pointer rounded-btn border border-border px-6 font-extrabold"
         >
           PDF

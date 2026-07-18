@@ -6,6 +6,7 @@
 // touching UI code.
 
 import type {
+  ActivityLog,
   Announcement,
   Bill,
   BillAdjustment,
@@ -46,10 +47,11 @@ import type {
   UsedBookListing,
   User,
 } from "../types";
-import { buildSeed } from "./seed";
+import { buildDemoSeed, buildSeed } from "./seed";
 
 export interface Tables {
   users: User[];
+  activityLogs: ActivityLog[];
   rooms: Room[];
   hostels: Hostel[];
   mealDays: MealDay[];
@@ -91,7 +93,7 @@ export interface Tables {
 }
 
 const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 interface Persisted {
   version: number;
@@ -119,7 +121,22 @@ class MockStore {
         this.data = this.load();
         this.emitAll();
       });
+      // The debounced persist loses writes made <150ms before a hard
+      // navigation/refresh (e.g. signing up then reloading) — flush
+      // synchronously when the page is being left.
+      window.addEventListener("beforeunload", () => this.persistNow());
+      window.addEventListener("pagehide", () => this.persistNow());
     }
+  }
+
+  private persistNow() {
+    if (typeof window === "undefined") return;
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    const payload: Persisted = { version: SCHEMA_VERSION, data: this.data };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }
 
   private load(): Tables {
@@ -165,6 +182,13 @@ class MockStore {
 
   reset() {
     this.data = buildSeed();
+    this.schedulePersist();
+    this.emitAll();
+  }
+
+  /** Replaces the clean state with the rich demo dataset (login-page link). */
+  loadDemo() {
+    this.data = buildDemoSeed();
     this.schedulePersist();
     this.emitAll();
   }

@@ -34,6 +34,24 @@ export interface User {
   managerRatingNote?: string;
   /** When this member joined the hostel (ISO date) — shown as "member since". */
   joinedAt?: string;
+  /** Per-user notification opt-outs; missing key/object = enabled. */
+  notificationPrefs?: {
+    announcements?: boolean;
+    bills?: boolean;
+    monthlyReport?: boolean;
+  };
+}
+
+/** One audited hostel action (expense recorded, bills generated, member
+ * banned, settings changed, …) — the owner's activity log. */
+export interface ActivityLog {
+  id: string;
+  hostelId: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  detail?: string;
+  createdAt: string;
 }
 
 export interface Room {
@@ -79,6 +97,11 @@ export interface HostelSettings {
   /** Flat monthly service charge (৳) billed to EACH boarder, set by the OWNER
    * only — managers see it on bills but cannot change it. 0/undefined = none. */
   serviceChargeMonthly?: number;
+  /** Which meal slots this hostel cooks at all — some hostels don't cook
+   * three times a day. Missing key/object = offered. Closing a slot only
+   * affects TODAY onward (past days keep their data so accounts stay
+   * correct); members see a closed slot as "always closed". */
+  mealsOffered?: Partial<Record<MealSlot, boolean>>;
 }
 
 export interface Hostel {
@@ -425,6 +448,10 @@ export interface JoinRequest {
   hostelId: string;
   name: string;
   phone: string;
+  /** Set when the request came from an existing signed-up account (the
+   * find-hostel / QR flow) — approval then attaches THAT user to the hostel
+   * instead of creating a new one. Absent for walk-ins the manager adds. */
+  userId?: string;
   status: "pending" | "approved" | "denied";
   createdAt: string;
 }

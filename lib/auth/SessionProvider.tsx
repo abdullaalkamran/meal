@@ -9,7 +9,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { repo, type Hostel, type Role, type User } from "@/lib/data";
+import { repo, setActingUser, type Hostel, type Role, type User } from "@/lib/data";
+import { ensureMonthEndReportNotices } from "@/lib/reports/monthEndNotice";
 import { clearSession, readSession, writeSession } from "./session";
 
 export const ROLE_HOME: Record<Role, string> = {
@@ -73,18 +74,38 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return repo.hostels.subscribe(activeHostelId, setHostel);
   }, [activeHostelId]);
 
-  // Mirrors the logged-in user's own record so changes made elsewhere (e.g.
-  // a manager suspending this student's meals) reach the session without
-  // requiring a re-login.
-  const userId = user?.id;
-  const userHomeHostelId = user?.hostelId;
+  // Month-end report reminders — fires once per user per month, only inside
+  // the last-two-days window (the module dedupes, so calling every session
+  // load is safe).
   useEffect(() => {
-    if (!userId || !userHomeHostelId) return;
-    return repo.users.subscribe(userHomeHostelId, (list) => {
-      const fresh = list.find((u) => u.id === userId);
-      if (fresh) setUser(fresh);
+    if (!user) return;
+    void ensureMonthEndReportNotices();
+  }, [user]);
+
+  // Registers the signed-in user as the actor for the activity log — a real
+  // backend infers this from the auth token instead.
+  useEffect(() => {
+    setActingUser(user ? { id: user.id, name: user.name } : undefined);
+  }, [user]);
+
+  // Mirrors the logged-in user's own record so changes made elsewhere (a
+  // manager approving their join request, suspending meals, a profile edit
+  // in another tab) reach the session without a re-login. Uses the per-user
+  // channel so it works even before the user belongs to any hostel.
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    return repo.users.subscribeUser(userId, (fresh) => {
+      setUser(fresh);
+      // A join approval (or hostel switch) gives the user their hostel —
+      // adopt it as the active hostel if none is set yet.
+      if (fresh.role === "student" || fresh.role === "manager" || fresh.role === "cook") {
+        setActiveHostelId((current) => current || (fresh.hostelId || undefined));
+      } else if (fresh.role === "owner") {
+        setActiveHostelId((current) => current ?? fresh.ownedHostelIds?.[0]);
+      }
     });
-  }, [userId, userHomeHostelId]);
+  }, [userId]);
 
   const login = useCallback(
     async (userId: string) => {

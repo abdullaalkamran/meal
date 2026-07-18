@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChefHat,
   Coffee,
+  FileText,
   GraduationCap,
   Maximize2,
   Megaphone,
@@ -63,6 +64,13 @@ const QUICK_ACTIONS = [
     href: "/manager/finance",
   },
   {
+    key: "report",
+    label: "Monthly report",
+    icon: FileText,
+    tone: "bg-primary-soft text-primary",
+    href: "/manager/report",
+  },
+  {
     key: "shopDuty",
     label: "Shopping duty",
     icon: ShoppingCart,
@@ -92,6 +100,7 @@ const QUICK_ACTIONS = [
 // real manager (owners in manage mode always see everything).
 const ACTION_PERMISSION: Partial<Record<(typeof QUICK_ACTIONS)[number]["key"], ManagerPermissionKey>> = {
   expense: "finance",
+  report: "finance",
   announce: "announcements",
   menu: "menu",
   bills: "billing",

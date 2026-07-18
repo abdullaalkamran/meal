@@ -19,7 +19,7 @@ const OWNER_ROWS = [
   { label: "Members", href: "/owner/members" },
   { label: "Managers & cooks", href: "/owner/staff" },
   { label: "Finance settings", href: "finance-settings" },
-  { label: "Backup & activity logs", href: null },
+  { label: "Activity log", href: "/owner/activity" },
 ] as const;
 
 export default function OwnerMorePage() {
@@ -102,10 +102,8 @@ export default function OwnerMorePage() {
                   // One hostel: open its settings directly; several: pick first.
                   if (hostels.length === 1) setFinanceHostelId(hostels[0].id);
                   else setPickingFinanceHostel(true);
-                } else if (row.href) {
-                  router.push(row.href);
                 } else {
-                  toast(`${row.label} — coming in a later build phase`);
+                  router.push(row.href);
                 }
               }}
               className="flex min-h-12 cursor-pointer items-center border-b border-border text-left text-[12px] font-bold last:border-b-0"

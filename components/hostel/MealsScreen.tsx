@@ -10,6 +10,7 @@ import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useMealEditRequests } from "@/hooks/useMealEditRequests";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Button } from "@/components/ui/Button";
 import { Switch } from "@/components/ui/Switch";
 import { Calendar } from "@/components/ui/Calendar";
 import { StarRating } from "@/components/ui/StarRating";
@@ -19,6 +20,78 @@ import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, today } from "@/lib/utils/date";
+
+/** Master meal on/off — which slots this hostel cooks at all. Available to
+ * BOTH the manager and the owner (even on the owner's otherwise read-only
+ * meals page). Every flip asks for confirmation: closing applies to all
+ * future days (members see the slot as always closed, it stops counting),
+ * past days keep their data so accounts stay correct. */
+function MealsOfferedCard() {
+  const { hostel, activeHostelId } = useSession();
+  const [pending, setPending] = useState<{ meal: MealSlot; next: boolean } | null>(null);
+
+  if (!hostel) return null;
+  const offered = (meal: MealSlot) => hostel.settings.mealsOffered?.[meal] ?? true;
+
+  const confirm = async () => {
+    if (!pending || !activeHostelId) return;
+    await repo.hostels.setMealOffered(activeHostelId, pending.meal, pending.next);
+    setPending(null);
+  };
+
+  return (
+    <Card>
+      <div className="mb-1 text-[13.5px] font-extrabold">Meals we offer</div>
+      <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+        Master switch per meal — a closed meal shows as &ldquo;always closed&rdquo; to every
+        member and isn&rsquo;t counted. Changes apply from tomorrow onward; today and past
+        days keep their records so accounts stay correct.
+      </div>
+      <div className="flex flex-col divide-y divide-border">
+        {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
+          const c = MEAL_COLORS[meal];
+          const isOn = offered(meal);
+          return (
+            <div key={meal} className="py-2.5">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
+                  <Icon icon={c.icon} size={14} className={c.text} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                  <div className={`text-[9.5px] font-bold ${isOn ? "text-primary" : "text-danger"}`}>
+                    {isOn ? "Offered daily" : "Always closed"}
+                  </div>
+                </div>
+                <Switch
+                  checked={isOn}
+                  onChange={(next) => setPending({ meal, next })}
+                />
+              </div>
+              {pending?.meal === meal && (
+                <div className="mt-2.5 rounded-btn bg-bg p-3">
+                  <div className="mb-2.5 text-[10.5px] font-bold">
+                    {pending.next
+                      ? `Offer ${MEAL_LABEL[meal].toLowerCase()} again from today onward? New days will default to on, and members can turn it on themselves.`
+                      : `Close ${MEAL_LABEL[meal].toLowerCase()} from tomorrow onward? Members will see it as always closed and it won't be counted in meals or bills. Today and past days are not changed.`}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button fullWidth onClick={confirm}>
+                      {pending.next ? "Yes, offer it" : "Yes, close it"}
+                    </Button>
+                    <Button fullWidth variant="secondary" onClick={() => setPending(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 /** The meals overview screen, shared by the manager page (full control) and
  * the owner's native meals page (`readOnly` — everything visible, no meal can
@@ -185,6 +258,8 @@ export function MealsScreen({
         </div>
       </div>
 
+      <MealsOfferedCard />
+
       <Link href={cookingCountHref}>
         <div
           className="flex items-center justify-between rounded-card p-4 text-white"
@@ -259,10 +334,16 @@ export function MealsScreen({
         <div className="grid grid-cols-3 gap-2">
           {mealCounts.map((c) => {
             const meta = MEAL_COLORS[c.meal];
+            const closed = !(hostel?.settings.mealsOffered?.[c.meal] ?? true);
             return (
-              <div key={c.meal} className={`rounded-btn ${meta.bg} p-2.5 text-center`}>
-                <div className={`text-[14px] font-extrabold ${meta.text}`}>{c.count}</div>
-                <div className="text-[9px] font-bold text-text-secondary">{MEAL_LABEL[c.meal]}</div>
+              <div key={c.meal} className={`rounded-btn ${closed ? "bg-bg" : meta.bg} p-2.5 text-center`}>
+                <div className={`text-[14px] font-extrabold ${closed ? "text-text-secondary" : meta.text}`}>
+                  {closed ? "—" : c.count}
+                </div>
+                <div className="text-[9px] font-bold text-text-secondary">
+                  {MEAL_LABEL[c.meal]}
+                  {closed ? " · closed" : ""}
+                </div>
               </div>
             );
           })}

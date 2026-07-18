@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Star } from "lucide-react";
+import { ChevronRight, QrCode, Star } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useRooms } from "@/hooks/useRooms";
@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { AddMemberSheet } from "@/components/manager/AddMemberSheet";
+import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
 import { repo, type Bill } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
@@ -29,6 +30,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
   const { toast } = useToast();
   const router = useRouter();
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [billsByUser, setBillsByUser] = useState<Record<string, Bill>>({});
 
@@ -71,14 +73,24 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
           <div className="text-[17.5px] font-extrabold tracking-tight">Members</div>
           <div className="text-[10.5px] font-semibold text-text-secondary">{hostel?.name}</div>
         </div>
-        <button
-          type="button"
-          onClick={() => setAddMemberOpen(true)}
-          className="min-h-10 cursor-pointer rounded-pill px-4 text-[11.5px] font-extrabold text-white"
-          style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
-        >
-          + Add member
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setQrOpen(true)}
+            aria-label="QR invite"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-pill border border-border bg-card shadow-chip"
+          >
+            <Icon icon={QrCode} size={16} className="text-primary" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddMemberOpen(true)}
+            className="min-h-10 cursor-pointer rounded-pill px-4 text-[11.5px] font-extrabold text-white"
+            style={{ background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))" }}
+          >
+            + Add member
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2.5">
@@ -250,6 +262,12 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
         open={addMemberOpen}
         onClose={() => setAddMemberOpen(false)}
         hostelId={activeHostelId}
+      />
+      <JoinQrSheet
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        hostelId={activeHostelId}
+        hostelName={hostel?.name}
       />
     </div>
   );

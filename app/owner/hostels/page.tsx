@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, ShieldCheck, Wrench } from "lucide-react";
+import { Banknote, QrCode, ShieldCheck, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import { useToast } from "@/components/ui/Toast";
@@ -12,6 +12,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ManagerPermissionsSheet } from "@/components/owner/ManagerPermissionsSheet";
 import { AddHostelSheet } from "@/components/owner/AddHostelSheet";
 import { FinanceSettingsSheet } from "@/components/owner/FinanceSettingsSheet";
+import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
 import { repo, type Hostel, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
@@ -30,6 +31,7 @@ export default function OwnerHostelsPage() {
   const [stats, setStats] = useState<Record<string, HostelStats>>({});
   const [permsHostelId, setPermsHostelId] = useState<string | null>(null);
   const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
+  const [qrHostel, setQrHostel] = useState<Hostel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const manageHostel = (hostelId: string) => {
@@ -144,16 +146,25 @@ export default function OwnerHostelsPage() {
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setFinanceHostelId(h.id)}
-              className="mt-2 flex min-h-10 w-full items-center justify-center gap-1.5 rounded-btn bg-bg text-[11.5px] font-extrabold text-text-secondary"
-            >
-              <Icon icon={Banknote} size={14} /> Finance settings
-              {h.settings.serviceChargeMonthly ? (
-                <span className="font-bold">· service charge {formatBDT(h.settings.serviceChargeMonthly)}/mo</span>
-              ) : null}
-            </button>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFinanceHostelId(h.id)}
+                className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-btn bg-bg text-[11.5px] font-extrabold text-text-secondary"
+              >
+                <Icon icon={Banknote} size={14} /> Finance settings
+                {h.settings.serviceChargeMonthly ? (
+                  <span className="font-bold">· {formatBDT(h.settings.serviceChargeMonthly)}/mo</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                onClick={() => setQrHostel(h)}
+                className="flex min-h-10 items-center justify-center gap-1.5 rounded-btn bg-bg px-3 text-[11.5px] font-extrabold text-primary"
+              >
+                <Icon icon={QrCode} size={14} /> QR invite
+              </button>
+            </div>
           </Card>
         );
       })}
@@ -170,6 +181,13 @@ export default function OwnerHostelsPage() {
         onClose={() => setFinanceHostelId(null)}
         hostelId={financeHostelId}
         onSaved={() => toast("Finance settings saved")}
+      />
+
+      <JoinQrSheet
+        open={!!qrHostel}
+        onClose={() => setQrHostel(null)}
+        hostelId={qrHostel?.id}
+        hostelName={qrHostel?.name}
       />
 
       {user && (

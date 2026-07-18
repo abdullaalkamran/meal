@@ -8,5 +8,9 @@ import type { Repositories } from "./repository";
 
 export const repo: Repositories = mockRepositories;
 
+// Mock-only helpers (a real backend derives the actor from the auth token and
+// seeds demo data server-side; these become no-ops/admin endpoints then).
+export { setActingUser, loadDemoData } from "./mock/mockRepositories";
+
 export type * from "./types";
 export type * from "./repository";

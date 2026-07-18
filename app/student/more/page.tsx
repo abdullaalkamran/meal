@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import {
   Bell,
   ChevronRight,
+  FileText,
   Globe,
-  Lock,
   LogOut,
   Moon,
   ShoppingCart,
@@ -20,6 +21,7 @@ import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useTransfers } from "@/hooks/useTransfers";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useToast } from "@/components/ui/Toast";
+import { EditProfileSheet } from "@/components/student/EditProfileSheet";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
@@ -34,6 +36,7 @@ export default function StudentMorePage() {
   const transfers = useTransfers(activeHostelId);
   const notifications = useNotifications(user?.id);
   const { toast } = useToast();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
@@ -53,7 +56,7 @@ export default function StudentMorePage() {
       label: "Personal information",
       icon: User,
       tone: "bg-blue-soft text-blue",
-      action: () => toast("Personal information — coming in a later build phase"),
+      action: () => setProfileOpen(true),
     },
     {
       label: "Shopping",
@@ -77,6 +80,12 @@ export default function StudentMorePage() {
       href: "/student/notifications",
     },
     {
+      label: "Monthly report",
+      icon: FileText,
+      tone: "bg-primary-soft text-primary",
+      href: "/student/report",
+    },
+    {
       label: "ভাষা · Language",
       icon: Globe,
       tone: "bg-blue-soft text-blue",
@@ -89,13 +98,6 @@ export default function StudentMorePage() {
       tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]",
       trailing: theme === "dark" ? "On" : "Off",
       action: toggleTheme,
-    },
-    {
-      label: "Security & biometrics",
-      icon: Lock,
-      tone: "bg-bg text-text-secondary",
-      trailing: "On",
-      action: () => toast("Security & biometrics — coming in a later build phase"),
     },
   ];
 
@@ -170,6 +172,13 @@ export default function StudentMorePage() {
       <div className="text-center text-[9.5px] font-semibold text-text-secondary">
         Hostel ERP v1.0
       </div>
+
+      <EditProfileSheet
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        user={user}
+        onSaved={() => toast("Profile updated")}
+      />
     </div>
   );
 }

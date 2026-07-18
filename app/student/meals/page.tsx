@@ -215,27 +215,40 @@ export default function StudentMealsPage() {
         <div className="flex flex-col divide-y divide-border">
           {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
             const entry = user && day?.entries[user.id]?.[meal];
-            const on = entry?.on ?? true;
             const c = MEAL_COLORS[meal];
+            // The hostel doesn't cook this slot at all — always closed, never
+            // counted, toggle locked off.
+            const closed = !(hostel?.settings.mealsOffered?.[meal] ?? true);
+            const on = !closed && (entry?.on ?? true);
             return (
               <div key={meal} className="flex items-center gap-3 py-2.5">
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
-                  <Icon icon={c.icon} size={16} className={c.text} />
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${closed ? "bg-bg" : c.bg}`}>
+                  <Icon icon={c.icon} size={16} className={closed ? "text-text-secondary" : c.text} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-[12px] font-extrabold">{MEAL_LABEL[meal]}</div>
                   <div className="truncate text-[10px] font-semibold text-text-secondary">
-                    {menu?.dishes[meal]?.join(" · ") || "Menu not set yet"}
+                    {closed
+                      ? "This hostel doesn't offer this meal"
+                      : menu?.dishes[meal]?.join(" · ") || "Menu not set yet"}
                   </div>
                 </div>
-                {!!entry?.guestCount && (
-                  <Chip tone="blue">+{entry.guestCount} guest</Chip>
+                {closed ? (
+                  <Chip tone="danger" active>
+                    Always closed
+                  </Chip>
+                ) : (
+                  <>
+                    {!!entry?.guestCount && (
+                      <Chip tone="blue">+{entry.guestCount} guest</Chip>
+                    )}
+                    <Switch
+                      checked={on}
+                      disabled={mealsSuspended}
+                      onChange={(v) => user && setToggle(user.id, meal, v)}
+                    />
+                  </>
                 )}
-                <Switch
-                  checked={on}
-                  disabled={mealsSuspended}
-                  onChange={(v) => user && setToggle(user.id, meal, v)}
-                />
               </div>
             );
           })}
