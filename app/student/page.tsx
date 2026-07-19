@@ -35,6 +35,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
+import { NotificationItem } from "@/components/student/NotificationItem";
 import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSheet";
 import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
@@ -82,7 +83,8 @@ export default function StudentHomePage() {
 
   const myEntry = user && day?.entries[user.id];
   const myRoom = rooms.find((r) => r.id === user?.roomId);
-  const unread = notifications.some((n) => !n.read);
+  const unreadNotifications = notifications.filter((n) => !n.read);
+  const unread = unreadNotifications.length > 0;
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
   const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
@@ -114,8 +116,8 @@ export default function StudentHomePage() {
       {/* Hero: promo slider ⇄ current bill & credit (toggle in the header) */}
       <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} />
 
-      {/* Announcements */}
-      {announcements.length > 0 && (
+      {/* Announcements + unread personal notifications (pinned until clicked) */}
+      {(announcements.length > 0 || unreadNotifications.length > 0) && (
         <div>
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -125,7 +127,7 @@ export default function StudentHomePage() {
               <div>
                 <div className="text-[16px] font-extrabold leading-tight">Announcements</div>
                 <div className="text-[10.5px] font-semibold text-text-secondary">
-                  Stay updated with important hostel news
+                  Hostel news + your unread notifications
                 </div>
               </div>
             </div>
@@ -139,6 +141,10 @@ export default function StudentHomePage() {
           </div>
 
           <div className="flex flex-col gap-3">
+            {/* Unread personal notifications stay here until clicked (read). */}
+            {unreadNotifications.slice(0, 3).map((n) => (
+              <NotificationItem key={n.id} notification={n} />
+            ))}
             {announcements.slice(0, 3).map((a) => (
               <AnnouncementItem key={a.id} announcement={a} userId={user?.id} />
             ))}

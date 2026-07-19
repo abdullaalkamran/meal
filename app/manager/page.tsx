@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   BedDouble,
+  Bell,
   BookOpen,
   Briefcase,
   ChevronRight,
@@ -46,6 +47,7 @@ import { MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, greeting, today } from "@/lib/utils/date";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
+import { useNotifications } from "@/hooks/useNotifications";
 
 const QUICK_ACTIONS = [
   { key: "expense", label: "Record expense", icon: Wallet, tone: "bg-primary-soft text-primary" },
@@ -112,6 +114,8 @@ const ACTION_PERMISSION: Partial<Record<(typeof QUICK_ACTIONS)[number]["key"], M
 export default function ManagerDashboardPage() {
   const { user, hostel, activeHostelId, setViewRole } = useSession();
   const actualRate = useActualMealRate(activeHostelId);
+  const myNotifications = useNotifications(user?.id);
+  const hasUnread = myNotifications.some((n) => !n.read);
   const visibleActions = QUICK_ACTIONS.filter((a) => {
     const permission = ACTION_PERMISSION[a.key];
     return !permission || hasManagerPermission(user, hostel, permission);
@@ -194,7 +198,16 @@ export default function ManagerDashboardPage() {
             Managing {hostel?.name}
           </div>
         </div>
-        <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} size={40} />
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/manager/notifications"
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-chip"
+          >
+            <Icon icon={Bell} size={18} />
+            {hasUnread && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-danger" />}
+          </Link>
+          <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} size={40} />
+        </div>
       </div>
 
       {/* Today's cooking hero */}

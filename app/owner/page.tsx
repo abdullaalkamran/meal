@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Building2, ChefHat, ClipboardCheck, DoorOpen, UtensilsCrossed, Users } from "lucide-react";
+import { ArrowLeftRight, Bell, Building2, ChefHat, ClipboardCheck, DoorOpen, UtensilsCrossed, Users } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
+import { useNotifications } from "@/hooks/useNotifications";
 import {
   repo,
   type Announcement,
@@ -22,6 +23,8 @@ import { currentMonth, today } from "@/lib/utils/date";
 export default function OwnerDashboardPage() {
   const { user } = useSession();
   const hostels = useHostelsByOwner(user?.id);
+  const myNotifications = useNotifications(user?.id);
+  const hasUnread = myNotifications.some((n) => !n.read);
   const [usersByHostel, setUsersByHostel] = useState<Record<string, User[]>>({});
   const [expensesByHostel, setExpensesByHostel] = useState<Record<string, Expense[]>>({});
   const [billsByHostel, setBillsByHostel] = useState<Record<string, Bill[]>>({});
@@ -139,11 +142,20 @@ export default function OwnerDashboardPage() {
 
   return (
     <div className="flex flex-col gap-5 pt-2">
-      <div>
-        <div className="text-[17.5px] font-extrabold tracking-tight">Overview</div>
-        <div className="text-[11px] font-semibold text-text-secondary">
-          All hostels · {new Date().toLocaleString("en", { month: "long", year: "numeric" })}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[17.5px] font-extrabold tracking-tight">Overview</div>
+          <div className="text-[11px] font-semibold text-text-secondary">
+            All hostels · {new Date().toLocaleString("en", { month: "long", year: "numeric" })}
+          </div>
         </div>
+        <Link
+          href="/owner/notifications"
+          className="relative flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-chip"
+        >
+          <Icon icon={Bell} size={18} />
+          {hasUnread && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-danger" />}
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

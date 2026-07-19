@@ -2,7 +2,7 @@
 
 import { NotificationsFeed } from "@/components/hostel/NotificationsFeed";
 
-export default function StudentNotificationsPage() {
+export default function ManagerNotificationsPage() {
   return (
     <div className="flex flex-col gap-3 pt-2">
       <div>
