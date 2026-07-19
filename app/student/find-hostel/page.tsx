@@ -122,7 +122,8 @@ function FindHostelInner() {
                     )}
                   </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
-                    {h.area} · {seats} free seat{seats === 1 ? "" : "s"} · meal ৳{h.mealRate}
+                    {h.area} · {seats} free seat{seats === 1 ? "" : "s"} · meals at actual
+                    monthly cost
                   </div>
                 </div>
               </div>

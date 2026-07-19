@@ -219,8 +219,9 @@ export function GenerateBillsSheet({
   return (
     <Sheet open={open} onClose={onClose} title={`Generate bills · ${formatMonthLabel(month)}`}>
       <div className="mb-4 text-[11px] font-semibold text-text-secondary">
-        Meal cost is calculated automatically from each member&rsquo;s own meals and guest meals —
-        nothing to set there.
+        Meal cost is fully automatic: this month&rsquo;s total shopping cost ÷ total meals
+        (members + guests) = the actual per-meal rate, charged for each member&rsquo;s own
+        and guest meals.
       </div>
 
       {ownerServiceCharge > 0 && (

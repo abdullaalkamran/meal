@@ -22,6 +22,7 @@ import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { addDays, currentMonth, today } from "@/lib/utils/date";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 export default function StudentMealsPage() {
   const { user, hostel, activeHostelId } = useSession();
@@ -43,6 +44,7 @@ export default function StudentMealsPage() {
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
   const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
+  const actualRate = useActualMealRate(activeHostelId);
   const { day, setToggle } = useMealDay(activeHostelId, selectedDate);
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
@@ -391,8 +393,8 @@ export default function StudentMealsPage() {
           <div className="mb-1 flex justify-center text-text-secondary">
             <Icon icon={Wallet} size={14} />
           </div>
-          <div className="text-[13.5px] font-extrabold">{formatBDT(hostel?.mealRate ?? 0)}</div>
-          <div className="text-[9px] font-bold text-text-secondary">Avg meal rate</div>
+          <div className="text-[13.5px] font-extrabold">{formatBDT(actualRate.rate)}</div>
+          <div className="text-[9px] font-bold text-text-secondary">Actual rate/meal</div>
         </Card>
       </div>
 

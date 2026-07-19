@@ -113,6 +113,9 @@ export interface Hostel {
   ownerId: string;
   managerId: string;
   cookId?: string;
+  /** DEPRECATED — the real per-meal cost is AUTOMATIC per month (total
+   * shopping ÷ total meals, member + guest; see meals.getActualMealRate).
+   * Nothing bills from this field; kept for legacy data only. */
   mealRate: number;
   kitchenLocation?: string;
   /** Fixed monthly salary for the hostel's cook (৳) — used to compute paid vs due. */

@@ -5,7 +5,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { useHostel } from "@/hooks/useHostel";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 import { repo, type MealSlot } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { addDays, today } from "@/lib/utils/date";
@@ -31,7 +31,6 @@ export function GuestMealSheet({
   defaultDate?: string;
 }) {
   const { toast } = useToast();
-  const hostel = useHostel(hostelId);
   const [meal, setMeal] = useState<MealSlot>("lunch");
   // Defaults to TOMORROW — guest meals need approval before the cutoff, so
   // booking for the future is the normal case (a passed defaultDate wins).
@@ -39,9 +38,11 @@ export function GuestMealSheet({
   const [guestName, setGuestName] = useState("");
   const [qty, setQty] = useState(1);
 
-  // Guest meals cost the SAME as a member meal — bills charge them at the
-  // hostel meal rate, so the sheet must quote that rate, nothing else.
-  const price = hostel?.mealRate ?? 0;
+  // Guest meals cost the SAME as a member meal: the month's ACTUAL per-meal
+  // cost (shopping ÷ meals), so the sheet quotes the running actual rate of
+  // the booked month as an estimate.
+  const actual = useActualMealRate(hostelId, date.slice(0, 7));
+  const price = actual.rate;
   const total = price * qty;
 
   const submit = async () => {
@@ -105,12 +106,13 @@ export function GuestMealSheet({
       <div className="mb-4 rounded-btn bg-bg px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="text-[11.5px] font-bold text-text-secondary">
-            {qty} × {formatBDT(price)}
+            {qty} × {formatBDT(price)} <span className="font-semibold">est.</span>
           </div>
-          <div className="text-[13.5px] font-extrabold">Total {formatBDT(total)}</div>
+          <div className="text-[13.5px] font-extrabold">Total ~{formatBDT(total)}</div>
         </div>
         <div className="mt-1 text-[9.5px] font-semibold text-text-secondary">
-          Guest meals are billed at the same rate as member meals.
+          Guests pay the same as members: the month&rsquo;s actual per-meal cost
+          (total shopping ÷ total meals) — final on the monthly bill.
         </div>
       </div>
 

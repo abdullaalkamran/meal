@@ -44,7 +44,6 @@ export function AddHostelSheet({
 }) {
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
-  const [mealRate, setMealRate] = useState("95");
   const [kitchenLocation, setKitchenLocation] = useState("");
   const [managerName, setManagerName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
@@ -53,8 +52,7 @@ export function AddHostelSheet({
   const [cookSalary, setCookSalary] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const valid =
-    name.trim() && area.trim() && managerName.trim() && managerPhone.trim() && Number(mealRate) > 0;
+  const valid = name.trim() && area.trim() && managerName.trim() && managerPhone.trim();
 
   const submit = async () => {
     if (!valid || saving) return;
@@ -65,7 +63,9 @@ export function AddHostelSheet({
       area: area.trim(),
       ownerId: owner.id,
       managerId: "", // patched right after the manager user exists
-      mealRate: Number(mealRate),
+      // DEPRECATED nominal value — the real per-meal cost is computed every
+      // month as shopping spend ÷ meals eaten; nothing bills from this field.
+      mealRate: 0,
       kitchenLocation: kitchenLocation.trim() || undefined,
       cookMonthlySalary: cookName.trim() && Number(cookSalary) > 0 ? Number(cookSalary) : undefined,
       settings: {
@@ -74,9 +74,9 @@ export function AddHostelSheet({
           { meal: "lunch", time: "09:00" },
           { meal: "dinner", time: "15:00" },
         ],
-        // Guest meals are billed at the member meal rate — kept equal here so
-        // any legacy display of this setting can never contradict the bill.
-        guestMealPrice: Number(mealRate),
+        // DEPRECATED — meals (member & guest) bill at the automatic monthly
+        // actual rate; kept at 0 so nothing can display a contradicting price.
+        guestMealPrice: 0,
         mealStopRequiresApproval: true,
         shoppingRotationPolicy: "spin-wheel",
         managerPermissions: { ...DEFAULT_MANAGER_PERMISSIONS },
@@ -124,7 +124,11 @@ export function AddHostelSheet({
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
       <Field label="Area" value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Uttara, Dhaka" />
-      <Field label="Meal rate (৳) — members & guests pay the same" type="number" min={1} inputMode="numeric" value={mealRate} onChange={(e) => setMealRate(e.target.value)} />
+      <div className="mb-3 rounded-btn bg-bg px-3 py-2 text-[10px] font-semibold text-text-secondary">
+        <span className="font-extrabold">Meal rate is automatic</span> — every month:
+        total shopping cost ÷ total meals (members + guests). Members and guests pay
+        the same actual per-meal cost.
+      </div>
       <Field label="Kitchen location" optional value={kitchenLocation} onChange={(e) => setKitchenLocation(e.target.value)} placeholder="e.g. Room 101 · GF" />
 
       <div className="mb-3 mt-1 rounded-btn bg-bg px-3 py-2.5 text-[10.5px] font-bold text-text-secondary">

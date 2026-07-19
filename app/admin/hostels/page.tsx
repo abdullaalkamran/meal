@@ -7,7 +7,6 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { repo, type Hostel, type User } from "@/lib/data";
-import { formatBDT } from "@/lib/utils/currency";
 
 export default function AdminHostelsPage() {
   const { toast } = useToast();
@@ -57,7 +56,7 @@ export default function AdminHostelsPage() {
                   <Icon icon={MapPin} size={11} /> {h.area}
                 </div>
                 <div className="text-[9.5px] font-semibold text-text-secondary">
-                  Manager {managerName(h)} · Meal rate {formatBDT(h.mealRate)}
+                  Manager {managerName(h)} · meals billed at actual monthly cost
                 </div>
               </div>
             </div>

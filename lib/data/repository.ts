@@ -127,6 +127,13 @@ export interface HostelRepository {
 }
 
 export interface MealRepository {
+  /** The AUTOMATIC per-meal cost for a month: total shopping spend ÷ total
+   * meals eaten (member + guest, current boarders). This — not any manual
+   * setting — is what bills charge per meal. Zero when no meals yet. */
+  getActualMealRate(
+    hostelId: string,
+    month: string
+  ): Promise<{ rate: number; totalShopping: number; totalMeals: number }>;
   getMealDay(hostelId: string, date: string): Promise<MealDay>;
   listMealDays(
     hostelId: string,

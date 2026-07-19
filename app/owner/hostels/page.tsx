@@ -21,6 +21,7 @@ interface HostelStats {
   managerName: string;
   studentCount: number;
   due: number;
+  actualRate: number;
 }
 
 export default function OwnerHostelsPage() {
@@ -44,14 +45,18 @@ export default function OwnerHostelsPage() {
     if (hostels.length === 0) return;
     Promise.all(
       hostels.map(async (h) => {
-        const [manager, members, bills] = await Promise.all([
+        const [manager, members, bills, rateInfo] = await Promise.all([
           repo.users.getUser(h.managerId),
           repo.users.listByHostel(h.id),
           repo.bills.listByHostel(h.id, currentMonth()),
+          repo.meals.getActualMealRate(h.id, currentMonth()),
         ]);
         const due = bills.reduce((sum, b) => sum + (b.grandTotal - b.paid), 0);
         const studentCount = members.filter((m: User) => m.role === "student").length;
-        return [h.id, { managerName: manager?.name ?? "—", studentCount, due }] as const;
+        return [
+          h.id,
+          { managerName: manager?.name ?? "—", studentCount, due, actualRate: rateInfo.rate },
+        ] as const;
       })
     ).then((entries) => setStats(Object.fromEntries(entries)));
   }, [hostels]);
@@ -102,8 +107,8 @@ export default function OwnerHostelsPage() {
                 <div className="text-[11px] font-extrabold">{s?.studentCount ?? "…"}</div>
               </div>
               <div>
-                <div className="text-[9.5px] font-bold text-text-secondary">Meal rate</div>
-                <div className="text-[11px] font-extrabold">{formatBDT(h.mealRate)}</div>
+                <div className="text-[9.5px] font-bold text-text-secondary">Actual rate/meal</div>
+                <div className="text-[11px] font-extrabold">{formatBDT(stats[h.id]?.actualRate ?? 0)}</div>
               </div>
             </div>
 
@@ -114,7 +119,7 @@ export default function OwnerHostelsPage() {
 
             <div className="mb-3 flex flex-wrap gap-1.5">
               <Chip>
-                Guest meal {formatBDT(h.mealRate)} · member rate
+                Guests pay the actual rate, same as members
               </Chip>
               <Chip>
                 {h.settings.mealStopRequiresApproval ? "Meal stop needs approval" : "Meal stop auto"}

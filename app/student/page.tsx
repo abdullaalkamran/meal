@@ -32,7 +32,6 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
-import { useToast } from "@/components/ui/Toast";
 import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
@@ -41,6 +40,7 @@ import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
 import type { MealSlot } from "@/lib/data";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 const QUICK_ACTIONS = [
   { key: "stop", label: "Stop meal", icon: Ban, tone: "danger" as const },
@@ -69,6 +69,7 @@ const TONE_CLASSES = {
 
 export default function StudentHomePage() {
   const { user, hostel, activeHostelId } = useSession();
+  const actualRate = useActualMealRate(activeHostelId);
   const { day } = useMealDay(activeHostelId, today());
   const announcements = useAnnouncements(activeHostelId);
   const plans = useDutyPlans(activeHostelId);
@@ -78,7 +79,6 @@ export default function StudentHomePage() {
   const notifications = useNotifications(user?.id);
   const [sheet, setSheet] = useState<"stop" | "guest" | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const { toast } = useToast();
 
   const myEntry = user && day?.entries[user.id];
   const myRoom = rooms.find((r) => r.id === user?.roomId);
@@ -112,7 +112,7 @@ export default function StudentHomePage() {
       </div>
 
       {/* Hero: promo slider ⇄ current bill & credit (toggle in the header) */}
-      <HomeHero bill={bill ?? undefined} mealRate={hostel?.mealRate ?? 0} />
+      <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} />
 
       {/* Announcements */}
       {announcements.length > 0 && (

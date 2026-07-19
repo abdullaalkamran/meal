@@ -109,6 +109,35 @@ function isMealOffered(hostelId: string, meal: MealSlot): boolean {
   return hostel?.settings.mealsOffered?.[meal] ?? true;
 }
 
+/** The automatic per-meal cost of a month: actual shopping spend ÷ meals
+ * eaten (member + guest) by current boarders. THE meal rate — bills, guest
+ * quotes, and reports all derive from this; no one sets it by hand. */
+function actualMealRateFor(hostelId: string, month: string) {
+  const totalShopping = store.data.shoppingCosts
+    .filter((c) => c.hostelId === hostelId && c.dates.some((d) => d.startsWith(month)))
+    .reduce((sum, c) => sum + c.amount, 0);
+  const boarderIds = new Set(
+    store.data.users
+      .filter((u) => u.hostelId === hostelId && u.role !== "cook" && isHostelMember(u.role) && !u.banned)
+      .map((u) => u.id)
+  );
+  let totalMeals = 0;
+  for (const day of store.data.mealDays) {
+    if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
+    for (const [userId, entry] of Object.entries(day.entries)) {
+      if (!boarderIds.has(userId)) continue;
+      for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+        totalMeals += (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
+      }
+    }
+  }
+  return {
+    rate: totalMeals > 0 ? totalShopping / totalMeals : 0,
+    totalShopping,
+    totalMeals,
+  };
+}
+
 function ensureMealEntry(day: MealDay, userId: string) {
   if (!day.entries[userId]) {
     // New entries default on only for slots the hostel actually offers —
@@ -368,6 +397,9 @@ const hostels: HostelRepository = {
 };
 
 const meals: MealRepository = {
+  async getActualMealRate(hostelId, month) {
+    return actualMealRateFor(hostelId, month);
+  },
   async getMealDay(hostelId, date) {
     return store.data.mealDays.find((d) => d.hostelId === hostelId && d.date === date) ?? emptyMealDay(hostelId, date);
   },
@@ -845,6 +877,12 @@ const bills: BillRepository = {
     const prevDate = new Date(year, mon - 2, 1);
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
 
+    // The AUTOMATIC meal rate: this month's shopping spend ÷ meals eaten
+    // (member + guest). Every member and guest meal is billed at this actual
+    // per-meal cost — the sum of all meal charges equals the shopping spend.
+    const { rate: mealRate } = actualMealRateFor(hostelId, month);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
     const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
     const bills: Bill[] = allBoarders.map((u) => {
       const room = rooms.find((r) => r.occupantIds.includes(u.id));
@@ -863,14 +901,17 @@ const bills: BillRepository = {
         }
       }
 
-      const mealCostItems = [{ label: `${ownMeals} own meals`, amount: ownMeals * hostel.mealRate }];
+      const rateLabel = `@ ৳${round2(mealRate)} actual`;
+      const mealCostItems = [
+        { label: `${ownMeals} own meals ${rateLabel}`, amount: round2(ownMeals * mealRate) },
+      ];
       if (guestMeals > 0) {
         mealCostItems.push({
-          label: `${guestMeals} guest meal${guestMeals > 1 ? "s" : ""}`,
-          amount: guestMeals * hostel.mealRate,
+          label: `${guestMeals} guest meal${guestMeals > 1 ? "s" : ""} ${rateLabel}`,
+          amount: round2(guestMeals * mealRate),
         });
       }
-      const mealCostTotal = (ownMeals + guestMeals) * hostel.mealRate;
+      const mealCostTotal = round2((ownMeals + guestMeals) * mealRate);
 
       const serviceItems = expenseItemsFor(utilityExpenses, u.id);
       // Owner-set flat monthly service charge — not expense-backed, so it

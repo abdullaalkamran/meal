@@ -238,7 +238,7 @@ export function HomeHero({ bill, mealRate }: { bill: Bill | undefined; mealRate:
                 <div className="text-[12.5px] font-extrabold">{bill?.mealsCount ?? "—"}</div>
               </div>
               <div>
-                <div className="text-[9.5px] font-bold text-white/60">Meal rate</div>
+                <div className="text-[9.5px] font-bold text-white/60">Actual rate/meal</div>
                 <div className="text-[12.5px] font-extrabold">{formatBDT(mealRate)}</div>
               </div>
               <div>

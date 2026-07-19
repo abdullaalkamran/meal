@@ -29,6 +29,8 @@ export default function OwnerDashboardPage() {
   const [joinRequestCount, setJoinRequestCount] = useState(0);
   const [announcements, setAnnouncements] = useState<(Announcement & { hostelName: string })[]>([]);
   const [mealsToday, setMealsToday] = useState(0);
+  const [totalShoppingMonth, setTotalShoppingMonth] = useState(0);
+  const [totalMealsMonth, setTotalMealsMonth] = useState(0);
 
   useEffect(() => {
     if (hostels.length === 0) return;
@@ -78,6 +80,14 @@ export default function OwnerDashboardPage() {
         0
       );
       setMealsToday(meals);
+
+      // Actual monthly rate inputs, summed across the portfolio.
+      const rateInfos = await Promise.all(
+        hostels.map((h) => repo.meals.getActualMealRate(h.id, currentMonth()))
+      );
+      if (cancelled) return;
+      setTotalShoppingMonth(rateInfos.reduce((sum, r) => sum + r.totalShopping, 0));
+      setTotalMealsMonth(rateInfos.reduce((sum, r) => sum + r.totalMeals, 0));
     })();
 
     return () => {
@@ -89,8 +99,8 @@ export default function OwnerDashboardPage() {
   const studentCount = allUsers.filter((u) => u.role === "student").length;
   const managerCount = allUsers.filter((u) => u.role === "manager").length;
   const cookCount = allUsers.filter((u) => u.role === "cook").length;
-  const avgMealRate =
-    hostels.length > 0 ? hostels.reduce((sum, h) => sum + h.mealRate, 0) / hostels.length : 0;
+  // Actual per-meal cost across all hostels this month: Σ shopping ÷ Σ meals.
+  const avgMealRate = totalMealsMonth > 0 ? totalShoppingMonth / totalMealsMonth : 0;
   // "Fixed per person" expenses charge e.amount to EACH selected member, so
   // the real total spent is e.amount × member count, not e.amount itself.
   const expenseImpact = (e: Expense) => (e.splitMode === "fixed" ? e.amount * e.memberIds.length : e.amount);
@@ -124,7 +134,7 @@ export default function OwnerDashboardPage() {
       icon: Building2,
     },
     { label: "Meals today", value: mealsToday, icon: UtensilsCrossed, sub: `across ${hostels.length} hostels` },
-    { label: "Avg meal rate", value: formatBDT(avgMealRate), icon: ArrowLeftRight },
+    { label: "Actual rate/meal", value: formatBDT(avgMealRate), icon: ArrowLeftRight },
   ];
 
   return (

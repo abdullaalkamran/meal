@@ -53,7 +53,7 @@ export default function HostelsPage() {
                     <Icon icon={MapPin} size={11} /> {h.area}
                   </div>
                   <div className="text-[9.5px] font-semibold text-text-secondary">
-                    Meal rate {formatBDT(h.mealRate)}/meal
+                    Meals billed at actual monthly cost
                   </div>
                 </div>
                 {isMine ? (

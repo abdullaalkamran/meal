@@ -45,6 +45,7 @@ import { repo, type MealSlot, type ShoppingCost, type User } from "@/lib/data";
 import { MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, greeting, today } from "@/lib/utils/date";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 const QUICK_ACTIONS = [
   { key: "expense", label: "Record expense", icon: Wallet, tone: "bg-primary-soft text-primary" },
@@ -110,6 +111,7 @@ const ACTION_PERMISSION: Partial<Record<(typeof QUICK_ACTIONS)[number]["key"], M
 
 export default function ManagerDashboardPage() {
   const { user, hostel, activeHostelId, setViewRole } = useSession();
+  const actualRate = useActualMealRate(activeHostelId);
   const visibleActions = QUICK_ACTIONS.filter((a) => {
     const permission = ACTION_PERMISSION[a.key];
     return !permission || hasManagerPermission(user, hostel, permission);
@@ -373,9 +375,9 @@ export default function ManagerDashboardPage() {
         </Card>
         <Card>
           <div className="text-[9.5px] font-bold text-text-secondary">
-            Meal rate ({formatMonthLabel(currentMonth()).split(" ")[0].slice(0, 3)})
+            Actual rate/meal ({formatMonthLabel(currentMonth()).split(" ")[0].slice(0, 3)})
           </div>
-          <div className="mt-1 text-[15px] font-extrabold">{formatBDT(hostel?.mealRate ?? 0)}</div>
+          <div className="mt-1 text-[15px] font-extrabold">{formatBDT(actualRate.rate)}</div>
         </Card>
       </div>
 

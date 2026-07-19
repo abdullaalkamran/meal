@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { useHostel } from "@/hooks/useHostel";
 import { repo } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
+// (meal rate is no longer edited here — it's computed from shopping ÷ meals)
 
 /** Owner-only finance controls for one hostel. The monthly service charge is
  * billed flat to every boarder and managers can never edit it — bills simply
@@ -23,7 +24,6 @@ export function FinanceSettingsSheet({
 }) {
   const hostel = useHostel(hostelId ?? undefined);
   const [serviceCharge, setServiceCharge] = useState("");
-  const [mealRate, setMealRate] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Prefill once per open, but only after the live hostel record has actually
@@ -39,7 +39,6 @@ export function FinanceSettingsSheet({
     prefilled.current = true;
     queueMicrotask(() => {
       setServiceCharge(String(hostel.settings.serviceChargeMonthly ?? 0));
-      setMealRate(String(hostel.mealRate));
     });
   }, [open, hostel]);
 
@@ -48,10 +47,7 @@ export function FinanceSettingsSheet({
   const save = async () => {
     setSaving(true);
     const charge = Math.max(0, Number(serviceCharge) || 0);
-    const rate = Math.max(0, Number(mealRate) || 0);
     await repo.hostels.updateSettings(hostel.id, { serviceChargeMonthly: charge });
-    // A blank/zero meal rate is never intentional — meals are always charged.
-    if (rate > 0 && rate !== hostel.mealRate) await repo.hostels.update(hostel.id, { mealRate: rate });
     setSaving(false);
     onSaved?.();
     onClose();
@@ -82,17 +78,11 @@ export function FinanceSettingsSheet({
         ) : null}
       </div>
 
-      <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-        Meal rate (per meal)
+      <div className="mb-4 rounded-btn bg-bg px-3 py-2.5 text-[10px] font-semibold text-text-secondary">
+        <span className="font-extrabold">Meal rate is automatic</span> — each month&rsquo;s
+        total shopping cost ÷ total meals eaten (members + guests) = that month&rsquo;s
+        per-meal cost. Nobody sets it by hand.
       </div>
-      <input
-        type="number"
-        min={0}
-        inputMode="numeric"
-        value={mealRate}
-        onChange={(e) => setMealRate(e.target.value)}
-        className="mb-4 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-      />
 
       <Button fullWidth onClick={save} disabled={saving}>
         {saving ? "Saving…" : "Save"}

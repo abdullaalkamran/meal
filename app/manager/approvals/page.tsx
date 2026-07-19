@@ -17,6 +17,7 @@ import { repo, type Bill, type BillTarget, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 const TARGET_LABEL: Record<BillTarget, string> = {
   previousBalance: "Previous balance",
@@ -28,6 +29,7 @@ const TARGET_LABEL: Record<BillTarget, string> = {
 
 function ManagerApprovalsPage() {
   const { user, hostel, activeHostelId } = useSession();
+  const actualRate = useActualMealRate(activeHostelId);
   const users = useUsers(activeHostelId);
   const mealStops = useMealStops(activeHostelId).filter((r) => r.status === "pending");
   const guestMeals = useGuestMeals(activeHostelId).filter((r) => r.status === "pending");
@@ -154,7 +156,7 @@ function ManagerApprovalsPage() {
                       {r.meal} · {r.date} · {r.qty} guest{r.qty > 1 ? "s" : ""}
                     </div>
                   </div>
-                  <div className="text-[12.5px] font-extrabold">{formatBDT((hostel?.mealRate ?? 0) * r.qty)}</div>
+                  <div className="text-[12.5px] font-extrabold">~{formatBDT(actualRate.rate * r.qty)}</div>
                 </div>
                 <div className="flex gap-2">
                   <button
