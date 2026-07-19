@@ -225,6 +225,69 @@ const users: UserRepository = {
     };
     store.emit(`users:${store.data.users[idx].hostelId}`);
   },
+  async attachToHostel(userId, hostelId, roomId) {
+    const idx = store.data.users.findIndex((u) => u.id === userId);
+    if (idx === -1) throw new Error("No member account found for this code.");
+    const user = store.data.users[idx];
+    if (!isHostelMember(user.role) || user.role === "cook") {
+      throw new Error(`${user.name} is ${user.role} staff, not a boarder account.`);
+    }
+    // THE one-hostel rule: an account that already belongs to a different
+    // hostel can never be attached here — moving goes through transfers.
+    if (user.hostelId && user.hostelId !== hostelId) {
+      const other = store.data.hostels.find((h) => h.id === user.hostelId);
+      throw new Error(
+        `${user.name} is already a member of ${other?.name ?? "another hostel"} — a member can only belong to one hostel. Use a hostel transfer instead.`
+      );
+    }
+    const room = store.data.rooms.find((r) => r.id === roomId && r.hostelId === hostelId);
+    if (!room) throw new Error("Room not found in this hostel.");
+    if (!room.occupantIds.includes(userId) && room.occupantIds.length >= room.capacity) {
+      throw new Error(`Room ${room.number} is full.`);
+    }
+
+    const alreadyMember = user.hostelId === hostelId;
+    store.data.rooms.forEach((r) => {
+      if (r.occupantIds.includes(userId)) {
+        r.occupantIds = r.occupantIds.filter((x) => x !== userId);
+        store.emit(`rooms:${r.hostelId}`);
+      }
+    });
+    room.occupantIds.push(userId);
+    store.data.users[idx] = {
+      ...user,
+      hostelId,
+      roomId,
+      joinedAt: alreadyMember ? user.joinedAt : new Date().toISOString().slice(0, 10),
+    };
+    // Any pending join requests are settled by this attachment: this
+    // hostel's approved, every other hostel's denied.
+    store.data.joinRequests.forEach((r) => {
+      if (r.userId === userId && r.status === "pending") {
+        r.status = r.hostelId === hostelId ? "approved" : "denied";
+        store.emit(`joinRequests:${r.hostelId}`);
+      }
+    });
+    store.data.notifications.push({
+      id: nextId("notif"),
+      userId,
+      title: alreadyMember ? "Room changed" : "Welcome to your hostel",
+      body: alreadyMember
+        ? `You've been moved to Room ${room.number}.`
+        : `You're now a member — Room ${room.number} is yours. Your hostel dashboard is ready.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`notifications:${userId}`);
+    logActivity(
+      hostelId,
+      alreadyMember ? "Member room changed" : "Member added (QR scan)",
+      `${user.name} → Room ${room.number}`
+    );
+    store.emit(`users:${hostelId}`);
+    store.emit(`rooms:${hostelId}`);
+    emitUser(userId);
+  },
   subscribe(hostelId, cb) {
     const fire = () =>
       cb(store.data.users.filter((u) => u.hostelId === hostelId && isHostelMember(u.role)));
@@ -1394,6 +1457,17 @@ const joinRequests: JoinRequestRepository = {
     return store.data.joinRequests.filter((r) => r.userId === userId);
   },
   async create(req) {
+    // One-hostel rule: an account that's already a member somewhere can't
+    // request to join another hostel — that's what transfers are for.
+    if (req.userId) {
+      const u = store.data.users.find((x) => x.id === req.userId);
+      if (u && u.hostelId && isHostelMember(u.role)) {
+        const current = store.data.hostels.find((h) => h.id === u.hostelId);
+        throw new Error(
+          `You're already a member of ${current?.name ?? "a hostel"} — use a hostel transfer to move.`
+        );
+      }
+    }
     store.data.joinRequests.push({
       ...req,
       id: nextId("join"),
@@ -1425,6 +1499,18 @@ const joinRequests: JoinRequestRepository = {
     const attachExisting = (userId: string, room: (typeof store.data.rooms)[number]) => {
       const idx = store.data.users.findIndex((u) => u.id === userId);
       if (idx === -1) return false;
+      // One-hostel rule: someone who became a member elsewhere while this
+      // request sat pending can't be attached here too — deny instead.
+      const existing = store.data.users[idx];
+      if (existing.hostelId && existing.hostelId !== req.hostelId) {
+        req.status = "denied";
+        pushNotification(
+          userId,
+          "Join request declined",
+          "You're already a member of another hostel — a member can only belong to one hostel at a time."
+        );
+        return false;
+      }
       store.data.rooms.forEach((r) => {
         if (r.occupantIds.includes(userId)) {
           r.occupantIds = r.occupantIds.filter((x) => x !== userId);

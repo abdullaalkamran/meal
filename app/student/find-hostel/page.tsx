@@ -2,12 +2,15 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Building2, Clock, Search } from "lucide-react";
+import { Building2, Clock, QrCode, ScanLine, Search } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { QrScannerSheet } from "@/components/ui/QrScannerSheet";
+import { MyQrSheet } from "@/components/student/MyQrSheet";
+import { parseHostelCode } from "@/lib/utils/qr";
 import { repo, type Hostel, type JoinRequest, type Room } from "@/lib/data";
 
 function FindHostelInner() {
@@ -20,6 +23,9 @@ function FindHostelInner() {
   const [roomsByHostel, setRoomsByHostel] = useState<Record<string, Room[]>>({});
   const [myRequests, setMyRequests] = useState<JoinRequest[]>([]);
   const [query, setQuery] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [myQrOpen, setMyQrOpen] = useState(false);
+  const [scannedHostel, setScannedHostel] = useState<Hostel | null>(null);
 
   const load = async () => {
     const all = (await repo.hostels.listAll()).filter((h) => !h.suspended);
@@ -46,16 +52,36 @@ function FindHostelInner() {
 
   const sendRequest = async (h: Hostel) => {
     if (!user) return;
-    await repo.joinRequests.create({
-      hostelId: h.id,
-      userId: user.id,
-      name: user.name,
-      phone: user.phone,
-    });
-    toast(`Join request sent to ${h.name}`);
+    try {
+      await repo.joinRequests.create({
+        hostelId: h.id,
+        userId: user.id,
+        name: user.name,
+        phone: user.phone,
+      });
+      toast(`Join request sent to ${h.name}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not send the request");
+    }
     await load();
   };
 
+  // Student scanned a hostel's invite QR with the in-app scanner: pull the
+  // hostel id out of the code, show the hostel by name, and offer the join
+  // request right there.
+  const handleScan = async (text: string) => {
+    const hostelId = parseHostelCode(text);
+    const h = hostelId ? await repo.hostels.getHostel(hostelId) : undefined;
+    if (!h || h.suspended) {
+      toast("That doesn't look like a hostel invite QR — ask the manager for a fresh one.");
+      return;
+    }
+    setScannerOpen(false);
+    setScannedHostel(h);
+    toast(`Found ${h.name}`);
+  };
+
+  const preselectedId = scannedHostel?.id ?? invitedHostelId;
   const shown = hostels
     .filter(
       (h) =>
@@ -63,8 +89,8 @@ function FindHostelInner() {
         h.name.toLowerCase().includes(query.toLowerCase()) ||
         h.area.toLowerCase().includes(query.toLowerCase())
     )
-    // The QR-invited hostel floats to the top.
-    .sort((a, b) => Number(b.id === invitedHostelId) - Number(a.id === invitedHostelId));
+    // The scanned/QR-invited hostel floats to the top.
+    .sort((a, b) => Number(b.id === preselectedId) - Number(a.id === preselectedId));
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -76,12 +102,62 @@ function FindHostelInner() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-card border border-border bg-card text-[11.5px] font-extrabold text-primary shadow-chip"
+        >
+          <Icon icon={ScanLine} size={15} />
+          Scan hostel QR
+        </button>
+        <button
+          type="button"
+          onClick={() => setMyQrOpen(true)}
+          className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-card border border-border bg-card text-[11.5px] font-extrabold shadow-chip"
+        >
+          <Icon icon={QrCode} size={15} />
+          My QR code
+        </button>
+      </div>
+
       {hasPendingAnywhere && (
         <Card className="flex items-center gap-3 border border-orange/30 bg-orange-soft">
           <Icon icon={Clock} size={16} className="shrink-0 text-orange" />
           <div className="text-[11px] font-bold text-orange">
             Your join request is pending — the manager will review it and assign your room.
           </div>
+        </Card>
+      )}
+
+      {scannedHostel && (
+        <Card className="border border-primary">
+          <div className="mb-2.5 flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+              <Icon icon={Building2} size={17} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-[12.5px] font-extrabold">
+                {scannedHostel.name}
+                <span className="rounded-pill bg-primary-soft px-2 py-0.5 text-[8.5px] font-extrabold text-primary">
+                  Scanned
+                </span>
+              </div>
+              <div className="text-[10px] font-semibold text-text-secondary">
+                {scannedHostel.area} · {freeSeats(scannedHostel.id)} free seat
+                {freeSeats(scannedHostel.id) === 1 ? "" : "s"}
+              </div>
+            </div>
+          </div>
+          {requestFor(scannedHostel.id) ? (
+            <div className="rounded-btn bg-bg px-3 py-2.5 text-center text-[11px] font-extrabold text-text-secondary">
+              Request pending…
+            </div>
+          ) : (
+            <Button fullWidth onClick={() => sendRequest(scannedHostel)}>
+              Send join request to {scannedHostel.name}
+            </Button>
+          )}
         </Card>
       )}
 
@@ -140,6 +216,15 @@ function FindHostelInner() {
           );
         })}
       </div>
+
+      <QrScannerSheet
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        title="Scan hostel QR"
+        hint="Point your camera at the hostel's invite QR — the hostel comes up by name and you can send your join request."
+        onScan={(text) => void handleScan(text)}
+      />
+      <MyQrSheet open={myQrOpen} onClose={() => setMyQrOpen(false)} user={user} />
     </div>
   );
 }

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # local tooling state
 .claude/
+
+# server database file (JSON store behind /api/rpc)
+.data/

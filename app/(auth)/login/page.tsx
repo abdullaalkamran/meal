@@ -141,8 +141,8 @@ export default function LoginPage() {
             ))}
             <button
               type="button"
-              onClick={() => {
-                loadDemoData();
+              onClick={async () => {
+                await loadDemoData();
                 repo.users.listAll().then(setUsers);
                 repo.hostels.listAll().then(setHostels);
               }}

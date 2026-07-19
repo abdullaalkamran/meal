@@ -30,6 +30,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
   const { toast } = useToast();
   const router = useRouter();
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [assignUserId, setAssignUserId] = useState<string | undefined>(undefined);
   const [qrOpen, setQrOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [billsByUser, setBillsByUser] = useState<Record<string, Bill>>({});
@@ -52,6 +53,18 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
       setBillsByUser(map);
     });
   }, [activeHostelId, memberIdsKey]);
+
+  // A member QR scanned with a plain camera app opens this page as
+  // /manager/members?assign=<userId> — jump straight to assigning them.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("assign");
+    if (id) {
+      queueMicrotask(() => {
+        setAssignUserId(id);
+        setAddMemberOpen(true);
+      });
+    }
+  }, []);
 
   const approve = async (requestId: string, roomId: string) => {
     await repo.joinRequests.decide(requestId, "approved", roomId);
@@ -260,8 +273,12 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
 
       <AddMemberSheet
         open={addMemberOpen}
-        onClose={() => setAddMemberOpen(false)}
+        onClose={() => {
+          setAddMemberOpen(false);
+          setAssignUserId(undefined);
+        }}
         hostelId={activeHostelId}
+        initialScanUserId={assignUserId}
       />
       <JoinQrSheet
         open={qrOpen}

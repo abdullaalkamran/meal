@@ -9,6 +9,7 @@ import {
   Globe,
   LogOut,
   Moon,
+  QrCode,
   ShoppingCart,
   User,
   ArrowLeftRight,
@@ -22,6 +23,7 @@ import { useTransfers } from "@/hooks/useTransfers";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useToast } from "@/components/ui/Toast";
 import { EditProfileSheet } from "@/components/student/EditProfileSheet";
+import { MyQrSheet } from "@/components/student/MyQrSheet";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
@@ -37,6 +39,7 @@ export default function StudentMorePage() {
   const notifications = useNotifications(user?.id);
   const { toast } = useToast();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
@@ -57,6 +60,12 @@ export default function StudentMorePage() {
       icon: User,
       tone: "bg-blue-soft text-blue",
       action: () => setProfileOpen(true),
+    },
+    {
+      label: "My QR code",
+      icon: QrCode,
+      tone: "bg-primary-soft text-primary",
+      action: () => setQrOpen(true),
     },
     {
       label: "Shopping",
@@ -179,6 +188,7 @@ export default function StudentMorePage() {
         user={user}
         onSaved={() => toast("Profile updated")}
       />
+      <MyQrSheet open={qrOpen} onClose={() => setQrOpen(false)} user={user} />
     </div>
   );
 }

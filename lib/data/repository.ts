@@ -80,6 +80,12 @@ export interface UserRepository {
   remove(userId: string): Promise<void>;
   /** Manager's conduct/reliability rating of a member (1–5 + optional note). */
   rate(userId: string, stars: Stars, note?: string): Promise<void>;
+  /** Makes an existing account a member of this hostel with a room seat in
+   * one step — the manager/owner scanning a member's QR code. Vacates any
+   * previous seat, resolves the member's pending join requests, and rejects
+   * (throws) if they already belong to a DIFFERENT hostel: a member can only
+   * ever be one hostel's member (moving hostels goes through transfers). */
+  attachToHostel(userId: string, hostelId: string, roomId: string): Promise<void>;
   subscribe(hostelId: string, cb: (users: User[]) => void): Unsubscribe;
   /** Live mirror of ONE user's record — fires on any change to that user
    * (profile edits, join approval, ban, room moves), regardless of which

@@ -47,6 +47,7 @@ import type {
   UsedBookListing,
   User,
 } from "../types";
+import { SCHEMA_VERSION, STORAGE_KEY } from "../schema";
 import { buildDemoSeed, buildSeed } from "./seed";
 
 export interface Tables {
@@ -92,9 +93,6 @@ export interface Tables {
   heroPromoSettings: HeroPromoSettings;
 }
 
-const STORAGE_KEY = "hostel-erp:mock-db:v1";
-const SCHEMA_VERSION = 30;
-
 interface Persisted {
   version: number;
   data: Tables;
@@ -110,6 +108,9 @@ type Listener = () => void;
 
 class MockStore {
   data: Tables;
+  /** Monotonic change counter — bumped on every mutation. The server layer
+   * persists when it moves and clients poll it to know when to re-fetch. */
+  rev = 0;
   private listeners = new Map<string, Set<Listener>>();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -172,11 +173,13 @@ class MockStore {
   }
 
   emit(topic: string) {
+    this.rev += 1;
     this.schedulePersist();
     this.listeners.get(topic)?.forEach((fn) => fn());
   }
 
   private emitAll() {
+    this.rev += 1;
     this.listeners.forEach((set) => set.forEach((fn) => fn()));
   }
 
@@ -191,6 +194,13 @@ class MockStore {
     this.data = buildDemoSeed();
     this.schedulePersist();
     this.emitAll();
+  }
+
+  /** Server-side hydration: adopt tables (and their rev) loaded from the
+   * database file without triggering any persistence of our own. */
+  replaceData(data: Tables, rev: number) {
+    this.data = data;
+    this.rev = rev;
   }
 }
 
