@@ -21,14 +21,17 @@ import { StopMealSheet } from "@/components/student/StopMealSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth, today } from "@/lib/utils/date";
+import { addDays, currentMonth, today } from "@/lib/utils/date";
 
 export default function StudentMealsPage() {
   const { user, hostel, activeHostelId } = useSession();
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [selectedDate, setSelectedDate] = useState(today());
+  // Members plan TOMORROW's meals — today's are already past their cutoffs
+  // (breakfast locks at 21:00 the night before), so the page opens on
+  // tomorrow; the calendar can still navigate to any date.
+  const tomorrow = addDays(today(), 1);
+  const [year, setYear] = useState(Number(tomorrow.slice(0, 4)));
+  const [month, setMonth] = useState(Number(tomorrow.slice(5, 7)));
+  const [selectedDate, setSelectedDate] = useState(tomorrow);
   const [membersOpen, setMembersOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(true);
   const [guestSheetOpen, setGuestSheetOpen] = useState(false);
@@ -201,7 +204,12 @@ export default function StudentMealsPage() {
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <div className="text-[11.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-            {selectedDate === today() ? "Today" : selectedDate} &middot; my meals
+            {selectedDate === today()
+              ? "Today"
+              : selectedDate === addDays(today(), 1)
+                ? "Tomorrow"
+                : selectedDate}{" "}
+            &middot; my meals
           </div>
           <button
             type="button"

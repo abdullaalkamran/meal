@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useHostel } from "@/hooks/useHostel";
 import { repo, type MealSlot } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { today } from "@/lib/utils/date";
+import { addDays, today } from "@/lib/utils/date";
 
 const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 const MEAL_LABEL: Record<MealSlot, string> = {
@@ -33,7 +33,9 @@ export function GuestMealSheet({
   const { toast } = useToast();
   const hostel = useHostel(hostelId);
   const [meal, setMeal] = useState<MealSlot>("lunch");
-  const [date, setDate] = useState(defaultDate ?? today());
+  // Defaults to TOMORROW — guest meals need approval before the cutoff, so
+  // booking for the future is the normal case (a passed defaultDate wins).
+  const [date, setDate] = useState(defaultDate ?? addDays(today(), 1));
   const [guestName, setGuestName] = useState("");
   const [qty, setQty] = useState(1);
 
