@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
-import { repo, type User } from "@/lib/data";
+import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
+import { repo, type GeoAddress, type User } from "@/lib/data";
 import { normalizePhone } from "@/lib/utils/phone";
 
 function Field({
@@ -43,6 +44,7 @@ export function EditProfileSheet({
   const [email, setEmail] = useState("");
   const [studentId, setStudentId] = useState("");
   const [department, setDepartment] = useState("");
+  const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -60,6 +62,7 @@ export function EditProfileSheet({
       setEmail(user.email ?? "");
       setStudentId(user.studentId ?? "");
       setDepartment(user.department ?? "");
+      setAddress(user.address ?? {});
       setError("");
     });
   }, [open, user]);
@@ -84,6 +87,7 @@ export function EditProfileSheet({
       name: name.trim(),
       phone: phone.trim(),
       email: email.trim() || undefined,
+      address: isCompleteAddress(address) ? address : undefined,
       ...(isStudent
         ? { studentId: studentId.trim() || undefined, department: department.trim() || undefined }
         : {}),
@@ -98,6 +102,7 @@ export function EditProfileSheet({
       <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
       <Field label="Phone number (your sign-in)" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <Field label="Email" optional type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <GeoSelect label="Address" optional value={address} onChange={setAddress} />
       {isStudent && (
         <div className="grid grid-cols-2 gap-2">
           <Field label="Student ID" optional value={studentId} onChange={(e) => setStudentId(e.target.value)} />

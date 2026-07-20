@@ -388,6 +388,57 @@ const hostels: HostelRepository = {
     store.emit(`hostel:${hostelId}`);
     store.emit("hostels");
   },
+  async changeManager(hostelId, newManagerId) {
+    const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
+    if (hIdx === -1) throw new Error("Hostel not found.");
+    const hostel = store.data.hostels[hIdx];
+    const next = store.data.users.find((u) => u.id === newManagerId);
+    if (!next) throw new Error("Member not found.");
+    if (next.hostelId !== hostelId || !isHostelMember(next.role)) {
+      throw new Error(`${next.name} isn't a member of this hostel.`);
+    }
+    if (next.role === "cook") throw new Error("The cook can't be made manager.");
+    if (next.banned) throw new Error(`${next.name} is banned — un-ban them first.`);
+    if (hostel.managerId === newManagerId) return;
+
+    const prevManagerId = hostel.managerId;
+    // Demote the outgoing manager to a regular boarder — they keep their room
+    // seat and meals, just lose manager access.
+    const prevIdx = store.data.users.findIndex((u) => u.id === prevManagerId);
+    if (prevIdx !== -1 && store.data.users[prevIdx].role === "manager") {
+      store.data.users[prevIdx] = { ...store.data.users[prevIdx], role: "student" };
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: prevManagerId,
+        title: "Manager role handed over",
+        body: `You're now a regular boarder of ${hostel.name}. ${next.name} is the new manager.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${prevManagerId}`);
+      emitUser(prevManagerId);
+    }
+
+    // Promote the new manager.
+    const nextIdx = store.data.users.findIndex((u) => u.id === newManagerId);
+    store.data.users[nextIdx] = { ...store.data.users[nextIdx], role: "manager" };
+    store.data.hostels[hIdx] = { ...hostel, managerId: newManagerId };
+    store.data.notifications.push({
+      id: nextId("notif"),
+      userId: newManagerId,
+      title: "You're the hostel manager",
+      body: `You've been made the manager of ${hostel.name}.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+
+    logActivity(hostelId, "Manager changed", next.name);
+    store.emit(`notifications:${newManagerId}`);
+    store.emit(`users:${hostelId}`);
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+    emitUser(newManagerId);
+  },
   async updateSettings(hostelId, patch) {
     const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
     if (idx === -1) return;

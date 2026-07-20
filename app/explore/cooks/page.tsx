@@ -10,6 +10,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { useServiceListings } from "@/hooks/useServiceListings";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 
@@ -17,7 +19,10 @@ export default function CooksPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
-  const COOKS = useServiceListings("cook").filter((l) => l.active);
+  const memberArea = useMemberArea();
+  const COOKS = useServiceListings("cook").filter(
+    (l) => l.active && isAvailableAt(l.areas, memberArea)
+  );
 
   const shortlisted = new Set(
     interactions.filter((i) => i.feature === "cooks" && i.kind === "saved").map((i) => i.itemId)

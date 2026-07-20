@@ -10,6 +10,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { useServiceListings } from "@/hooks/useServiceListings";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 
 const CATEGORIES = ["All", "Programming", "Business", "Design", "Language", "Career"];
@@ -19,7 +21,10 @@ export default function LearningPage() {
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
   const [cat, setCat] = useState<string>("All");
-  const courses = useServiceListings("course").filter((l) => l.active);
+  const memberArea = useMemberArea();
+  const courses = useServiceListings("course").filter(
+    (l) => l.active && isAvailableAt(l.areas, memberArea)
+  );
 
   const enrolled = new Set(
     interactions.filter((i) => i.feature === "learning" && i.kind === "enrolled").map((i) => i.itemId)

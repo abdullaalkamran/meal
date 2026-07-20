@@ -12,12 +12,17 @@ import { ProductCard } from "@/components/store/ProductCard";
 import { CartBar } from "@/components/store/CartBar";
 import { useAllProducts, useProducts } from "@/hooks/useProducts";
 import { useCart } from "@/hooks/useCart";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 import { GROCERY_CATEGORIES } from "@/lib/explore/content";
 
 export default function GroceryPage() {
   const { user } = useSession();
-  const products = useProducts("grocery").filter((p) => p.active);
+  const memberArea = useMemberArea();
+  const products = useProducts("grocery").filter(
+    (p) => p.active && isAvailableAt(p.areas, memberArea)
+  );
   const allProducts = useAllProducts();
   const cart = useCart(user?.id);
   const [cat, setCat] = useState<string>("All");

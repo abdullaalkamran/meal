@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
-import { repo, type User } from "@/lib/data";
+import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
+import { repo, type GeoAddress, type User } from "@/lib/data";
+import { formatAddress } from "@/lib/geo/bangladesh";
 import { DEFAULT_MANAGER_PERMISSIONS } from "@/lib/auth/permissions";
 
 const slug = (name: string) =>
@@ -43,7 +45,7 @@ export function AddHostelSheet({
   onCreated: (hostelName: string) => void;
 }) {
   const [name, setName] = useState("");
-  const [area, setArea] = useState("");
+  const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [kitchenLocation, setKitchenLocation] = useState("");
   const [managerName, setManagerName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
@@ -52,15 +54,18 @@ export function AddHostelSheet({
   const [cookSalary, setCookSalary] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const valid = name.trim() && area.trim() && managerName.trim() && managerPhone.trim();
+  const valid =
+    name.trim() && isCompleteAddress(address) && managerName.trim() && managerPhone.trim();
 
   const submit = async () => {
-    if (!valid || saving) return;
+    if (!valid || saving || !isCompleteAddress(address)) return;
     setSaving(true);
 
     const hostel = await repo.hostels.create({
       name: name.trim(),
-      area: area.trim(),
+      // Short display form ("Mirpur, Dhaka") derived from the dropdowns.
+      area: formatAddress(address),
+      address,
       ownerId: owner.id,
       managerId: "", // patched right after the manager user exists
       // DEPRECATED nominal value — the real per-meal cost is computed every
@@ -111,7 +116,7 @@ export function AddHostelSheet({
     onCreated(hostel.name);
     onClose();
     setName("");
-    setArea("");
+    setAddress({});
     setKitchenLocation("");
     setManagerName("");
     setManagerPhone("");
@@ -123,7 +128,7 @@ export function AddHostelSheet({
   return (
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
-      <Field label="Area" value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Uttara, Dhaka" />
+      <GeoSelect label="Hostel address" value={address} onChange={setAddress} />
       <div className="mb-3 rounded-btn bg-bg px-3 py-2 text-[10px] font-semibold text-text-secondary">
         <span className="font-extrabold">Meal rate is automatic</span> — every month:
         total shopping cost ÷ total meals (members + guests). Members and guests pay

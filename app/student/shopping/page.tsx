@@ -11,6 +11,8 @@ import { useSwaps } from "@/hooks/useSwaps";
 import { useShortages } from "@/hooks/useShortages";
 import { useProducts } from "@/hooks/useProducts";
 import { useCart } from "@/hooks/useCart";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -102,7 +104,10 @@ export default function StudentShoppingPage() {
     setItems("");
   };
 
-  const groceryPicks = useProducts("grocery").filter((p) => p.active).slice(0, 2);
+  const memberArea = useMemberArea();
+  const groceryPicks = useProducts("grocery")
+    .filter((p) => p.active && isAvailableAt(p.areas, memberArea))
+    .slice(0, 2);
   const cartItems = useCart(user?.id);
   const qtyOf = (id: string) => cartItems.find((c) => c.productId === id)?.qty ?? 0;
 

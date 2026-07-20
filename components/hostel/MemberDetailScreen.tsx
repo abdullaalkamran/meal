@@ -8,6 +8,7 @@ import {
   ChefHat,
   ChevronLeft,
   Home,
+  ShieldCheck,
   ShoppingCart,
   Sun,
   Trash2,
@@ -15,6 +16,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
+import { hasManagerPermission } from "@/lib/auth/permissions";
 import { useUsers } from "@/hooks/useUsers";
 import { useRooms } from "@/hooks/useRooms";
 import { useMealStops } from "@/hooks/useMealStops";
@@ -45,7 +47,7 @@ const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof S
 export function MemberDetailScreen({ listHref }: { listHref: string }) {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { activeHostelId } = useSession();
+  const { user, hostel, activeHostelId } = useSession();
   const members = useUsers(activeHostelId);
   const rooms = useRooms(activeHostelId);
   const mealStops = useMealStops(activeHostelId);
@@ -61,6 +63,7 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   const [rateOpen, setRateOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmMakeManager, setConfirmMakeManager] = useState(false);
   const [month, setMonth] = useState(currentMonth());
 
   useEffect(() => {
@@ -128,6 +131,23 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
     toast(`${member.name.split(" ")[0]} removed`);
     router.push(listHref);
   };
+  const makeManager = async () => {
+    if (!activeHostelId) return;
+    try {
+      await repo.hostels.changeManager(activeHostelId, member.id);
+      toast(`${member.name.split(" ")[0]} is now the hostel manager`);
+      setConfirmMakeManager(false);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not change the manager");
+    }
+  };
+
+  // Owner always may; a manager only with the owner-granted permission.
+  // Only a non-banned boarder (not the current manager, not the cook) is a
+  // valid target.
+  const canAssignManager = hasManagerPermission(user, hostel, "assignManager");
+  const canPromote =
+    canAssignManager && !member.banned && member.role === "student";
 
   return (
     <div className="flex flex-col gap-5">
@@ -362,6 +382,39 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
               <Icon icon={ArrowLeftRight} size={15} /> Move room
             </button>
           )}
+          {canPromote &&
+            (confirmMakeManager ? (
+              <div className="rounded-btn border border-blue/40 bg-blue-soft p-3">
+                <div className="mb-2 text-[10.5px] font-bold text-blue">
+                  Make {member.name.split(" ")[0]} the manager of {hostel?.name}? The current
+                  manager becomes a regular boarder (they keep their room and meals).
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={makeManager}
+                    className="min-h-11 flex-1 rounded-btn bg-blue text-[12px] font-extrabold text-white"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmMakeManager(false)}
+                    className="min-h-11 flex-1 rounded-btn border border-border text-[12px] font-extrabold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmMakeManager(true)}
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-btn bg-blue-soft text-[12px] font-extrabold text-blue"
+              >
+                <Icon icon={ShieldCheck} size={15} /> Make hostel manager
+              </button>
+            ))}
           {member.role !== "manager" &&
             (member.banned ? (
               <button

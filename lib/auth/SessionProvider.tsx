@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { repo, setActingUser, type Hostel, type Role, type User } from "@/lib/data";
@@ -92,11 +93,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // manager approving their join request, suspending meals, a profile edit
   // in another tab) reach the session without a re-login. Uses the per-user
   // channel so it works even before the user belongs to any hostel.
+  // Tracks the signed-in user's real role across renders so the live mirror
+  // below can tell when it actually CHANGES (manager handing off the role,
+  // a boarder being promoted) versus any other profile edit.
+  const roleRef = useRef<Role | undefined>(user?.role);
+  useEffect(() => {
+    roleRef.current = user?.role;
+  });
+
   const userId = user?.id;
   useEffect(() => {
     if (!userId) return;
     return repo.users.subscribeUser(userId, (fresh) => {
       setUser(fresh);
+      // The user's own role changed (e.g. the manager role was handed to
+      // someone else, demoting this account to a boarder — or a boarder was
+      // promoted to manager). Snap the viewed role to the new real role so
+      // RoleGuard redirects them to the right dashboard instead of leaving
+      // them on pages their account no longer has access to.
+      if (roleRef.current && fresh.role !== roleRef.current) {
+        setViewRoleState(fresh.role);
+      }
+      roleRef.current = fresh.role;
       // A join approval (or hostel switch) gives the user their hostel —
       // adopt it as the active hostel if none is set yet.
       if (fresh.role === "student" || fresh.role === "manager" || fresh.role === "cook") {

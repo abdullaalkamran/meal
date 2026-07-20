@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { repo, type NewServiceListing, type ServiceKind, type ServiceListing } from "@/lib/data";
+import { ServiceAreaPicker } from "@/components/ui/ServiceAreaPicker";
+import { repo, type GeoArea, type NewServiceListing, type ServiceKind, type ServiceListing } from "@/lib/data";
 
 type Field = { name: string; label: string; type: "text" | "number" | "list" };
 
@@ -77,12 +78,14 @@ export function ListingFormSheet({
   const editing = !!listing;
   const fields = KIND_FIELDS[kind];
   const [values, setValues] = useState<Record<string, string>>({});
+  const [areas, setAreas] = useState<GeoArea[]>([]);
 
   useEffect(() => {
     if (!open) return;
     queueMicrotask(() => {
       if (!listing) {
         setValues({});
+        setAreas([]);
         return;
       }
       // Prefill from the listing: join list fields, stringify numbers.
@@ -92,6 +95,7 @@ export function ListingFormSheet({
         next[f.name] = Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v);
       }
       setValues(next);
+      setAreas(listing.areas ?? []);
     });
   }, [open, kind, listing]);
 
@@ -116,6 +120,7 @@ export function ListingFormSheet({
     } else {
       payload = { kind, name: v("name"), area: v("area"), seatRentFrom: num("seatRentFrom"), seatsAvailable: num("seatsAvailable"), rating: num("rating"), amenities: list("amenities"), phone: v("phone") };
     }
+    payload.areas = areas.length > 0 ? areas : undefined;
 
     if (editing && listing) {
       await repo.serviceCatalog.update(listing.id, payload);
@@ -144,6 +149,7 @@ export function ListingFormSheet({
             />
           </label>
         ))}
+        <ServiceAreaPicker value={areas} onChange={setAreas} />
       </div>
       <Button fullWidth onClick={submit} disabled={!canSubmit} className="mt-4">
         {editing ? "Save changes" : "Add to catalog"}

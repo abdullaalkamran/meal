@@ -15,6 +15,7 @@ export const DEFAULT_MANAGER_PERMISSIONS: ManagerPermissions = {
   menu: true,
   duties: true,
   announcements: true,
+  assignManager: true,
 };
 
 /** Labels + descriptions for the owner's permission sheet. */
@@ -27,6 +28,7 @@ export const PERMISSION_OPTIONS: { key: ManagerPermissionKey; label: string; hin
   { key: "menu", label: "Edit menu", hint: "Change the day's dishes" },
   { key: "duties", label: "Create duty rotations", hint: "Shopping & cleaning rotations" },
   { key: "announcements", label: "Post announcements", hint: "Hostel-wide announcements" },
+  { key: "assignManager", label: "Change the manager", hint: "Hand the manager role to another member" },
 ];
 
 /** True when this user may use the capability in this hostel. Only actual

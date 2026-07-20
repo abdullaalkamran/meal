@@ -5,7 +5,8 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ImagePicker } from "@/components/store/ImagePicker";
-import { repo, type NewProduct, type Product, type ProductKind } from "@/lib/data";
+import { ServiceAreaPicker } from "@/components/ui/ServiceAreaPicker";
+import { repo, type GeoArea, type NewProduct, type Product, type ProductKind } from "@/lib/data";
 import { BD_ACADEMIC_CLASSES, BOOK_CATEGORIES, GROCERY_CATEGORIES } from "@/lib/explore/content";
 
 const KIND_TABS: { kind: ProductKind; label: string }[] = [
@@ -41,6 +42,7 @@ export function AddProductSheet({
   const [author, setAuthor] = useState("");
   const [bookCat, setBookCat] = useState<string>(BOOK_CATEGORIES[0]);
   const [academicClass, setAcademicClass] = useState<string>(BD_ACADEMIC_CLASSES[0]);
+  const [areas, setAreas] = useState<GeoArea[]>([]);
 
   useEffect(() => {
     if (open)
@@ -56,6 +58,7 @@ export function AddProductSheet({
         setAcademicClass(
           product?.kind === "book" && product.academicClass ? product.academicClass : BD_ACADEMIC_CLASSES[0]
         );
+        setAreas(product?.areas ?? []);
       });
   }, [open, product]);
 
@@ -71,6 +74,7 @@ export function AddProductSheet({
             category: groceryCat,
             image,
             unit: unit.trim() || undefined,
+            areas: areas.length > 0 ? areas : undefined,
           }
         : {
             kind,
@@ -80,6 +84,7 @@ export function AddProductSheet({
             image,
             author: author.trim() || undefined,
             academicClass,
+            areas: areas.length > 0 ? areas : undefined,
           };
     if (editing && product) {
       await repo.products.update(product.id, payload);
@@ -171,6 +176,7 @@ export function AddProductSheet({
         )}
 
         <ImagePicker value={image} onChange={setImage} label="PRODUCT PHOTO (optional)" />
+        <ServiceAreaPicker value={areas} onChange={setAreas} />
       </div>
 
       <Button fullWidth onClick={submit} disabled={!canSubmit} className="mt-4">

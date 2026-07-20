@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { repo, type User } from "@/lib/data";
+import { repo, type GeoAddress, type User } from "@/lib/data";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { normalizePhone } from "@/lib/utils/phone";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 
 const slug = (name: string) =>
@@ -45,6 +46,7 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [studentId, setStudentId] = useState("");
   const [department, setDepartment] = useState("");
+  const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -79,6 +81,7 @@ export default function SignupPage() {
             avatarSeed: `student-${slug(name)}`,
             studentId: studentId.trim() || undefined,
             department: department.trim() || undefined,
+            address: isCompleteAddress(address) ? address : undefined,
           }
         : {
             hostelId: "",
@@ -88,6 +91,7 @@ export default function SignupPage() {
             role: "owner",
             avatarSeed: `owner-${slug(name)}`,
             ownedHostelIds: [],
+            address: isCompleteAddress(address) ? address : undefined,
           }
     );
     await login(created.id);
@@ -125,6 +129,7 @@ export default function SignupPage() {
         <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahim Uddin" />
         <Field label="Phone number" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01711-123456" />
         <Field label="Email" optional type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        <GeoSelect label="Address" optional value={address} onChange={setAddress} />
 
         {role === "student" ? (
           <>

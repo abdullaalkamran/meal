@@ -6,6 +6,23 @@ export type Role = "student" | "manager" | "owner" | "cook" | "superadmin" | "ma
 export type MealSlot = "breakfast" | "lunch" | "dinner";
 export type Stars = 1 | 2 | 3 | 4 | 5;
 
+/** A structured Bangladesh address, chosen from cascading dropdowns:
+ * division → district → thana/upazila (see lib/geo/bangladesh.ts). */
+export interface GeoAddress {
+  division: string;
+  district: string;
+  thana: string;
+}
+
+/** One availability area for platform services (jobs, offers, e-commerce…).
+ * Omitting district covers the whole division; omitting thana covers the
+ * whole district. An entity with NO areas is available everywhere. */
+export interface GeoArea {
+  division: string;
+  district?: string;
+  thana?: string;
+}
+
 export interface User {
   id: string;
   hostelId: string;
@@ -40,6 +57,9 @@ export interface User {
     bills?: boolean;
     monthlyReport?: boolean;
   };
+  /** Member's home address (division/district/thana dropdowns at signup) —
+   * also what area-restricted platform services filter against. */
+  address?: GeoAddress;
 }
 
 /** One audited hostel action (expense recorded, bills generated, member
@@ -86,6 +106,10 @@ export interface ManagerPermissions {
   duties: boolean;
   /** Posting announcements. */
   announcements: boolean;
+  /** Handing the manager role to another member (promoting a boarder to
+   * manager, which demotes the current manager back to a boarder). Owners
+   * can always do this; this flag controls whether the MANAGER may too. */
+  assignManager: boolean;
 }
 
 export interface HostelSettings {
@@ -109,7 +133,11 @@ export interface HostelSettings {
 export interface Hostel {
   id: string;
   name: string;
+  /** Short display location ("Mirpur, Dhaka") — derived from `address` for
+   * hostels created via the dropdowns; free text on legacy records. */
   area: string;
+  /** Structured location (division/district/thana dropdowns). */
+  address?: GeoAddress;
   ownerId: string;
   managerId: string;
   cookId?: string;
@@ -510,11 +538,11 @@ export interface CommunityPost {
  * by the Service Manager. One discriminated table across kinds so the catalog
  * has a single source of truth. */
 export type ServiceListing =
-  | { kind: "cook"; id: string; active: boolean; createdAt: string; name: string; cuisine: string; experienceYears: number; monthlyRate: number; rating: number; phone: string }
-  | { kind: "job"; id: string; active: boolean; createdAt: string; title: string; company: string; location: string; jobType: string; pay: string; tags: string[] }
-  | { kind: "course"; id: string; active: boolean; createdAt: string; title: string; provider: string; category: string; level: string; duration: string; price: string }
-  | { kind: "offer"; id: string; active: boolean; createdAt: string; shop: string; title: string; discount: string; code: string; expires: string; category: string }
-  | { kind: "hostel"; id: string; active: boolean; createdAt: string; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string };
+  | { kind: "cook"; id: string; active: boolean; createdAt: string; areas?: GeoArea[]; name: string; cuisine: string; experienceYears: number; monthlyRate: number; rating: number; phone: string }
+  | { kind: "job"; id: string; active: boolean; createdAt: string; areas?: GeoArea[]; title: string; company: string; location: string; jobType: string; pay: string; tags: string[] }
+  | { kind: "course"; id: string; active: boolean; createdAt: string; areas?: GeoArea[]; title: string; provider: string; category: string; level: string; duration: string; price: string }
+  | { kind: "offer"; id: string; active: boolean; createdAt: string; areas?: GeoArea[]; shop: string; title: string; discount: string; code: string; expires: string; category: string }
+  | { kind: "hostel"; id: string; active: boolean; createdAt: string; areas?: GeoArea[]; name: string; area: string; seatRentFrom: number; seatsAvailable: number; rating: number; amenities: string[]; phone: string };
 
 export type ServiceKind = ServiceListing["kind"];
 
@@ -566,6 +594,8 @@ export interface Product {
   author?: string;
   /** Book only — Bangladesh academic class (see BD_ACADEMIC_CLASSES). */
   academicClass?: string;
+  /** Where this product can be delivered; missing/empty = all of Bangladesh. */
+  areas?: GeoArea[];
 }
 
 export type NewProduct = Omit<Product, "id" | "createdAt" | "active">;

@@ -9,13 +9,18 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { useServiceListings } from "@/hooks/useServiceListings";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 
 export default function OffersPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
-  const OFFERS = useServiceListings("offer").filter((l) => l.active);
+  const memberArea = useMemberArea();
+  const OFFERS = useServiceListings("offer").filter(
+    (l) => l.active && isAvailableAt(l.areas, memberArea)
+  );
 
   const grabbed = new Set(
     interactions.filter((i) => i.feature === "offers" && i.kind === "grabbed").map((i) => i.itemId)

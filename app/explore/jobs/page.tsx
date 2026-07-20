@@ -10,6 +10,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { useServiceListings } from "@/hooks/useServiceListings";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 
 export default function JobsPage() {
@@ -17,7 +19,10 @@ export default function JobsPage() {
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
   const [query, setQuery] = useState("");
-  const jobs = useServiceListings("job").filter((l) => l.active);
+  const memberArea = useMemberArea();
+  const jobs = useServiceListings("job").filter(
+    (l) => l.active && isAvailableAt(l.areas, memberArea)
+  );
 
   const applied = new Set(
     interactions.filter((i) => i.feature === "jobs" && i.kind === "applied").map((i) => i.itemId)

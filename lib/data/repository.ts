@@ -120,6 +120,13 @@ export interface HostelRepository {
     hostelId: string,
     patch: Partial<Omit<Hostel, "id" | "settings">>
   ): Promise<void>;
+  /** Hands the manager role to another BOARDER of this hostel: the new
+   * manager's account becomes role "manager", and the outgoing manager
+   * reverts to a regular boarder (keeps their room and meals). The new
+   * manager must currently be a non-banned boarder of THIS hostel — throws
+   * otherwise. Owner does this from staff/member screens; a manager may too
+   * when granted the `assignManager` permission. */
+  changeManager(hostelId: string, newManagerId: string): Promise<void>;
   updateSettings(hostelId: string, patch: Partial<Hostel["settings"]>): Promise<void>;
   /** Master meal on/off (manager or owner): sets whether the hostel offers a
    * meal slot at all. Closing also turns that slot off on every stored day

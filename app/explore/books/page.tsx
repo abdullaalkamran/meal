@@ -17,6 +17,8 @@ import { SellBookSheet } from "@/components/store/SellBookSheet";
 import { useAllProducts, useProducts } from "@/hooks/useProducts";
 import { useCart } from "@/hooks/useCart";
 import { useUsedBooks } from "@/hooks/useUsedBooks";
+import { useMemberArea } from "@/hooks/useMemberArea";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 import { repo } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 
@@ -26,7 +28,10 @@ export default function BooksPage() {
   const { user } = useSession();
   const interactions = useExploreInteractions(user?.id);
   const { toast } = useToast();
-  const newBooks = useProducts("book").filter((p) => p.active);
+  const memberArea = useMemberArea();
+  const newBooks = useProducts("book").filter(
+    (p) => p.active && isAvailableAt(p.areas, memberArea)
+  );
   const allProducts = useAllProducts();
   const usedBooks = useUsedBooks();
   const cart = useCart(user?.id);
