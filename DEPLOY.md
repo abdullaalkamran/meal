@@ -33,6 +33,20 @@ To keep data:
 
 That's it — the database file becomes `/data/db.json` and survives redeploys.
 
+## Set a session secret (auth)
+
+Login issues a **signed httpOnly session cookie**. Set a long random secret so
+those cookies can't be forged:
+
+```
+AUTH_SECRET=<a long random string, e.g. `openssl rand -base64 32`>
+```
+
+Without it the app still runs but uses an insecure built-in fallback and logs a
+warning. Sessions also set the cookie `Secure` only over HTTPS, so login works
+over plain HTTP before you attach a domain, and hardens automatically once
+HTTPS is on.
+
 If no writable directory is available, the app still runs, but from memory
 only: data resets on every restart and a warning is logged
 (`Could not write the database…`). Check `GET /api/rpc` — `"persistent": false`
