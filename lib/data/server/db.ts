@@ -23,13 +23,31 @@ interface DbFile {
   data: Tables;
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+// Where the JSON database lives. On a host with an EPHEMERAL filesystem
+// (Railway, Render, Fly, most containers) the app directory is wiped on every
+// redeploy/restart and may be read-only, so persistence there needs a mounted
+// persistent volume — point HOSTEL_DATA_DIR at it (e.g. "/data"). Falls back
+// to ".data" under the working directory for local dev and disk-backed VPS.
+const DATA_DIR = process.env.HOSTEL_DATA_DIR
+  ? path.resolve(process.env.HOSTEL_DATA_DIR)
+  : path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 let loadedMtimeMs = -1;
 /** True until the first write: the DB is still the untouched seed, so a
  * client may offer its legacy localStorage data as the initial dataset. */
-let pristine = !fs.existsSync(DB_FILE);
+let pristine = !safeExists(DB_FILE);
+/** Flips false the first time a disk write fails (read-only/ephemeral FS) so
+ * we only warn once; the app keeps working from in-memory state regardless. */
+let persistWorks = true;
+
+function safeExists(file: string): boolean {
+  try {
+    return fs.existsSync(file);
+  } catch {
+    return false;
+  }
+}
 
 function ensureFresh() {
   let stat: fs.Stats;
@@ -54,16 +72,34 @@ function ensureFresh() {
 }
 
 function persist() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const payload: DbFile = { version: SCHEMA_VERSION, rev: store.rev, data: store.data };
-  fs.writeFileSync(DB_FILE, JSON.stringify(payload));
-  loadedMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+  // The mutation already lives in the in-memory store; the file is just the
+  // durable copy. If the filesystem is read-only or ephemeral we must NOT let
+  // the write throw — that would turn every data change into a 500 and make
+  // the deployed app look broken. Degrade to memory-only instead and warn
+  // once so it's visible in the host's logs (fix: mount a writable volume and
+  // set HOSTEL_DATA_DIR to it).
   pristine = false;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const payload: DbFile = { version: SCHEMA_VERSION, rev: store.rev, data: store.data };
+    fs.writeFileSync(DB_FILE, JSON.stringify(payload));
+    loadedMtimeMs = fs.statSync(DB_FILE).mtimeMs;
+  } catch (err) {
+    if (persistWorks) {
+      persistWorks = false;
+      console.error(
+        `[hostel-erp] Could not write the database to ${DB_FILE} — running from memory only, ` +
+          `so data will reset on restart. Mount a writable persistent volume and set ` +
+          `HOSTEL_DATA_DIR to its path to make data durable.`,
+        err
+      );
+    }
+  }
 }
 
 export function getStatus() {
   ensureFresh();
-  return { rev: store.rev, version: SCHEMA_VERSION, pristine };
+  return { rev: store.rev, version: SCHEMA_VERSION, pristine, persistent: persistWorks };
 }
 
 export class RpcError extends Error {
