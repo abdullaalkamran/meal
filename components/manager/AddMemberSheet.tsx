@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { QrScannerSheet } from "@/components/ui/QrScannerSheet";
 import { useRooms } from "@/hooks/useRooms";
 import { parseMemberCode } from "@/lib/utils/qr";
+import { normalizePhone } from "@/lib/utils/phone";
 import { repo, type Hostel, type User } from "@/lib/data";
 
 export function AddMemberSheet({
@@ -27,23 +28,19 @@ export function AddMemberSheet({
 }) {
   const { toast } = useToast();
   const rooms = useRooms(hostelId);
-  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanned, setScanned] = useState<User | null>(null);
   const [otherHostel, setOtherHostel] = useState<Hostel | null>(null);
   const [assigning, setAssigning] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
 
   const freeRooms = rooms.filter((r) => r.occupantIds.length < r.capacity);
 
-  // Scanning a member's QR pulls up their account by name immediately — the
-  // manager only has to tap the room.
-  const loadScanned = async (userId: string) => {
-    const u = await repo.users.getUser(userId);
-    if (!u) {
-      toast("No member account found for this QR code");
-      return;
-    }
+  // Resolves a platform account and shows it for room assignment — the only
+  // way to add a member. Both the QR scanner and the phone lookup funnel
+  // through here, so a person who isn't on the platform can never be added.
+  const showAccount = async (u: User) => {
     setScannerOpen(false);
     setScanned(u);
     setOtherHostel(
@@ -51,6 +48,39 @@ export function AddMemberSheet({
         ? ((await repo.hostels.getHostel(u.hostelId)) ?? null)
         : null
     );
+  };
+
+  // Scanning a member's QR pulls up their account by name immediately — the
+  // manager only has to tap the room.
+  const loadScanned = async (userId: string) => {
+    const u = await repo.users.getUser(userId);
+    if (!u) {
+      toast("No platform account found for this QR code");
+      return;
+    }
+    await showAccount(u);
+  };
+
+  // Manual add is a lookup of an EXISTING platform account by phone — never a
+  // free-text create. A number with no account can't be added.
+  const lookupByPhone = async () => {
+    if (!phone.trim() || lookingUp) return;
+    setLookingUp(true);
+    try {
+      const target = normalizePhone(phone);
+      const u = (await repo.users.listAll()).find(
+        (x) => normalizePhone(x.phone) === target
+      );
+      if (!u) {
+        toast(
+          "No platform account for this number — ask them to create an account and scan your hostel's QR."
+        );
+        return;
+      }
+      await showAccount(u);
+    } finally {
+      setLookingUp(false);
+    }
   };
 
   useEffect(() => {
@@ -63,7 +93,6 @@ export function AddMemberSheet({
   const reset = () => {
     setScanned(null);
     setOtherHostel(null);
-    setName("");
     setPhone("");
   };
 
@@ -81,14 +110,6 @@ export function AddMemberSheet({
     } finally {
       setAssigning(false);
     }
-  };
-
-  const submitInvite = async () => {
-    if (!hostelId || !name.trim() || !phone.trim()) return;
-    await repo.joinRequests.create({ hostelId, name: name.trim(), phone: phone.trim() });
-    toast("Join request created — approve it from the requests list");
-    reset();
-    onClose();
   };
 
   const alreadyHere = scanned?.hostelId === hostelId;
@@ -140,11 +161,17 @@ export function AddMemberSheet({
               </>
             )}
             <Button variant="secondary" fullWidth onClick={reset}>
-              Scan someone else
+              Choose someone else
             </Button>
           </>
         ) : (
           <>
+            <div className="mb-3 rounded-btn bg-bg px-3 py-2.5 text-[10px] font-semibold text-text-secondary">
+              Only people with a platform account can be added. Scan their QR
+              code or look them up by phone — if they&rsquo;re new, ask them to
+              create an account and scan your hostel&rsquo;s QR first.
+            </div>
+
             <Button
               variant="secondary"
               fullWidth
@@ -157,25 +184,23 @@ export function AddMemberSheet({
             </Button>
 
             <div className="my-4 text-center text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
-              or add manually
+              or find by phone
             </div>
 
-            <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">NAME</div>
+            <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">
+              MEMBER&rsquo;S PHONE
+            </div>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mb-3 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-            />
-            <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">PHONE</div>
-            <input
-              type="text"
+              inputMode="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void lookupByPhone()}
+              placeholder="01711-000000"
               className="mb-4 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
             />
-            <Button fullWidth onClick={submitInvite} disabled={!name.trim() || !phone.trim()}>
-              Create join request
+            <Button fullWidth onClick={lookupByPhone} disabled={!phone.trim() || lookingUp}>
+              {lookingUp ? "Looking up…" : "Find member"}
             </Button>
           </>
         )}

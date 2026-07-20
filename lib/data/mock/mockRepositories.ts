@@ -1508,16 +1508,25 @@ const joinRequests: JoinRequestRepository = {
     return store.data.joinRequests.filter((r) => r.userId === userId);
   },
   async create(req) {
+    // Platform-account-only: a join request must come from a signed-up
+    // account (the find-hostel / QR flow always supplies userId). Walk-ins
+    // typed in by hand are no longer allowed — the person must have an account.
+    if (!req.userId) {
+      throw new Error(
+        "Only people with a platform account can join — ask them to create an account and scan the hostel's QR."
+      );
+    }
+    const requester = store.data.users.find((x) => x.id === req.userId);
+    if (!requester) {
+      throw new Error("No platform account found for this request.");
+    }
     // One-hostel rule: an account that's already a member somewhere can't
     // request to join another hostel — that's what transfers are for.
-    if (req.userId) {
-      const u = store.data.users.find((x) => x.id === req.userId);
-      if (u && u.hostelId && isHostelMember(u.role)) {
-        const current = store.data.hostels.find((h) => h.id === u.hostelId);
-        throw new Error(
-          `You're already a member of ${current?.name ?? "a hostel"} — use a hostel transfer to move.`
-        );
-      }
+    if (requester.hostelId && isHostelMember(requester.role)) {
+      const current = store.data.hostels.find((h) => h.id === requester.hostelId);
+      throw new Error(
+        `You're already a member of ${current?.name ?? "a hostel"} — use a hostel transfer to move.`
+      );
     }
     store.data.joinRequests.push({
       ...req,
@@ -1593,31 +1602,22 @@ const joinRequests: JoinRequestRepository = {
     if (status === "approved" && roomId) {
       const room = store.data.rooms.find((r) => r.id === roomId);
       if (room) {
-        // Account-linked request (find-hostel / QR flow), or a walk-in whose
-        // phone already has a signed-up account — attach that account. Only
-        // a genuinely unknown phone creates a fresh user.
+        // Platform-account-only: attach the request's own account, or (for
+        // legacy walk-in requests) an existing account matching its phone.
+        // A request with no account behind it can't be approved — approving
+        // it would mean adding a non-account-holder, so it's denied instead.
         const linkedId =
           req.userId ??
           store.data.users.find(
-            (u) => u.role === "student" && normalizePhone(u.phone) === normalizePhone(req.phone)
+            (u) => isHostelMember(u.role) && normalizePhone(u.phone) === normalizePhone(req.phone)
           )?.id;
         if (linkedId) {
           attachExisting(linkedId, room);
+          store.emit(`users:${req.hostelId}`);
+          store.emit(`rooms:${req.hostelId}`);
         } else {
-          const newUser = {
-            id: nextId("user"),
-            hostelId: req.hostelId,
-            name: req.name,
-            phone: req.phone,
-            role: "student" as const,
-            roomId,
-            avatarSeed: req.name,
-          };
-          store.data.users.push(newUser);
-          room.occupantIds.push(newUser.id);
+          req.status = "denied";
         }
-        store.emit(`users:${req.hostelId}`);
-        store.emit(`rooms:${req.hostelId}`);
       }
     } else if (status === "denied" && req.userId) {
       pushNotification(

@@ -25,9 +25,18 @@ export default function HostelsPage() {
 
   const requestJoin = async (hostelId: string, name: string) => {
     if (!user) return;
-    await repo.joinRequests.create({ hostelId, name: user.name, phone: user.phone });
-    setRequested((prev) => new Set(prev).add(hostelId));
-    toast(`Join request sent to ${name}`);
+    try {
+      await repo.joinRequests.create({
+        hostelId,
+        userId: user.id,
+        name: user.name,
+        phone: user.phone,
+      });
+      setRequested((prev) => new Set(prev).add(hostelId));
+      toast(`Join request sent to ${name}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not send the request");
+    }
   };
 
   return (
