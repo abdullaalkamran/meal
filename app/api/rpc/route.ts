@@ -3,7 +3,8 @@
 // server-side store (see lib/data/server/db.ts).
 
 import type { NextRequest } from "next/server";
-import { getStatus, handleRpc, RpcError, type RpcRequest } from "@/lib/data/server/db";
+import { getStatus, getUserById, handleRpc, RpcError, type RpcRequest } from "@/lib/data/server/db";
+import { SESSION_COOKIE, verifySession } from "@/lib/data/server/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   try {
-    const { result, rev } = await handleRpc(body);
+    // The activity-log actor is derived from the signed session cookie, never
+    // trusted from the request body — so who did what can't be spoofed.
+    const userId = verifySession(req.cookies.get(SESSION_COOKIE)?.value);
+    const actorUser = userId ? getUserById(userId) : undefined;
+    const actor = actorUser ? { id: actorUser.id, name: actorUser.name } : null;
+    const { result, rev } = await handleRpc({ ...body, actor });
     return Response.json({ result, rev });
   } catch (err) {
     if (err instanceof RpcError) {

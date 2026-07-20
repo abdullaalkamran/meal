@@ -94,7 +94,12 @@ export default function SignupPage() {
             address: isCompleteAddress(address) ? address : undefined,
           }
     );
-    await login(created.id);
+    // The account exists on the server now — sign in with its phone.
+    const res = await login(created.phone);
+    if (!res.ok) {
+      setSaving(false);
+      setError(res.error ?? "Account created, but sign-in failed — try signing in.");
+    }
   };
 
   return (

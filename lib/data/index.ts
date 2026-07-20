@@ -13,9 +13,10 @@ import type { Repositories } from "./repository";
 
 export const repo: Repositories = remoteRepositories;
 
-// setActingUser tags RPC calls with the signed-in user for the activity log;
-// loadDemoData swaps the server dataset for the rich demo seed (login page).
-export { setActingUser, loadDemoData } from "./remote/remoteRepositories";
+// loadDemoData swaps the server dataset for the rich demo seed. The activity
+// actor is derived from the server session cookie, so there's no client-side
+// "acting user" to set anymore.
+export { loadDemoData } from "./remote/remoteRepositories";
 
 export type * from "./types";
 export type * from "./repository";

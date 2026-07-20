@@ -17,11 +17,8 @@ import { SCHEMA_VERSION, STORAGE_KEY } from "../schema";
 
 const POLL_INTERVAL_MS = 2500;
 
-// ── Acting user (sent with every call for the activity log) ────────────────
-let actor: { id: string; name: string } | null = null;
-export function setActingUser(user: { id: string; name: string } | undefined) {
-  actor = user ?? null;
-}
+// The activity-log actor is derived server-side from the session cookie
+// (see app/api/rpc/route.ts) — the client no longer sends it.
 
 // ── One-time init: adopt this browser's legacy localStorage dataset ────────
 // If the server DB is still the untouched seed and this browser has data
@@ -66,7 +63,7 @@ async function rawRpc<T>(
   const res = await fetch("/api/rpc", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ repo, method, args, actor }),
+    body: JSON.stringify({ repo, method, args }),
   });
   const json = (await res.json().catch(() => null)) as
     | { result?: T; rev?: number; error?: string }

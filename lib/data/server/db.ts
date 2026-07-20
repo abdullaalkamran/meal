@@ -14,6 +14,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SCHEMA_VERSION } from "../schema";
+import { normalizePhone } from "../../utils/phone";
+import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
 import { mockRepositories, setActingUser } from "../mock/mockRepositories";
 
@@ -100,6 +102,18 @@ function persist() {
 export function getStatus() {
   ensureFresh();
   return { rev: store.rev, version: SCHEMA_VERSION, pristine, persistent: persistWorks };
+}
+
+// ── Auth lookups (used by /api/auth and the /api/rpc actor derivation) ───────
+export function getUserById(userId: string): User | undefined {
+  ensureFresh();
+  return store.data.users.find((u) => u.id === userId);
+}
+
+export function getUserByPhone(phone: string): User | undefined {
+  ensureFresh();
+  const target = normalizePhone(phone);
+  return store.data.users.find((u) => normalizePhone(u.phone) === target);
 }
 
 export class RpcError extends Error {

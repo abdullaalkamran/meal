@@ -10,9 +10,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { repo, setActingUser, type Hostel, type Role, type User } from "@/lib/data";
+import { repo, type Hostel, type Role, type User } from "@/lib/data";
 import { ensureMonthEndReportNotices } from "@/lib/reports/monthEndNotice";
-import { clearSession, readSession, writeSession } from "./session";
+import { fetchSession, serverLogin, serverLogout, type LoginScope } from "./session";
 
 export const ROLE_HOME: Record<Role, string> = {
   student: "/student",
@@ -35,7 +35,9 @@ interface SessionContextValue {
   setViewRole: (role: Role) => void;
   activeHostelId: string | undefined;
   switchHostel: (hostelId: string) => void;
-  login: (userId: string) => Promise<void>;
+  /** Signs in by phone against the server. Returns an error message on
+   * failure (bad number, wrong sign-in page) instead of throwing. */
+  login: (phone: string, scope?: LoginScope) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -52,8 +54,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function loadSession() {
-      const session = readSession();
-      const u = session ? await repo.users.getUser(session.userId) : undefined;
+      // The signed-in user comes from the server session cookie, not the
+      // client — so a forged/edited cookie can't impersonate anyone.
+      const u = (await fetchSession()) ?? undefined;
       if (cancelled) return;
       setUser(u);
       setViewRoleState(u?.role);
@@ -81,12 +84,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) return;
     void ensureMonthEndReportNotices();
-  }, [user]);
-
-  // Registers the signed-in user as the actor for the activity log — a real
-  // backend infers this from the auth token instead.
-  useEffect(() => {
-    setActingUser(user ? { id: user.id, name: user.name } : undefined);
   }, [user]);
 
   // Mirrors the logged-in user's own record so changes made elsewhere (a
@@ -126,21 +123,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   const login = useCallback(
-    async (userId: string) => {
-      const u = await repo.users.getUser(userId);
-      if (!u) return;
-      writeSession({ userId }, u.role);
+    async (phone: string, scope: LoginScope = "hostel") => {
+      const res = await serverLogin(phone, scope);
+      if (!res.ok || !res.user) return { ok: false, error: res.error };
+      const u = res.user;
       setUser(u);
       setViewRoleState(u.role);
-      const defaultHostelId = u.role === "owner" ? u.ownedHostelIds?.[0] : u.hostelId;
-      setActiveHostelId(defaultHostelId);
+      setActiveHostelId(u.role === "owner" ? u.ownedHostelIds?.[0] : u.hostelId);
       router.push(ROLE_HOME[u.role]);
+      return { ok: true };
     },
     [router]
   );
 
   const logout = useCallback(() => {
-    clearSession();
+    void serverLogout();
     setUser(undefined);
     setHostel(undefined);
     setViewRoleState(undefined);
