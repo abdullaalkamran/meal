@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
-import { useAnnouncements } from "@/hooks/useAnnouncements";
+import { useActionableAnnouncements } from "@/hooks/useActionableAnnouncements";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useBill } from "@/hooks/useBill";
 import { useMenu } from "@/hooks/useMenu";
@@ -72,7 +72,10 @@ export default function StudentHomePage() {
   const { user, hostel, activeHostelId } = useSession();
   const actualRate = useActualMealRate(activeHostelId);
   const { day } = useMealDay(activeHostelId, today());
-  const announcements = useAnnouncements(activeHostelId);
+  // Only what still needs THIS user's attention — voted polls and
+  // resolved shortages/swaps drop out here but stay visible in the full
+  // history on the notifications page.
+  const announcements = useActionableAnnouncements(activeHostelId, user?.id);
   const plans = useDutyPlans(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
   const menu = useMenu(activeHostelId, today());

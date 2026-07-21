@@ -798,9 +798,10 @@ const swaps: SwapRepository = {
     return store.data.swapRequests.filter((s) => s.planId === planId);
   },
   async request(swap) {
+    const id = nextId("swap");
     store.data.swapRequests.push({
       ...swap,
-      id: nextId("swap"),
+      id,
       status: "pending",
       createdAt: new Date().toISOString(),
     });
@@ -810,7 +811,9 @@ const swaps: SwapRepository = {
       kind: "swap-request",
       title: "Shopping duty swap requested",
       body: "A member wants to swap shopping duty dates with you.",
-      payload: { fromUserId: swap.fromUserId, toUserId: swap.toUserId },
+      // swapId lets the recipient's home banner drop this once it's
+      // resolved — see hooks/useActionableAnnouncements.ts.
+      payload: { swapId: id, fromUserId: swap.fromUserId, toUserId: swap.toUserId },
       createdAt: new Date().toISOString(),
     });
     store.emit(`swaps:${swap.hostelId}`);

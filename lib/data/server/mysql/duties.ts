@@ -190,16 +190,19 @@ export const swaps: SwapRepository = {
   },
 
   async request(swap) {
+    const id = newId("swap");
     await transaction(async (tx) => {
       await run(
         "INSERT INTO swap_requests (id, hostel_id, plan_id, from_user_id, to_user_id, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-        [newId("swap"), swap.hostelId, swap.planId, swap.fromUserId, swap.toUserId, now()],
+        [id, swap.hostelId, swap.planId, swap.fromUserId, swap.toUserId, now()],
         tx
       );
       await postAnnouncement(
         swap.hostelId, "swap-request", "Shopping duty swap requested",
         "A member wants to swap shopping duty dates with you.",
-        { fromUserId: swap.fromUserId, toUserId: swap.toUserId }, tx
+        // swapId lets the recipient's home banner drop this once it's
+        // resolved — see hooks/useActionableAnnouncements.ts.
+        { swapId: id, fromUserId: swap.fromUserId, toUserId: swap.toUserId }, tx
       );
     });
   },
