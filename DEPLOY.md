@@ -105,6 +105,31 @@ filesystem don't hold (see `next build --webpack` / `next dev --webpack` in
 the Next.js docs). `next dev` is left on Turbopack since local development
 doesn't go through the CloudLinux symlink.
 
+## Why build tools live in `dependencies`, not `devDependencies`
+
+Deployments here may install **production dependencies only** — npm omits
+`devDependencies` whenever `NODE_ENV=production` (which the Node App screen
+sets), and `npm ci --omit=dev` does the same. Anything `next build` needs must
+therefore be a regular dependency, or the build fails on the server while
+working fine locally.
+
+So `package.json` keeps these in `dependencies`:
+
+- **`typescript`** + **`@types/node`**, **`@types/react`**, **`@types/react-dom`**,
+  **`@types/qrcode`** — `next build` type-checks the project (and `next.config.ts`
+  is itself TypeScript), so a missing compiler or missing type packages is a
+  build error, not a warning.
+- **`tailwindcss`** + **`@tailwindcss/postcss`** — `postcss.config.mjs` runs every
+  stylesheet through Tailwind's PostCSS plugin during the build.
+
+Only **`eslint`** and **`eslint-config-next`** remain in `devDependencies`:
+Next.js 16 removed the `next lint` command and no longer runs ESLint as part of
+`next build`, so linting (`npm run lint`) is purely a local/CI concern.
+
+Verified by installing with `npm ci --omit=dev` and running
+`NODE_ENV=production npm run build` — it completes, type-checks, and emits
+compiled CSS with no devDependencies present.
+
 ## Why a custom `server.js` instead of `next start`
 
 Passenger's Node.js integration works by spawning your **startup file**
