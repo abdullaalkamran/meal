@@ -38,6 +38,14 @@ export default function StudentShoppingPage() {
   const plan = plans.find(
     (p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? "") && p.endDate >= today()
   );
+  // A rotation can be running for the rest of the hostel without this member
+  // in it — most commonly because they joined after the manager created it.
+  // New plans only ever enroll whoever the manager had selected at creation
+  // time, so distinguishing this from "no rotation at all" avoids reading as
+  // a bug ("everyone else already spun and I can't").
+  const otherActivePlan = plans.find(
+    (p) => p.type === "shopping" && !p.memberIds.includes(user?.id ?? "") && p.endDate >= today()
+  );
   const myBlockIndex = plan?.blocks.findIndex((b) => b.userIds.includes(user?.id ?? "")) ?? -1;
   const myBlock = plan && myBlockIndex >= 0 ? plan.blocks[myBlockIndex] : undefined;
   const hasSpun = user ? plan?.spun[user.id] : false;
@@ -184,7 +192,9 @@ export default function StudentShoppingPage() {
         {shortageAlerts}
         {storeStrip}
         <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
-          No active shopping duty rotation right now.
+          {otherActivePlan
+            ? "A shopping duty rotation is already running for the rest of the hostel — you'll join the next one, once this one wraps up."
+            : "No active shopping duty rotation right now."}
         </Card>
       </div>
     );
