@@ -16,6 +16,15 @@ const eslintConfig = defineConfig([
     "design_handoff_hostel_erp/**",
   ]),
   {
+    // The Passenger startup file is plain CommonJS on purpose — the host
+    // spawns it directly with Node (no bundler, no ESM), so `require` is the
+    // only way to load `http` and `next` there.
+    files: ["server.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
