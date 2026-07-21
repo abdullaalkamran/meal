@@ -137,6 +137,22 @@ export interface HostelRepository {
    * otherwise. Owner does this from staff/member screens; a manager may too
    * when granted the `assignManager` permission. */
   changeManager(hostelId: string, newManagerId: string): Promise<void>;
+  /** Adds, replaces, or removes this hostel's cook — the one safe, narrow
+   * path for it (rather than the raw `users.create`, which can mint ANY
+   * role and is owner/superadmin-only). Whatever cook was previously
+   * assigned is detached (hostelId/roomId cleared; their account and
+   * "cook" role are kept, so they can be reassigned elsewhere later) before
+   * the new one (if any) is attached. "existing" only accepts a user who is
+   * already role "cook" AND not currently staffing a different hostel —
+   * throws otherwise. Owner does this from the staff screen; a manager may
+   * too, from the members screen. */
+  assignCook(
+    hostelId: string,
+    cook:
+      | { mode: "new"; name: string; phone: string; salary?: number }
+      | { mode: "existing"; userId: string; salary?: number }
+      | { mode: "remove" }
+  ): Promise<void>;
   updateSettings(hostelId: string, patch: Partial<Hostel["settings"]>): Promise<void>;
   /** Master meal on/off (manager or owner): sets whether the hostel offers a
    * meal slot at all. Closing also turns that slot off on every stored day

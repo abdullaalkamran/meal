@@ -53,76 +53,90 @@ export function AddHostelSheet({
   const [cookPhone, setCookPhone] = useState("");
   const [cookSalary, setCookSalary] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
+  // A cook needs a real phone number to log in — it can't be truly optional
+  // once a name is entered, so require both together or neither.
+  const cookNameGiven = cookName.trim().length > 0;
   const valid =
-    name.trim() && isCompleteAddress(address) && managerName.trim() && managerPhone.trim();
+    name.trim() &&
+    isCompleteAddress(address) &&
+    managerName.trim() &&
+    managerPhone.trim() &&
+    (!cookNameGiven || cookPhone.trim());
 
   const submit = async () => {
     if (!valid || saving || !isCompleteAddress(address)) return;
     setSaving(true);
+    setError("");
 
-    const hostel = await repo.hostels.create({
-      name: name.trim(),
-      // Short display form ("Mirpur, Dhaka") derived from the dropdowns.
-      area: formatAddress(address),
-      address,
-      ownerId: owner.id,
-      managerId: "", // patched right after the manager user exists
-      // DEPRECATED nominal value — the real per-meal cost is computed every
-      // month as shopping spend ÷ meals eaten; nothing bills from this field.
-      mealRate: 0,
-      kitchenLocation: kitchenLocation.trim() || undefined,
-      cookMonthlySalary: cookName.trim() && Number(cookSalary) > 0 ? Number(cookSalary) : undefined,
-      settings: {
-        mealCutoff: [
-          { meal: "breakfast", time: "21:00" },
-          { meal: "lunch", time: "09:00" },
-          { meal: "dinner", time: "15:00" },
-        ],
-        // DEPRECATED — meals (member & guest) bill at the automatic monthly
-        // actual rate; kept at 0 so nothing can display a contradicting price.
-        guestMealPrice: 0,
-        mealStopRequiresApproval: true,
-        shoppingRotationPolicy: "spin-wheel",
-        managerPermissions: { ...DEFAULT_MANAGER_PERMISSIONS },
-        serviceChargeMonthly: 0,
-      },
-    });
-
-    const manager = await repo.users.create({
-      hostelId: hostel.id,
-      name: managerName.trim(),
-      phone: managerPhone.trim(),
-      role: "manager",
-      avatarSeed: `manager-${slug(managerName)}`,
-    });
-    let cookId: string | undefined;
-    if (cookName.trim()) {
-      const cook = await repo.users.create({
-        hostelId: hostel.id,
-        name: cookName.trim(),
-        phone: cookPhone.trim() || "—",
-        role: "cook",
-        avatarSeed: `cook-${slug(cookName)}`,
+    try {
+      const hostel = await repo.hostels.create({
+        name: name.trim(),
+        // Short display form ("Mirpur, Dhaka") derived from the dropdowns.
+        area: formatAddress(address),
+        address,
+        ownerId: owner.id,
+        managerId: "", // patched right after the manager user exists
+        // DEPRECATED nominal value — the real per-meal cost is computed every
+        // month as shopping spend ÷ meals eaten; nothing bills from this field.
+        mealRate: 0,
+        kitchenLocation: kitchenLocation.trim() || undefined,
+        cookMonthlySalary: cookNameGiven && Number(cookSalary) > 0 ? Number(cookSalary) : undefined,
+        settings: {
+          mealCutoff: [
+            { meal: "breakfast", time: "21:00" },
+            { meal: "lunch", time: "09:00" },
+            { meal: "dinner", time: "15:00" },
+          ],
+          // DEPRECATED — meals (member & guest) bill at the automatic monthly
+          // actual rate; kept at 0 so nothing can display a contradicting price.
+          guestMealPrice: 0,
+          mealStopRequiresApproval: true,
+          shoppingRotationPolicy: "spin-wheel",
+          managerPermissions: { ...DEFAULT_MANAGER_PERMISSIONS },
+          serviceChargeMonthly: 0,
+        },
       });
-      cookId = cook.id;
-    }
-    await repo.hostels.update(hostel.id, { managerId: manager.id, cookId });
-    await repo.users.updateUser(owner.id, {
-      ownedHostelIds: [...(owner.ownedHostelIds ?? []), hostel.id],
-    });
 
-    setSaving(false);
-    onCreated(hostel.name);
-    onClose();
-    setName("");
-    setAddress({});
-    setKitchenLocation("");
-    setManagerName("");
-    setManagerPhone("");
-    setCookName("");
-    setCookPhone("");
-    setCookSalary("");
+      const manager = await repo.users.create({
+        hostelId: hostel.id,
+        name: managerName.trim(),
+        phone: managerPhone.trim(),
+        role: "manager",
+        avatarSeed: `manager-${slug(managerName)}`,
+      });
+      let cookId: string | undefined;
+      if (cookNameGiven) {
+        const cook = await repo.users.create({
+          hostelId: hostel.id,
+          name: cookName.trim(),
+          phone: cookPhone.trim(),
+          role: "cook",
+          avatarSeed: `cook-${slug(cookName)}`,
+        });
+        cookId = cook.id;
+      }
+      await repo.hostels.update(hostel.id, { managerId: manager.id, cookId });
+      await repo.users.updateUser(owner.id, {
+        ownedHostelIds: [...(owner.ownedHostelIds ?? []), hostel.id],
+      });
+
+      setSaving(false);
+      onCreated(hostel.name);
+      onClose();
+      setName("");
+      setAddress({});
+      setKitchenLocation("");
+      setManagerName("");
+      setManagerPhone("");
+      setCookName("");
+      setCookPhone("");
+      setCookSalary("");
+    } catch (err) {
+      setSaving(false);
+      setError(err instanceof Error ? err.message : "Could not create the hostel.");
+    }
   };
 
   return (
@@ -143,10 +157,16 @@ export function AddHostelSheet({
       <Field label="Manager phone" value={managerPhone} onChange={(e) => setManagerPhone(e.target.value)} placeholder="01711-000000" />
 
       <Field label="Cook name" optional value={cookName} onChange={(e) => setCookName(e.target.value)} placeholder="Full name" />
-      {cookName.trim() && (
+      {cookNameGiven && (
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Cook phone" optional value={cookPhone} onChange={(e) => setCookPhone(e.target.value)} placeholder="01711-000000" />
+          <Field label="Cook phone" value={cookPhone} onChange={(e) => setCookPhone(e.target.value)} placeholder="01711-000000" />
           <Field label="Cook salary (৳/mo)" optional type="number" min={0} inputMode="numeric" value={cookSalary} onChange={(e) => setCookSalary(e.target.value)} />
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-3 rounded-btn bg-danger-soft px-3 py-2 text-[10.5px] font-bold text-danger">
+          {error}
         </div>
       )}
 

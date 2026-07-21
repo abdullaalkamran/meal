@@ -49,6 +49,12 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   hostels: {
     create: ["owner", "superadmin"],
     update: [...HOSTEL_STAFF, "superadmin"],
+    // Was missing entirely, which under the "anything not listed is allowed
+    // to any signed-in user" default made it callable by literally any
+    // student — closed alongside fixing the owner staff-page bug that made
+    // this unreachable through the UI in the first place.
+    changeManager: [...HOSTEL_STAFF, "superadmin"],
+    assignCook: [...HOSTEL_STAFF, "superadmin"],
     updateSettings: [...HOSTEL_STAFF, "superadmin"],
     setMealOffered: HOSTEL_STAFF,
     setSuspended: PLATFORM_ADMIN,

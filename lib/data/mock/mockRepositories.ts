@@ -512,6 +512,99 @@ const hostels: HostelRepository = {
     store.emit("hostels");
     emitUser(newManagerId);
   },
+  async assignCook(hostelId, cook) {
+    const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
+    if (hIdx === -1) throw new Error("Hostel not found.");
+    const hostel = store.data.hostels[hIdx];
+
+    // Detach whoever's currently the cook — their account and "cook" role
+    // are kept (so they can be reassigned elsewhere), just no longer
+    // referenced by this hostel.
+    const prevCookId = hostel.cookId || null;
+    if (prevCookId) {
+      const idx = store.data.users.findIndex((u) => u.id === prevCookId);
+      if (idx !== -1) {
+        store.data.users[idx] = { ...store.data.users[idx], hostelId: "", roomId: undefined };
+        emitUser(prevCookId);
+      }
+    }
+
+    let newCookId: string | undefined;
+    let newCookName = "";
+    if (cook.mode === "new") {
+      const name = cook.name.trim();
+      const phone = cook.phone.trim();
+      if (!name || !phone) throw new Error("Name and phone number are required.");
+      const target = normalizePhone(phone);
+      if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
+        throw new Error(PHONE_TAKEN_MESSAGE);
+      }
+      const created: User = {
+        id: nextId("user"),
+        hostelId,
+        name,
+        phone,
+        role: "cook",
+        avatarSeed: `cook-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      };
+      store.data.users.push(created);
+      store.data.passwordHashes[created.id] = hashPassword(target);
+      newCookId = created.id;
+      newCookName = name;
+    } else if (cook.mode === "existing") {
+      const target = store.data.users.find((u) => u.id === cook.userId);
+      if (!target) throw new Error("Member not found.");
+      if (target.role !== "cook") throw new Error(`${target.name} isn't a cook account.`);
+      if (target.hostelId && target.hostelId !== hostelId) {
+        throw new Error(`${target.name} is already staffing another hostel — remove them there first.`);
+      }
+      const idx = store.data.users.findIndex((u) => u.id === target.id);
+      store.data.users[idx] = { ...store.data.users[idx], hostelId };
+      newCookId = target.id;
+      newCookName = target.name;
+    }
+    // mode "remove": newCookId stays undefined.
+
+    store.data.hostels[hIdx] = {
+      ...store.data.hostels[hIdx],
+      cookId: newCookId,
+      cookMonthlySalary:
+        cook.mode === "remove"
+          ? undefined
+          : cook.salary !== undefined && cook.salary > 0
+            ? cook.salary
+            : store.data.hostels[hIdx].cookMonthlySalary,
+    };
+
+    if (prevCookId && prevCookId !== newCookId) {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: prevCookId,
+        title: "No longer the hostel cook",
+        body: `You've been removed as ${hostel.name}'s cook.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${prevCookId}`);
+    }
+    if (newCookId && newCookId !== prevCookId) {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: newCookId,
+        title: "You're the hostel cook",
+        body: `You've been made the cook of ${hostel.name}.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${newCookId}`);
+      emitUser(newCookId);
+    }
+
+    logActivity(hostelId, cook.mode === "remove" ? "Cook removed" : "Cook changed", newCookName || undefined);
+    store.emit(`users:${hostelId}`);
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+  },
   async updateSettings(hostelId, patch) {
     const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
     if (idx === -1) return;

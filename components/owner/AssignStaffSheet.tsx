@@ -5,15 +5,23 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { repo, type Hostel, type Role, type User } from "@/lib/data";
+import { repo, type Hostel, type User } from "@/lib/data";
 
-const slug = (name: string) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "user";
-
-/** Owner replaces a hostel's manager or cook — either promote an existing
- * person with that role from anywhere on the platform, or create a brand-new
- * account. The displaced person keeps their account; they're just no longer
- * referenced by the hostel. */
+/**
+ * Assigns this hostel's manager or cook.
+ *
+ * Manager: only an EXISTING, non-banned boarder of THIS hostel can become
+ * manager (`hostels.changeManager` enforces this and correctly demotes the
+ * outgoing manager back to a regular boarder in the same step) — there's no
+ * "create a brand-new manager" option here because a manager has to already
+ * be a member to promote.
+ *
+ * Cook: either an existing "cook"-role account that isn't currently
+ * staffing a different hostel, or a brand-new account — both go through
+ * `hostels.assignCook`, which detaches whoever was the previous cook
+ * (keeping their account, just no longer referencing them from this
+ * hostel) before attaching the new one.
+ */
 export function AssignStaffSheet({
   open,
   onClose,
@@ -34,20 +42,30 @@ export function AssignStaffSheet({
   const [newPhone, setNewPhone] = useState("");
   const [newSalary, setNewSalary] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const currentId = role === "manager" ? hostel?.managerId : hostel?.cookId;
 
   useEffect(() => {
     if (!open || !hostel) return;
-    repo.users.listAll().then((all) =>
-      setCandidates(all.filter((u) => u.role === (role as Role) && u.id !== currentId))
-    );
+    if (role === "manager") {
+      repo.users
+        .listByHostel(hostel.id)
+        .then((all) => setCandidates(all.filter((u) => u.role === "student" && !u.banned)));
+    } else {
+      repo.users
+        .listAll()
+        .then((all) =>
+          setCandidates(all.filter((u) => u.role === "cook" && u.id !== currentId && !u.hostelId))
+        );
+    }
     queueMicrotask(() => {
       setSelectedId(null);
       setNewName("");
       setNewPhone("");
       setNewSalary("");
       setMode("existing");
+      setError("");
     });
   }, [open, hostel, role, currentId]);
 
@@ -58,26 +76,37 @@ export function AssignStaffSheet({
   const submit = async () => {
     if (!valid || saving) return;
     setSaving(true);
-    let staff: User;
-    if (mode === "existing") {
-      staff = candidates.find((u) => u.id === selectedId)!;
-      await repo.users.updateUser(staff.id, { hostelId: hostel.id });
-    } else {
-      staff = await repo.users.create({
-        hostelId: hostel.id,
-        name: newName.trim(),
-        phone: newPhone.trim(),
-        role,
-        avatarSeed: `${role}-${slug(newName)}`,
-      });
+    setError("");
+    try {
+      let staffName: string;
+      if (role === "manager") {
+        const staff = candidates.find((u) => u.id === selectedId)!;
+        await repo.hostels.changeManager(hostel.id, staff.id);
+        staffName = staff.name;
+      } else if (mode === "existing") {
+        const staff = candidates.find((u) => u.id === selectedId)!;
+        await repo.hostels.assignCook(hostel.id, {
+          mode: "existing",
+          userId: staff.id,
+          salary: Number(newSalary) > 0 ? Number(newSalary) : undefined,
+        });
+        staffName = staff.name;
+      } else {
+        staffName = newName.trim();
+        await repo.hostels.assignCook(hostel.id, {
+          mode: "new",
+          name: staffName,
+          phone: newPhone.trim(),
+          salary: Number(newSalary) > 0 ? Number(newSalary) : undefined,
+        });
+      }
+      setSaving(false);
+      onAssigned(staffName);
+      onClose();
+    } catch (err) {
+      setSaving(false);
+      setError(err instanceof Error ? err.message : "Could not assign the staff member.");
     }
-    await repo.hostels.update(hostel.id, {
-      ...(role === "manager" ? { managerId: staff.id } : { cookId: staff.id }),
-      ...(role === "cook" && Number(newSalary) > 0 ? { cookMonthlySalary: Number(newSalary) } : {}),
-    });
-    setSaving(false);
-    onAssigned(staff.name);
-    onClose();
   };
 
   return (
@@ -86,22 +115,26 @@ export function AssignStaffSheet({
       onClose={onClose}
       title={`${role === "manager" ? "Assign manager" : "Assign cook"} · ${hostel.name}`}
     >
-      <div className="mb-3">
-        <SegmentedControl
-          options={[
-            { value: "existing", label: "Existing person" },
-            { value: "new", label: "Create new" },
-          ]}
-          value={mode}
-          onChange={(v) => setMode(v as "existing" | "new")}
-        />
-      </div>
+      {role === "cook" && (
+        <div className="mb-3">
+          <SegmentedControl
+            options={[
+              { value: "existing", label: "Existing person" },
+              { value: "new", label: "Create new" },
+            ]}
+            value={mode}
+            onChange={(v) => setMode(v as "existing" | "new")}
+          />
+        </div>
+      )}
 
       {mode === "existing" ? (
         <div className="mb-4 flex flex-col gap-2">
           {candidates.length === 0 && (
             <div className="rounded-btn bg-bg px-3 py-2.5 text-[11px] font-semibold text-text-secondary">
-              No other {role}s on the platform — create a new one instead.
+              {role === "manager"
+                ? "No other boarders to promote yet — add members to this hostel first."
+                : "No unassigned cook accounts on the platform — create a new one instead."}
             </div>
           )}
           {candidates.map((u) => (
@@ -141,21 +174,28 @@ export function AssignStaffSheet({
             placeholder="01711-000000"
             className="mb-3 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
           />
-          {role === "cook" && (
-            <>
-              <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-                Monthly salary (৳) · optional
-              </div>
-              <input
-                type="number"
-                min={0}
-                inputMode="numeric"
-                value={newSalary}
-                onChange={(e) => setNewSalary(e.target.value)}
-                className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-              />
-            </>
-          )}
+        </div>
+      )}
+
+      {role === "cook" && (
+        <>
+          <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Monthly salary (৳) · optional
+          </div>
+          <input
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={newSalary}
+            onChange={(e) => setNewSalary(e.target.value)}
+            className="mb-4 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+          />
+        </>
+      )}
+
+      {error && (
+        <div className="mb-3 rounded-btn bg-danger-soft px-3 py-2 text-[10.5px] font-bold text-danger">
+          {error}
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, QrCode, Star } from "lucide-react";
+import { ChefHat, ChevronRight, Phone, QrCode, RefreshCw, Star } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useRooms } from "@/hooks/useRooms";
@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { AddMemberSheet } from "@/components/manager/AddMemberSheet";
 import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
+import { AssignStaffSheet } from "@/components/owner/AssignStaffSheet";
 import { repo, type Bill } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
@@ -22,9 +23,11 @@ import { currentMonth } from "@/lib/utils/date";
  * whichever section is rendering it. */
 export function MembersScreen({ memberHref }: { memberHref: (userId: string) => string }) {
   const { activeHostelId, hostel } = useSession();
+  const hostelUsers = useUsers(activeHostelId);
+  const cook = hostelUsers.find((u) => u.role === "cook");
   // Cook is staff and owner is cross-hostel management — neither is a boarder.
   // Manager is included since they're also a boarder (dual identity).
-  const members = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
+  const members = hostelUsers.filter((u) => u.role !== "cook" && u.role !== "owner");
   const rooms = useRooms(activeHostelId);
   const joinRequests = useJoinRequests(activeHostelId).filter((r) => r.status === "pending");
   const { toast } = useToast();
@@ -32,6 +35,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [assignUserId, setAssignUserId] = useState<string | undefined>(undefined);
   const [qrOpen, setQrOpen] = useState(false);
+  const [assignCookOpen, setAssignCookOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [billsByUser, setBillsByUser] = useState<Record<string, Bill>>({});
 
@@ -70,6 +74,12 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
     await repo.joinRequests.decide(requestId, "approved", roomId);
     toast("Member approved and assigned");
     setApprovingId(null);
+  };
+
+  const removeCook = async () => {
+    if (!activeHostelId) return;
+    await repo.hostels.assignCook(activeHostelId, { mode: "remove" });
+    toast("Cook removed");
   };
 
   const roomOf = (id: string | undefined) => rooms.find((r) => r.id === id);
@@ -120,6 +130,49 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
           </Card>
         ))}
       </div>
+
+      <Card>
+        <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          Kitchen staff
+        </div>
+        <div className="flex items-center gap-3">
+          {cook ? (
+            <Avatar name={cook.name} seed={cook.avatarSeed} size={38} />
+          ) : (
+            <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-bg text-text-secondary">
+              <Icon icon={ChefHat} size={16} />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-extrabold">{cook?.name ?? "No cook assigned"}</div>
+            <div className="text-[10px] font-semibold text-text-secondary">{cook?.phone ?? "—"}</div>
+          </div>
+          {cook && (
+            <a
+              href={`tel:${cook.phone}`}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary"
+            >
+              <Icon icon={Phone} size={15} />
+            </a>
+          )}
+          {cook && (
+            <button
+              type="button"
+              onClick={removeCook}
+              className="rounded-pill bg-danger-soft px-2.5 py-1.5 text-[10px] font-extrabold text-danger"
+            >
+              Remove
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setAssignCookOpen(true)}
+            className="flex items-center gap-1 rounded-pill bg-bg px-2.5 py-1.5 text-[10px] font-extrabold text-primary shadow-chip"
+          >
+            <Icon icon={RefreshCw} size={11} /> {cook ? "Replace" : "Assign"}
+          </button>
+        </div>
+      </Card>
 
       {joinRequests.length > 0 && (
         <div>
@@ -285,6 +338,13 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
         onClose={() => setQrOpen(false)}
         hostelId={activeHostelId}
         hostelName={hostel?.name}
+      />
+      <AssignStaffSheet
+        open={assignCookOpen}
+        onClose={() => setAssignCookOpen(false)}
+        hostel={hostel ?? null}
+        role="cook"
+        onAssigned={(name) => toast(`${name} assigned as cook`)}
       />
     </div>
   );

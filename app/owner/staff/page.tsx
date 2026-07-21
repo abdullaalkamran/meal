@@ -58,6 +58,12 @@ export default function OwnerStaffPage() {
     ).then((entries) => setInfo(Object.fromEntries(entries)));
   }, [hostels, refreshKey]);
 
+  const removeCook = async (hostel: Hostel) => {
+    await repo.hostels.assignCook(hostel.id, { mode: "remove" });
+    toast("Cook removed");
+    setRefreshKey((k) => k + 1);
+  };
+
   const staffCard = (
     hostel: Hostel,
     role: "manager" | "cook",
@@ -102,13 +108,24 @@ export default function OwnerStaffPage() {
               : "No ratings yet"}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setAssigning({ hostel, role })}
-          className="flex items-center gap-1 rounded-pill bg-card px-2.5 py-1.5 text-[10px] font-extrabold text-primary shadow-chip"
-        >
-          <Icon icon={RefreshCw} size={11} /> {person ? "Replace" : "Assign"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {role === "cook" && person && (
+            <button
+              type="button"
+              onClick={() => removeCook(hostel)}
+              className="rounded-pill bg-danger-soft px-2.5 py-1.5 text-[10px] font-extrabold text-danger"
+            >
+              Remove
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setAssigning({ hostel, role })}
+            className="flex items-center gap-1 rounded-pill bg-card px-2.5 py-1.5 text-[10px] font-extrabold text-primary shadow-chip"
+          >
+            <Icon icon={RefreshCw} size={11} /> {person ? "Replace" : "Assign"}
+          </button>
+        </div>
       </div>
     </div>
   );

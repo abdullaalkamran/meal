@@ -672,6 +672,84 @@ export const hostels: HostelRepository = {
     });
   },
 
+  async assignCook(hostelId, cook) {
+    await transaction(async (tx) => {
+      const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);
+      if (!hostel) throw new Error("Hostel not found.");
+
+      // Detach whoever's currently the cook — their account and "cook" role
+      // are kept (so they can be reassigned elsewhere), just no longer
+      // referenced by this hostel.
+      let prevCookId: string | null = null;
+      if (hostel.cook_id) {
+        prevCookId = hostel.cook_id;
+        await run("UPDATE users SET hostel_id = NULL, room_id = NULL WHERE id = ?", [prevCookId], tx);
+      }
+
+      let newCookId: string | null = null;
+      let newCookName = "";
+      if (cook.mode === "new") {
+        const name = cook.name.trim();
+        const phone = cook.phone.trim();
+        if (!name || !phone) throw new Error("Name and phone number are required.");
+        const normalized = normalizePhone(phone);
+        const existing = await one<{ id: string }>(
+          "SELECT id FROM users WHERE phone_normalized = ? LIMIT 1",
+          [normalized],
+          tx
+        );
+        if (existing) throw new Error(PHONE_TAKEN_MESSAGE);
+        newCookId = newId("user");
+        newCookName = name;
+        try {
+          await run(
+            `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, avatar_seed, hostel_id)
+             VALUES (?, 'cook', ?, ?, ?, ?, ?, ?)`,
+            [
+              newCookId, name, phone, normalized, hashPassword(normalized),
+              `cook-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, hostelId,
+            ],
+            tx
+          );
+        } catch (err) {
+          if (isDuplicateEntry(err)) throw new Error(PHONE_TAKEN_MESSAGE);
+          throw err;
+        }
+      } else if (cook.mode === "existing") {
+        const target = await loadUser(cook.userId, tx);
+        if (!target) throw new Error("Member not found.");
+        if (target.role !== "cook") throw new Error(`${target.name} isn't a cook account.`);
+        if (target.hostelId && target.hostelId !== hostelId) {
+          throw new Error(`${target.name} is already staffing another hostel — remove them there first.`);
+        }
+        newCookId = target.id;
+        newCookName = target.name;
+        await run("UPDATE users SET hostel_id = ? WHERE id = ?", [hostelId, newCookId], tx);
+      }
+      // mode "remove": newCookId stays null.
+
+      await run("UPDATE hostels SET cook_id = ? WHERE id = ?", [newCookId, hostelId], tx);
+      if (cook.mode === "remove") {
+        await run("UPDATE hostels SET cook_monthly_salary = NULL WHERE id = ?", [hostelId], tx);
+      } else if (cook.salary !== undefined && cook.salary > 0) {
+        await run("UPDATE hostels SET cook_monthly_salary = ? WHERE id = ?", [cook.salary, hostelId], tx);
+      }
+
+      if (prevCookId && prevCookId !== newCookId) {
+        await notify(prevCookId, "No longer the hostel cook", `You've been removed as ${hostel.name}'s cook.`, tx);
+      }
+      if (newCookId && newCookId !== prevCookId) {
+        await notify(newCookId, "You're the hostel cook", `You've been made the cook of ${hostel.name}.`, tx);
+      }
+      await logActivity(
+        hostelId,
+        cook.mode === "remove" ? "Cook removed" : "Cook changed",
+        newCookName || undefined,
+        tx
+      );
+    });
+  },
+
   async updateSettings(hostelId, patch) {
     await transaction(async (tx) => {
       await writeSettings(hostelId, patch, tx);
