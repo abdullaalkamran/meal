@@ -38,6 +38,7 @@ import type {
 } from "../repository";
 import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem, User } from "../types";
 import { addDays, currentMonth, formatShortDate, today } from "../../utils/date";
+import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { deliveryFeeFor } from "../../utils/store";
@@ -556,7 +557,20 @@ const meals: MealRepository = {
     );
   },
   async setMemberMealToggle(hostelId, userId, date, meal, on) {
+    // Same cutoff rule the server and UI use: today and anything past its
+    // cutoff needs an approved request, not a direct toggle.
+    const hostel = store.data.hostels.find((h) => h.id === hostelId);
+    const decision = canToggleMeal(date, hostel?.settings.mealToggleCutoff);
+    if (!decision.allowed) throw new Error(decision.message ?? "This meal can no longer be changed.");
     // A slot the hostel doesn't offer can never be turned on.
+    if (on && !isMealOffered(hostelId, meal)) return;
+    const day = ensureMealDay(hostelId, date);
+    const entry = ensureMealEntry(day, userId);
+    entry[meal].on = on;
+    store.emit(`mealDay:${hostelId}`);
+  },
+  /** Approved change applied by a manager/owner — bypasses the member cutoff. */
+  async setMemberMealApproved(hostelId, userId, date, meal, on) {
     if (on && !isMealOffered(hostelId, meal)) return;
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);

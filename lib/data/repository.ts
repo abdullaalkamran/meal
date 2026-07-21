@@ -162,7 +162,19 @@ export interface MealRepository {
     hostelId: string,
     range: { from: string; to: string }
   ): Promise<MealDay[]>;
+  /** A member changing their OWN meal. Rejects dates past their cutoff —
+   * today and any locked future date must go through an approved request
+   * (see lib/utils/mealPolicy.ts for the rule). */
   setMemberMealToggle(
+    hostelId: string,
+    userId: string,
+    date: string,
+    meal: MealSlot,
+    on: boolean
+  ): Promise<void>;
+  /** Manager/owner applying an approved change — bypasses the member cutoff.
+   * Still can't switch on a slot the day didn't offer. */
+  setMemberMealApproved(
     hostelId: string,
     userId: string,
     date: string,

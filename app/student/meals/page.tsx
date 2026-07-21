@@ -22,6 +22,8 @@ import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { addDays, currentMonth, today } from "@/lib/utils/date";
+import { canToggleMeal, cutoffLabel } from "@/lib/utils/mealPolicy";
+import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 export default function StudentMealsPage() {
@@ -46,6 +48,10 @@ export default function StudentMealsPage() {
   const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const actualRate = useActualMealRate(activeHostelId);
   const { day, setToggle } = useMealDay(activeHostelId, selectedDate);
+  const { toast } = useToast();
+  // Whether the member may still change this date themselves — the same rule
+  // the server enforces, so the UI can never offer something that will fail.
+  const lock = canToggleMeal(selectedDate, hostel?.settings.mealToggleCutoff);
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
@@ -226,9 +232,10 @@ export default function StudentMealsPage() {
           {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
             const entry = user && day?.entries[user.id]?.[meal];
             const c = MEAL_COLORS[meal];
-            // The hostel doesn't cook this slot at all — always closed, never
-            // counted, toggle locked off.
-            const closed = !(hostel?.settings.mealsOffered?.[meal] ?? true);
+            // Whether this slot was cooked is a property of THE DAY, pinned
+            // when the day was sealed — not of the hostel's current setting,
+            // so past days keep showing what actually happened.
+            const closed = !((day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true);
             const on = !closed && (entry?.on ?? true);
             return (
               <div key={meal} className="flex items-center gap-3 py-2.5">
@@ -254,8 +261,19 @@ export default function StudentMealsPage() {
                     )}
                     <Switch
                       checked={on}
-                      disabled={mealsSuspended}
-                      onChange={(v) => user && setToggle(user.id, meal, v)}
+                      disabled={mealsSuspended || !lock.allowed}
+                      onChange={(v) => {
+                        if (!user) return;
+                        // Locked dates (today, or past the cutoff) can only be
+                        // changed by an approved request.
+                        if (!lock.allowed) {
+                          setStopSheetOpen(true);
+                          return;
+                        }
+                        void Promise.resolve(setToggle(user.id, meal, v)).catch((err) =>
+                          toast(err instanceof Error ? err.message : "Could not change this meal")
+                        );
+                      }}
                     />
                   </>
                 )}
@@ -264,8 +282,19 @@ export default function StudentMealsPage() {
           })}
         </div>
         <div className="mt-2 text-[9.5px] font-semibold text-text-secondary">
-          Cutoff: 9:00 PM the night before &middot; after cutoff, request manager approval
+          {lock.allowed
+            ? `You can change this day until ${cutoffLabel(hostel?.settings.mealToggleCutoff)} the evening before.`
+            : lock.message}
         </div>
+        {!lock.allowed && !mealsSuspended && (
+          <button
+            type="button"
+            onClick={() => setStopSheetOpen(true)}
+            className="mt-2 min-h-10 w-full rounded-btn bg-primary-soft text-[11.5px] font-extrabold text-primary"
+          >
+            Request a change from the manager
+          </button>
+        )}
       </Card>
 
       {/* My requests */}

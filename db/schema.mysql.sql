@@ -48,10 +48,14 @@ CREATE TABLE hostels (
   meal_stop_requires_approval BOOLEAN     NOT NULL DEFAULT TRUE,
   shopping_rotation_policy  ENUM('spin-wheel','manual') NOT NULL DEFAULT 'spin-wheel',
   service_charge_monthly    DECIMAL(10,2) NOT NULL DEFAULT 0,
-  -- Master meal on/off per slot (HostelSettings.mealsOffered)
+  -- Master meal on/off per slot (HostelSettings.mealsOffered). This is the
+  -- CURRENT setting; what each past day actually offered is pinned on
+  -- meal_days so history can't be rewritten by changing it.
   offers_breakfast     BOOLEAN NOT NULL DEFAULT TRUE,
   offers_lunch         BOOLEAN NOT NULL DEFAULT TRUE,
   offers_dinner        BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Members may toggle a date until this time on the previous day.
+  meal_toggle_cutoff   TIME NOT NULL DEFAULT '22:00:00',
   created_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   INDEX idx_hostels_owner (owner_id),
   INDEX idx_hostels_area (division, district, thana)
@@ -162,6 +166,16 @@ CREATE TABLE meal_days (
   hostel_id        VARCHAR(64) NOT NULL,
   day              DATE        NOT NULL,
   shopping_user_id VARCHAR(64) NULL,
+  -- What the hostel offered ON THIS DAY. Pinned per day so that turning a
+  -- meal off later changes only today onward — a past day's count stays
+  -- exactly what it was (Rule 5/6).
+  offers_breakfast BOOLEAN NOT NULL DEFAULT TRUE,
+  offers_lunch     BOOLEAN NOT NULL DEFAULT TRUE,
+  offers_dinner    BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Set once the day has arrived and every active boarder has an explicit
+  -- row for it. A sealed day is never re-derived from current state, so
+  -- later bans, removals or setting changes can't alter its history.
+  sealed_at        DATETIME(3) NULL,
   PRIMARY KEY (hostel_id, day),
   CONSTRAINT fk_meal_days_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
   CONSTRAINT fk_meal_days_shopper FOREIGN KEY (shopping_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -589,6 +603,10 @@ CREATE TABLE meal_stop_requests (
   date_from DATE        NOT NULL,
   date_to   DATE        NOT NULL,
   reason    TEXT        NULL,
+  -- What approval should set the meal to. FALSE (the default, and all legacy
+  -- rows) means "stop these meals"; TRUE means the member is asking to turn
+  -- them back ON after the toggle locked.
+  desired_on BOOLEAN    NOT NULL DEFAULT FALSE,
   status    ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
   INDEX idx_meal_stops_hostel (hostel_id),
   CONSTRAINT fk_meal_stops_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,

@@ -46,7 +46,10 @@ function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): History
  * cooked / report / confirm actions but keeps counts and tallies visible). */
 export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   const { user, activeHostelId } = useSession();
-  const date = today();
+  // Defaults to today, but any earlier date can be opened so a day whose
+  // cooking was never confirmed isn't lost when the date rolls over.
+  const [date, setDate] = useState(today());
+  const isToday = date === today();
   const { day } = useMealDay(activeHostelId, date);
   const reports = useCookAttendanceForDate(activeHostelId, date);
   const [votesByReport, setVotesByReport] = useState<Record<string, CookAttendanceVote[]>>({});
@@ -71,13 +74,17 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
 
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
+    // A slot the hostel didn't offer THAT DAY is cooked for nobody.
+    const offered = day?.mealsOffered?.[meal] ?? true;
     const totalBoarders = entries.length;
-    const boardersOn = entries.filter((e) => e[meal].on).length;
+    const boardersOn = offered ? entries.filter((e) => e[meal].on).length : 0;
     // "count" is heads to actually cook for (boarders + their guests) — can
     // exceed totalBoarders, so the percentage is based on boarders-on only.
-    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
+    const count = offered
+      ? entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0)
+      : 0;
     const pct = totalBoarders > 0 ? Math.round((boardersOn / totalBoarders) * 100) : 0;
-    return { meal, count, pct };
+    return { meal, count, pct, offered };
   });
   const totalToCook = mealCounts.reduce((sum, c) => sum + c.count, 0);
 
@@ -92,8 +99,44 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
         )}
       </div>
 
+      {/* Any past day can be opened to review or confirm cooking that was
+          missed; you can't look ahead past today. */}
+      <Card className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setDate(addDays(date, -1))}
+          className="min-h-9 rounded-btn bg-bg px-3 text-[11px] font-extrabold text-text-secondary"
+        >
+          ‹ Prev
+        </button>
+        <div className="text-center">
+          <div className="text-[12.5px] font-extrabold">
+            {isToday ? "Today" : formatShortDate(date)}
+          </div>
+          {!isToday && (
+            <button
+              type="button"
+              onClick={() => setDate(today())}
+              className="text-[9.5px] font-bold text-primary"
+            >
+              Back to today
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={isToday}
+          onClick={() => setDate(addDays(date, 1))}
+          className="min-h-9 rounded-btn bg-bg px-3 text-[11px] font-extrabold text-text-secondary disabled:opacity-40"
+        >
+          Next ›
+        </button>
+      </Card>
+
       <Card className="flex items-center justify-between">
-        <div className="text-[11.5px] font-bold text-text-secondary">Total to cook today</div>
+        <div className="text-[11.5px] font-bold text-text-secondary">
+          Total to cook {isToday ? "today" : `on ${formatShortDate(date)}`}
+        </div>
         <div className="text-[20.5px] font-extrabold">{totalToCook}</div>
       </Card>
 

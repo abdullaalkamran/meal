@@ -20,7 +20,7 @@ import type {
 } from "../../types";
 import type { HostelRepository, RoomRepository, UserRepository } from "../../repository";
 import { normalizePhone } from "../../../utils/phone";
-import { addDays, today } from "../../../utils/date";
+import { today } from "../../../utils/date";
 import {
   all,
   omitUndefined,
@@ -66,6 +66,7 @@ interface HostelRow {
   suspended: number; guest_meal_price: number; meal_stop_requires_approval: number;
   shopping_rotation_policy: "spin-wheel" | "manual"; service_charge_monthly: number;
   offers_breakfast: number; offers_lunch: number; offers_dinner: number;
+  meal_toggle_cutoff: string;
 }
 
 interface RoomRow {
@@ -131,6 +132,7 @@ async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
       lunch: toBool(r.offers_lunch),
       dinner: toBool(r.offers_dinner),
     },
+    mealToggleCutoff: String(r.meal_toggle_cutoff ?? "22:00:00").slice(0, 5),
     ...(perms
       ? {
           managerPermissions: {
@@ -453,7 +455,7 @@ export const rooms: RoomRepository = {
 // ── Hostels ────────────────────────────────────────────────────────────────
 
 const HOSTEL_COLS =
-  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, offers_breakfast, offers_lunch, offers_dinner";
+  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff";
 
 async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
   if (settings.mealCutoff) {
@@ -488,6 +490,11 @@ async function writeSettings(hostelId: string, settings: Partial<HostelSettings>
   if (settings.mealStopRequiresApproval !== undefined) { sets.push("meal_stop_requires_approval = ?"); params.push(settings.mealStopRequiresApproval ? 1 : 0); }
   if (settings.shoppingRotationPolicy !== undefined) { sets.push("shopping_rotation_policy = ?"); params.push(settings.shoppingRotationPolicy); }
   if (settings.serviceChargeMonthly !== undefined) { sets.push("service_charge_monthly = ?"); params.push(settings.serviceChargeMonthly); }
+  if (settings.mealToggleCutoff !== undefined) {
+    const t = settings.mealToggleCutoff;
+    sets.push("meal_toggle_cutoff = ?");
+    params.push(t.length === 5 ? `${t}:00` : t);
+  }
   if (settings.mealsOffered) {
     for (const slot of MEALS) {
       const v = settings.mealsOffered[slot];
@@ -609,15 +616,25 @@ export const hostels: HostelRepository = {
     });
   },
 
+  /** Master meal on/off. Takes effect from TODAY onward: today's count becomes
+   * zero for that slot, and every past day keeps exactly the count it had —
+   * their offer is pinned on meal_days and is never recalculated. */
   async setMealOffered(hostelId, meal, offered) {
     await transaction(async (tx) => {
+      const from = today();
       await run(`UPDATE hostels SET offers_${meal} = ? WHERE id = ?`, [offered ? 1 : 0, hostelId], tx);
+      // Re-pin the offer on today and every future day already on record.
+      await run(
+        `UPDATE meal_days SET offers_${meal} = ? WHERE hostel_id = ? AND day >= ?`,
+        [offered ? 1 : 0, hostelId, from],
+        tx
+      );
       if (!offered) {
-        // Closing takes effect from TOMORROW: today's entries may already have
-        // been eaten and must stay billable. Past days are never touched.
+        // Closing zeroes today onward — including guests, since nothing is
+        // cooked. History is untouched.
         await run(
           "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND meal = ? AND day >= ?",
-          [hostelId, meal, addDays(today(), 1)],
+          [hostelId, meal, from],
           tx
         );
       }

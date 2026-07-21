@@ -26,10 +26,10 @@ import type {
   TransferRepository,
 } from "../../repository";
 import { normalizePhone } from "../../../utils/phone";
-import { today } from "../../../utils/date";
+import { addDays, today } from "../../../utils/date";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
 import { logActivity, notify } from "./context";
-import { ensureEntries } from "./meals";
+import { ensureEntries, offeredOnDay } from "./meals";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -271,9 +271,9 @@ export const mealStops: MealStopRepository = {
   async listByHostel(hostelId) {
     const rows = await all<{
       id: string; hostel_id: string; user_id: string; date_from: string; date_to: string;
-      reason: string | null; status: MealStopRequest["status"];
+      reason: string | null; desired_on: number; status: MealStopRequest["status"];
     }>(
-      "SELECT id, hostel_id, user_id, date_from, date_to, reason, status FROM meal_stop_requests WHERE hostel_id = ?",
+      "SELECT id, hostel_id, user_id, date_from, date_to, reason, desired_on, status FROM meal_stop_requests WHERE hostel_id = ?",
       [hostelId]
     );
     if (!rows.length) return [];
@@ -295,6 +295,7 @@ export const mealStops: MealStopRepository = {
       dateFrom: toDay(r.date_from),
       dateTo: toDay(r.date_to),
       reason: r.reason ?? undefined,
+      desiredOn: toBool(r.desired_on),
       status: r.status,
     }));
   },
@@ -303,8 +304,8 @@ export const mealStops: MealStopRepository = {
     await transaction(async (tx) => {
       const id = newId("stop");
       await run(
-        "INSERT INTO meal_stop_requests (id, hostel_id, user_id, date_from, date_to, reason, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
-        [id, req.hostelId, req.userId, req.dateFrom, req.dateTo, req.reason ?? null],
+        "INSERT INTO meal_stop_requests (id, hostel_id, user_id, date_from, date_to, reason, desired_on, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+        [id, req.hostelId, req.userId, req.dateFrom, req.dateTo, req.reason ?? null, req.desiredOn ? 1 : 0],
         tx
       );
       for (const m of req.meals ?? []) {
@@ -313,10 +314,16 @@ export const mealStops: MealStopRepository = {
     });
   },
 
+  /** Approving writes the decided status straight onto every date in the
+   * range — including future dates, which then already hold the right value
+   * when they arrive, and today, which members can't change themselves. */
   async decide(id, status) {
     await transaction(async (tx) => {
-      const req = await one<{ id: string; hostel_id: string; user_id: string; date_from: string; date_to: string }>(
-        "SELECT id, hostel_id, user_id, date_from, date_to FROM meal_stop_requests WHERE id = ?",
+      const req = await one<{
+        id: string; hostel_id: string; user_id: string;
+        date_from: string; date_to: string; desired_on: number;
+      }>(
+        "SELECT id, hostel_id, user_id, date_from, date_to, desired_on FROM meal_stop_requests WHERE id = ?",
         [id],
         tx
       );
@@ -324,24 +331,35 @@ export const mealStops: MealStopRepository = {
       await run("UPDATE meal_stop_requests SET status = ? WHERE id = ?", [status, id], tx);
       if (status !== "approved") return;
 
+      const wantOn = toBool(req.desired_on);
       const slots = (
         await all<{ meal: MealSlot }>("SELECT meal FROM meal_stop_meals WHERE request_id = ?", [id], tx)
       ).map((m) => m.meal);
       let day = toDay(req.date_from);
       const last = toDay(req.date_to);
       while (day <= last) {
-        await ensureEntries(req.hostel_id, day, req.user_id, tx);
-        for (const slot of slots) {
-          await run(
-            "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
-            [req.hostel_id, day, req.user_id, slot],
-            tx
-          );
+        // Past days are history and are never rewritten by an approval.
+        if (day >= today()) {
+          await ensureEntries(req.hostel_id, day, req.user_id, tx);
+          const offered = await offeredOnDay(req.hostel_id, day, tx);
+          for (const slot of slots) {
+            // Can't switch on a slot the day never offered.
+            if (wantOn && !offered[slot]) continue;
+            await run(
+              "UPDATE meal_entries SET is_on = ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
+              [wantOn ? 1 : 0, req.hostel_id, day, req.user_id, slot],
+              tx
+            );
+          }
         }
-        const nextDay = new Date(`${day}T00:00:00Z`);
-        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-        day = nextDay.toISOString().slice(0, 10);
+        day = addDays(day, 1);
       }
+      await notify(
+        req.user_id,
+        wantOn ? "Meal request approved" : "Meal stop approved",
+        `Your request for ${toDay(req.date_from)}${last !== toDay(req.date_from) ? ` – ${last}` : ""} was approved.`,
+        tx
+      );
     });
   },
 

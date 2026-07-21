@@ -1,9 +1,39 @@
+// The hostel's civil timezone. Everything date-shaped in this app — which day
+// a meal belongs to, when a toggle locks, which day the cook is cooking for —
+// is a CIVIL date in the hostel's timezone, not a UTC instant.
+//
+// Asia/Dhaka is UTC+6 year-round (no DST), so a fixed offset is exact.
+// Previously `today()` used the UTC date, which meant that between midnight
+// and 6 AM local time the app was still reporting yesterday — meals toggled
+// in that window landed on the wrong day.
+export const HOSTEL_TZ_OFFSET_MINUTES = 6 * 60;
+
 export function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** "Now", shifted so its UTC fields read as hostel-local wall-clock time. */
+export function hostelNow(): Date {
+  return new Date(Date.now() + HOSTEL_TZ_OFFSET_MINUTES * 60_000);
+}
+
+/** Today's civil date in the hostel's timezone (YYYY-MM-DD). */
 export function today(): string {
-  return toISODate(new Date());
+  return toISODate(hostelNow());
+}
+
+/** Minutes since midnight, hostel-local. */
+export function hostelMinutesNow(): number {
+  const d = hostelNow();
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+
+/** "22:00" → 1320. Tolerates "22:00:00" (MySQL TIME) and bad input. */
+export function parseHHMM(time: string | undefined, fallbackMinutes: number): number {
+  if (!time) return fallbackMinutes;
+  const [h, m] = time.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return fallbackMinutes;
+  return h * 60 + m;
 }
 
 export function addDays(dateStr: string, days: number): string {

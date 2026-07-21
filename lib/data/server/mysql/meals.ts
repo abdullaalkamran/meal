@@ -1,12 +1,16 @@
 // MySQL implementations of the meal-day, menu, rating and comment
 // repositories.
 //
-// Meal-entry semantics carried over exactly from the JSON backend:
-//  * Creating an entry materialises ALL THREE slots for that user/day, each
-//    defaulting to "on" only if the hostel currently offers that slot
-//    (ensureMealEntry). Counting then reads stored rows only — so this must
-//    stay identical or monthly meal totals (and therefore bills) would shift.
-//  * A slot the hostel doesn't offer can never be switched on.
+// Every date carries its own complete meal history:
+//
+//  * meal_days pins what the hostel OFFERED that day. Changing the hostel's
+//    current setting therefore never rewrites a past day's counts.
+//  * Once a day arrives it is SEALED: every member who was an active boarder
+//    then gets an explicit row (defaulting to that day's offer). Counting
+//    reads only stored rows, so a member who never opens the app is still
+//    counted, and later bans/removals can't alter a past day.
+//  * A slot the day didn't offer can never be switched on, and its entries
+//    are stored as off — so an offer-off day counts zero.
 
 import type {
   Comment,
@@ -22,6 +26,8 @@ import type {
   MenuRepository,
   RatingRepository,
 } from "../../repository";
+import { addDays, today } from "../../../utils/date";
+import { canToggleMeal } from "../../../utils/mealPolicy";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
 import { notify } from "./context";
 import { newId } from "./ids";
@@ -32,7 +38,7 @@ const serverOnly = (): never => {
 
 const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
-/** Which slots the hostel currently cooks at all. Missing hostel = all on. */
+/** The hostel's CURRENT offer setting (the template for new days). */
 export async function offeredSlots(hostelId: string, on?: Queryable): Promise<Record<MealSlot, boolean>> {
   const row = await one<{ offers_breakfast: number; offers_lunch: number; offers_dinner: number }>(
     "SELECT offers_breakfast, offers_lunch, offers_dinner FROM hostels WHERE id = ?",
@@ -46,14 +52,43 @@ export async function offeredSlots(hostelId: string, on?: Queryable): Promise<Re
   };
 }
 
-async function ensureMealDay(hostelId: string, day: string, on: Queryable): Promise<void> {
-  await run("INSERT IGNORE INTO meal_days (hostel_id, day) VALUES (?, ?)", [hostelId, day], on);
+/** What was offered ON a specific day. Falls back to the hostel's current
+ * setting only for a day that doesn't exist yet (i.e. a future day being
+ * created now). */
+export async function offeredOnDay(
+  hostelId: string,
+  day: string,
+  on?: Queryable
+): Promise<Record<MealSlot, boolean>> {
+  const row = await one<{ offers_breakfast: number; offers_lunch: number; offers_dinner: number }>(
+    "SELECT offers_breakfast, offers_lunch, offers_dinner FROM meal_days WHERE hostel_id = ? AND day = ?",
+    [hostelId, day],
+    on
+  );
+  if (!row) return offeredSlots(hostelId, on);
+  return {
+    breakfast: toBool(row.offers_breakfast),
+    lunch: toBool(row.offers_lunch),
+    dinner: toBool(row.offers_dinner),
+  };
 }
 
-/** Materialises the user's three slots for the day with hostel defaults. */
+/** Creates the day row if absent, pinning the hostel's offer onto it. */
+async function ensureMealDay(hostelId: string, day: string, on: Queryable): Promise<void> {
+  const offered = await offeredSlots(hostelId, on);
+  await run(
+    `INSERT IGNORE INTO meal_days (hostel_id, day, offers_breakfast, offers_lunch, offers_dinner)
+     VALUES (?, ?, ?, ?, ?)`,
+    [hostelId, day, offered.breakfast ? 1 : 0, offered.lunch ? 1 : 0, offered.dinner ? 1 : 0],
+    on
+  );
+}
+
+/** Materialises one member's three slots for a day, defaulting to THAT DAY's
+ * offer (never the hostel's current setting, for a day already pinned). */
 export async function ensureEntries(hostelId: string, day: string, userId: string, on: Queryable): Promise<void> {
   await ensureMealDay(hostelId, day, on);
-  const offered = await offeredSlots(hostelId, on);
+  const offered = await offeredOnDay(hostelId, day, on);
   for (const slot of MEALS) {
     await run(
       "INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count) VALUES (?, ?, ?, ?, ?, 0)",
@@ -63,15 +98,79 @@ export async function ensureEntries(hostelId: string, day: string, userId: strin
   }
 }
 
+/**
+ * Seals every unsealed day in [from, min(to, today)]: pins the day's offer and
+ * gives every currently-active boarder an explicit row (without touching rows
+ * that already exist, so members' own choices win).
+ *
+ * This is what makes a member who never opens the app still count, and what
+ * freezes a day so later bans/removals/setting changes can't rewrite it.
+ * Idempotent, so it's safe to call before any read or count.
+ */
+export async function sealDays(hostelId: string, from: string, to: string): Promise<void> {
+  const last = to < today() ? to : today();
+  if (from > last) return;
+  await transaction(async (tx) => {
+    const unsealed = await all<{ day: string }>(
+      `SELECT d.day FROM meal_days d
+        WHERE d.hostel_id = ? AND d.day BETWEEN ? AND ? AND d.sealed_at IS NULL`,
+      [hostelId, from, last],
+      tx
+    );
+    // Days nobody ever touched have no row yet — they still need sealing.
+    const existing = new Set(unsealed.map((d) => toDay(d.day)));
+    const known = await all<{ day: string }>(
+      "SELECT day FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ?",
+      [hostelId, from, last],
+      tx
+    );
+    const knownSet = new Set(known.map((d) => toDay(d.day)));
+    for (let day = from; day <= last; day = addDays(day, 1)) {
+      if (knownSet.has(day) && !existing.has(day)) continue; // already sealed
+      await ensureMealDay(hostelId, day, tx);
+      const offered = await offeredOnDay(hostelId, day, tx);
+      // Everyone who is an active boarder at sealing time.
+      const boarders = await all<{ id: string }>(
+        `SELECT id FROM users
+          WHERE hostel_id = ? AND banned = 0
+            AND role NOT IN ('cook','owner','superadmin','marketing','service')`,
+        [hostelId],
+        tx
+      );
+      for (const b of boarders) {
+        for (const slot of MEALS) {
+          await run(
+            "INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count) VALUES (?, ?, ?, ?, ?, 0)",
+            [hostelId, day, b.id, slot, offered[slot] ? 1 : 0],
+            tx
+          );
+        }
+      }
+      await run(
+        "UPDATE meal_days SET sealed_at = ? WHERE hostel_id = ? AND day = ? AND sealed_at IS NULL",
+        [fromIso(new Date().toISOString()), hostelId, day],
+        tx
+      );
+    }
+  });
+}
+
 interface EntryRow {
   day: string; user_id: string; meal: MealSlot; is_on: number; guest_count: number;
 }
 
-function buildDays(
-  hostelId: string,
-  dayRows: { day: string; shopping_user_id: string | null }[],
-  entries: EntryRow[]
-): MealDay[] {
+interface DayRow {
+  day: string;
+  shopping_user_id: string | null;
+  offers_breakfast: number;
+  offers_lunch: number;
+  offers_dinner: number;
+  sealed_at: string | null;
+}
+
+const DAY_COLS = "day, shopping_user_id, offers_breakfast, offers_lunch, offers_dinner, sealed_at";
+
+function buildDays(hostelId: string, dayRows: DayRow[], entries: EntryRow[]): MealDay[] {
   const byDay = new Map<string, MealDay>();
   for (const d of dayRows) {
     const key = toDay(d.day);
@@ -80,6 +179,12 @@ function buildDays(
       date: key,
       entries: {},
       ...(d.shopping_user_id ? { shoppingUserId: d.shopping_user_id } : {}),
+      mealsOffered: {
+        breakfast: toBool(d.offers_breakfast),
+        lunch: toBool(d.offers_lunch),
+        dinner: toBool(d.offers_dinner),
+      },
+      sealed: Boolean(d.sealed_at),
     });
   }
   for (const e of entries) {
@@ -103,6 +208,9 @@ export const meals: MealRepository = {
   /** The AUTOMATIC per-meal cost: this month's shopping spend ÷ meals eaten
    * (member + guest) by CURRENT boarders. Bills charge this, nothing manual. */
   async getActualMealRate(hostelId, month) {
+    // Seal the month first so days nobody touched still contribute the meals
+    // that were actually eaten.
+    await sealDays(hostelId, `${month}-01`, `${month}-31`);
     const spend = await one<{ total: number | null }>(
       `SELECT SUM(c.amount) AS total FROM shopping_costs c
         WHERE c.hostel_id = ?
@@ -129,8 +237,9 @@ export const meals: MealRepository = {
   },
 
   async getMealDay(hostelId, date) {
-    const dayRows = await all<{ day: string; shopping_user_id: string | null }>(
-      "SELECT day, shopping_user_id FROM meal_days WHERE hostel_id = ? AND day = ?",
+    await sealDays(hostelId, date, date);
+    const dayRows = await all<DayRow>(
+      `SELECT ${DAY_COLS} FROM meal_days WHERE hostel_id = ? AND day = ?`,
       [hostelId, date]
     );
     const entries = await all<EntryRow>(
@@ -138,12 +247,15 @@ export const meals: MealRepository = {
       [hostelId, date]
     );
     const days = buildDays(hostelId, dayRows, entries);
-    return days[0] ?? { hostelId, date, entries: {} };
+    if (days[0]) return days[0];
+    // A future day nobody has touched: report what it WOULD offer.
+    return { hostelId, date, entries: {}, mealsOffered: await offeredSlots(hostelId), sealed: false };
   },
 
   async listMealDays(hostelId, range) {
-    const dayRows = await all<{ day: string; shopping_user_id: string | null }>(
-      "SELECT day, shopping_user_id FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ?",
+    await sealDays(hostelId, range.from, range.to);
+    const dayRows = await all<DayRow>(
+      `SELECT ${DAY_COLS} FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ?`,
       [hostelId, range.from, range.to]
     );
     const entries = await all<EntryRow>(
@@ -153,10 +265,35 @@ export const meals: MealRepository = {
     return buildDays(hostelId, dayRows, entries);
   },
 
+  /** A member changing their own meal. Only dates still before their cutoff
+   * are editable directly — today and anything past its cutoff must go
+   * through a manager-approved request instead (see mealStops). */
   async setMemberMealToggle(hostelId, userId, date, meal, on) {
     await transaction(async (tx) => {
-      // A slot the hostel doesn't offer can never be turned on.
-      if (on && !(await offeredSlots(hostelId, tx))[meal]) return;
+      const cutoff = await one<{ meal_toggle_cutoff: string }>(
+        "SELECT meal_toggle_cutoff FROM hostels WHERE id = ?",
+        [hostelId],
+        tx
+      );
+      const decision = canToggleMeal(date, cutoff?.meal_toggle_cutoff);
+      if (!decision.allowed) throw new Error(decision.message ?? "This meal can no longer be changed.");
+
+      // A slot the day doesn't offer can never be turned on.
+      if (on && !(await offeredOnDay(hostelId, date, tx))[meal]) return;
+      await ensureEntries(hostelId, date, userId, tx);
+      await run(
+        "UPDATE meal_entries SET is_on = ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
+        [on ? 1 : 0, hostelId, date, userId, meal],
+        tx
+      );
+    });
+  },
+
+  /** Manager/owner applying an APPROVED change, bypassing the member cutoff —
+   * this is the path a locked date goes through. */
+  async setMemberMealApproved(hostelId, userId, date, meal, on) {
+    await transaction(async (tx) => {
+      if (on && !(await offeredOnDay(hostelId, date, tx))[meal]) return;
       await ensureEntries(hostelId, date, userId, tx);
       await run(
         "UPDATE meal_entries SET is_on = ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",

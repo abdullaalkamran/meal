@@ -142,6 +142,10 @@ export interface HostelSettings {
    * affects TODAY onward (past days keep their data so accounts stay
    * correct); members see a closed slot as "always closed". */
   mealsOffered?: Partial<Record<MealSlot, boolean>>;
+  /** Members may toggle a date directly until this time ("HH:MM") on the
+   * PREVIOUS day; after that it takes a manager-approved request. Defaults to
+   * "22:00" (see lib/utils/mealPolicy.ts). */
+  mealToggleCutoff?: string;
 }
 
 export interface Hostel {
@@ -180,6 +184,12 @@ export interface MealDay {
   date: string; // YYYY-MM-DD
   entries: Record<string, Record<MealSlot, MealEntry>>; // userId -> slot -> entry
   shoppingUserId?: string;
+  /** What the hostel offered ON THIS DAY — pinned per day, so changing the
+   * hostel's current setting never rewrites a past day's counts. */
+  mealsOffered?: Partial<Record<MealSlot, boolean>>;
+  /** Set once the day arrived and every active boarder got an explicit row;
+   * a sealed day's history is never re-derived. */
+  sealed?: boolean;
 }
 
 export interface Menu {
@@ -511,6 +521,10 @@ export interface MealStopRequest {
   dateFrom: string;
   dateTo: string;
   reason?: string;
+  /** What approval sets these meals to. Absent/false = stop them (the
+   * original behaviour); true = the member is asking to turn them back ON
+   * because the toggle already locked for that date. */
+  desiredOn?: boolean;
   status: "pending" | "approved" | "denied";
 }
 
