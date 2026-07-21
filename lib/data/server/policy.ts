@@ -73,6 +73,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   },
   mealStops: { decide: HOSTEL_STAFF },
   guestMeals: { decide: HOSTEL_STAFF },
+  shoppingCosts: { decide: HOSTEL_STAFF },
   cookLeave: { decide: HOSTEL_STAFF },
   shortages: { resolve: [...HOSTEL_STAFF, "cook"] },
   transfers: { advance: HOSTEL_STAFF },

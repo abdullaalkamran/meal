@@ -12,6 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import mysql from "mysql2/promise";
 import type { Role } from "../../types";
+import { normalizePhone } from "../../../utils/phone";
+import { hashPassword } from "../password";
 import { all, getPool, isMysqlConfigured, one, run } from "./connection";
 import { newId } from "./ids";
 
@@ -22,6 +24,81 @@ async function tablesExist(): Promise<boolean> {
     "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'users'"
   );
   return (row?.n ?? 0) > 0;
+}
+
+async function columnExists(table: string, column: string): Promise<boolean> {
+  const row = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+    [table, column]
+  );
+  return (row?.n ?? 0) > 0;
+}
+
+async function indexExists(table: string, indexName: string): Promise<boolean> {
+  const row = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+    [table, indexName]
+  );
+  return (row?.n ?? 0) > 0;
+}
+
+/**
+ * Migrates databases created before phone_normalized/password_hash were
+ * enforced (db/schema.mysql.sql covers fresh installs already). Idempotent —
+ * every step checks first, so it's cheap to run on every process start.
+ */
+async function ensureUserCredentialColumns(): Promise<void> {
+  if (!(await columnExists("users", "phone_normalized"))) {
+    await run("ALTER TABLE users ADD COLUMN phone_normalized VARCHAR(20) NULL AFTER phone");
+  }
+  const unnormalized = await all<{ id: string; phone: string }>(
+    "SELECT id, phone FROM users WHERE phone_normalized IS NULL"
+  );
+  for (const u of unnormalized) {
+    await run("UPDATE users SET phone_normalized = ? WHERE id = ?", [normalizePhone(u.phone), u.id]);
+  }
+  if (!(await indexExists("users", "uq_users_phone_normalized"))) {
+    try {
+      await run("ALTER TABLE users ADD UNIQUE INDEX uq_users_phone_normalized (phone_normalized)");
+    } catch (err) {
+      // Pre-existing duplicate phone numbers (the exact bug this migration
+      // fixes going forward) block the constraint from being added — surface
+      // them clearly so an operator can merge/rename the accounts by hand,
+      // rather than crashing every request until it's resolved. New signups
+      // are still protected: phoneAvailable() and signup() both check
+      // phone_normalized regardless of whether the DB-level constraint
+      // could be added.
+      const dupes = await all<{ phone_normalized: string; n: number; ids: string }>(
+        "SELECT phone_normalized, COUNT(*) AS n, GROUP_CONCAT(id) AS ids FROM users " +
+          "WHERE phone_normalized IS NOT NULL GROUP BY phone_normalized HAVING n > 1"
+      );
+      console.warn(
+        "[hostel-erp] Could not enforce one-account-per-phone-number at the database level — " +
+          "these phone numbers already have more than one account and need manual review:",
+        dupes.map((d) => `${d.phone_normalized} (${d.ids})`).join(", "),
+        err
+      );
+    }
+  }
+  const unhashed = await all<{ id: string; phone: string }>(
+    "SELECT id, phone FROM users WHERE password_hash IS NULL"
+  );
+  for (const u of unhashed) {
+    // Every pre-existing account's password becomes its own phone number —
+    // the same value a brand-new signup would have to type to sign back in.
+    await run("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(normalizePhone(u.phone)), u.id]);
+  }
+}
+
+async function ensureShoppingCostStatusColumn(): Promise<void> {
+  if (await columnExists("shopping_costs", "status")) return;
+  await run(
+    "ALTER TABLE shopping_costs ADD COLUMN status ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending' AFTER items"
+  );
+  // Pre-existing spend already fed past months' bills as if approved —
+  // grandfather it in rather than retroactively shrinking meal-rate history
+  // that's already been billed and (possibly) paid.
+  await run("UPDATE shopping_costs SET status = 'approved'");
 }
 
 async function applySchema(): Promise<void> {
@@ -81,10 +158,13 @@ async function seedPlatformTeam(): Promise<void> {
 
     const name = process.env[acct.nameVar]?.trim() || acct.fallbackName;
     await run(
-      "INSERT INTO users (id, role, name, phone, avatar_seed) VALUES (?, ?, ?, ?, ?)",
-      [newId("user"), acct.role, name, phone, `${acct.role}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`]
+      "INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, avatar_seed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        newId("user"), acct.role, name, phone, normalizePhone(phone), hashPassword(normalizePhone(phone)),
+        `${acct.role}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      ]
     );
-    console.log(`[hostel-erp] Created ${acct.role} account for ${phone}.`);
+    console.log(`[hostel-erp] Created ${acct.role} account for ${phone} (password: the phone number).`);
   }
 }
 
@@ -104,6 +184,8 @@ export function ensureReady(): Promise<void> {
       }
       getPool();
       if (!(await tablesExist())) await applySchema();
+      await ensureUserCredentialColumns();
+      await ensureShoppingCostStatusColumn();
       await ensurePromoSettings();
       await seedPlatformTeam();
     })().catch((err) => {

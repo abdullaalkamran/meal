@@ -42,12 +42,15 @@ import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { deliveryFeeFor } from "../../utils/store";
+import { hashPassword, verifyPassword as verifyPasswordHash } from "../server/password";
 import { nextId, store } from "./store";
 
 // Roles that aren't boarders of any single hostel — excluded from per-hostel
 // member/boarder listings (owner + platform-team operators).
 const NON_HOSTEL_ROLES: Role[] = ["owner", "superadmin", "marketing", "service"];
 const isHostelMember = (role: Role) => !NON_HOSTEL_ROLES.includes(role);
+
+const PHONE_TAKEN_MESSAGE = "An account with this phone number already exists — sign in instead.";
 
 
 /** Per-user record channel — fired on ANY mutation of one user so the session
@@ -110,7 +113,7 @@ function isMealOffered(hostelId: string, meal: MealSlot): boolean {
  * quotes, and reports all derive from this; no one sets it by hand. */
 function actualMealRateFor(hostelId: string, month: string) {
   const totalShopping = store.data.shoppingCosts
-    .filter((c) => c.hostelId === hostelId && c.dates.some((d) => d.startsWith(month)))
+    .filter((c) => c.hostelId === hostelId && c.status === "approved" && c.dates.some((d) => d.startsWith(month)))
     .reduce((sum, c) => sum + c.amount, 0);
   const boarderIds = new Set(
     store.data.users
@@ -161,8 +164,16 @@ const users: UserRepository = {
     return store.data.users;
   },
   async create(user) {
+    const target = normalizePhone(user.phone);
+    if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
+      throw new Error(PHONE_TAKEN_MESSAGE);
+    }
     const created = { ...user, id: nextId("user") };
     store.data.users.push(created);
+    // Staff-created accounts (owner adding a manager/cook) start with their
+    // own phone number as their password — same default a pre-existing
+    // account gets, and what a fresh signup would type to sign back in.
+    store.data.passwordHashes[created.id] = hashPassword(target);
     store.emit(`users:${created.hostelId}`);
     return created;
   },
@@ -174,10 +185,12 @@ const users: UserRepository = {
   async signup(input) {
     const name = (input.name ?? "").trim();
     const phone = (input.phone ?? "").trim();
+    const password = input.password ?? "";
     if (!name || !phone) throw new Error("Name and phone number are required.");
+    if (password.length < 6) throw new Error("Password must be at least 6 characters.");
     const target = normalizePhone(phone);
     if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
-      throw new Error("An account with this phone number already exists — sign in instead.");
+      throw new Error(PHONE_TAKEN_MESSAGE);
     }
     // Whitelist every field: this path is reachable without a session, so it
     // must never be able to set role, hostelId, ownedHostelIds, banned, …
@@ -200,11 +213,18 @@ const users: UserRepository = {
         : { ownedHostelIds: [] }),
     };
     store.data.users.push(created);
+    store.data.passwordHashes[created.id] = hashPassword(password);
     store.emit("users:");
     emitUser(created.id);
     return created;
   },
   async updateUser(userId, patch) {
+    if (patch.phone !== undefined) {
+      const target = normalizePhone(patch.phone);
+      if (store.data.users.some((u) => u.id !== userId && normalizePhone(u.phone) === target)) {
+        throw new Error("Another account already uses this phone number.");
+      }
+    }
     const idx = store.data.users.findIndex((x) => x.id === userId);
     if (idx === -1) return;
     // Replace with a new object (not Object.assign-in-place) so subscribers
@@ -245,6 +265,7 @@ const users: UserRepository = {
       }
     });
     store.data.users = store.data.users.filter((u) => u.id !== userId);
+    delete store.data.passwordHashes[userId];
     logActivity(user.hostelId, "Member removed", user.name);
     store.emit(`users:${user.hostelId}`);
     store.emit(`rooms:${user.hostelId}`);
@@ -337,6 +358,24 @@ const users: UserRepository = {
     return store.on(`user-rec:${userId}`, fire);
   },
 };
+
+/**
+ * Verifies a phone+password login. Deliberately NOT a method on `users`
+ * (UserRepository) — that object is dispatchable by name over /api/rpc for
+ * any signed-in session, and a password check reachable that way would let
+ * one logged-in account brute-force another's password over the API. This
+ * is imported directly by the /api/auth route only, the same way the
+ * MySQL backend's equivalent (mysql/core.ts verifyUserPassword) is.
+ */
+export function verifyPassword(phone: string, password: string): User | undefined {
+  const target = normalizePhone(phone);
+  if (!target || !password) return undefined;
+  const user = store.data.users.find((u) => normalizePhone(u.phone) === target);
+  if (!user) return undefined;
+  const hash = store.data.passwordHashes[user.id];
+  if (!hash || !verifyPasswordHash(password, hash)) return undefined;
+  return user;
+}
 
 const rooms: RoomRepository = {
   async listByHostel(hostelId) {
@@ -811,8 +850,15 @@ const shoppingCosts: ShoppingCostRepository = {
     store.data.shoppingCosts.push({
       ...cost,
       id: nextId("shopcost"),
+      status: "pending",
       createdAt: new Date().toISOString(),
     });
+    store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
+  async decide(id, status) {
+    const cost = store.data.shoppingCosts.find((c) => c.id === id);
+    if (!cost) return;
+    cost.status = status;
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
 };
@@ -868,19 +914,22 @@ const bills: BillRepository = {
   async listPayments(billId) {
     return store.data.payments.filter((p) => p.billId === billId);
   },
+  /**
+   * Records the payment claim and computes how it WOULD settle the chosen
+   * targets — previous balance first, then sections in a fixed order — but
+   * does not touch the bill yet. Nothing is actually owed-down until a
+   * manager verifies it (decidePayment); a member merely claiming to have
+   * paid must never move the balance on its own.
+   */
   async pay(payment) {
     const bill = store.data.bills.find((b) => b.id === payment.billId);
     const breakdown: NonNullable<Payment["breakdown"]> = {};
     if (bill) {
-      // Greedily settle whichever of the chosen targets are still owed —
-      // previous balance first, then sections in a fixed order — recording
-      // exactly what went where so a later rejection can reverse it precisely.
       let remaining = payment.amount;
       if (payment.targets.includes("previousBalance")) {
         const due = bill.previousBalance - bill.previousBalancePaid;
         if (due > 0 && remaining > 0) {
           const applied = Math.min(remaining, due);
-          bill.previousBalancePaid += applied;
           breakdown.previousBalance = applied;
           remaining -= applied;
         }
@@ -894,7 +943,6 @@ const bills: BillRepository = {
         const due = section.total - section.paid;
         if (due > 0) {
           const applied = Math.min(remaining, due);
-          section.paid += applied;
           breakdown[label] = (breakdown[label] ?? 0) + applied;
           remaining -= applied;
         }
@@ -903,20 +951,12 @@ const bills: BillRepository = {
         // Overpaying past every selected target's due becomes credit — parked
         // on whichever target the member chose first.
         const fallback = payment.targets[0];
-        if (fallback === "previousBalance") {
-          bill.previousBalancePaid += remaining;
-          breakdown.previousBalance = (breakdown.previousBalance ?? 0) + remaining;
-        } else if (fallback) {
-          const section = bill.sections.find((s) => s.label === fallback);
-          if (section) {
-            section.paid += remaining;
-            breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
-          }
+        if (fallback) {
+          breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
         }
       }
-      bill.paid += payment.amount;
     }
-    store.data.payments.push({ ...payment, id: nextId("pay"), breakdown });
+    store.data.payments.push({ ...payment, id: nextId("pay"), verified: false, breakdown });
     if (bill) store.emit(`bill:${bill.userId}`);
   },
   async listPendingVerification(hostelId, month) {
@@ -927,23 +967,26 @@ const bills: BillRepository = {
   },
   async decidePayment(paymentId, status) {
     const payment = store.data.payments.find((p) => p.id === paymentId);
-    if (!payment) return;
+    if (!payment || payment.verified) return; // already decided (or gone) — nothing to do.
     const bill = store.data.bills.find((b) => b.id === payment.billId);
     if (status === "verified") {
-      payment.verified = true;
-    } else {
-      store.data.payments = store.data.payments.filter((p) => p.id !== paymentId);
+      // Apply the exact split computed at submission time — the balance
+      // moves for the first time right here, not when the member submitted.
       if (bill) {
-        bill.paid -= payment.amount;
         for (const [key, amt] of Object.entries(payment.breakdown ?? {})) {
           if (key === "previousBalance") {
-            bill.previousBalancePaid -= amt;
+            bill.previousBalancePaid += amt;
           } else {
             const section = bill.sections.find((s) => s.label === key);
-            if (section) section.paid -= amt;
+            if (section) section.paid += amt;
           }
         }
+        bill.paid += payment.amount;
       }
+      payment.verified = true;
+    } else {
+      // Declined: nothing was ever applied to the bill, so just drop the claim.
+      store.data.payments = store.data.payments.filter((p) => p.id !== paymentId);
     }
     if (bill) store.emit(`bill:${bill.userId}`);
   },

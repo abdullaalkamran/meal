@@ -2,29 +2,31 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Phone } from "lucide-react";
+import { Lock, Phone } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 
 /** Sign-in for hostel people (members, managers, owners, cooks) — by phone
- * number, verified server-side. Platform-team operators use /platform-login. */
+ * number + password, verified server-side. Platform-team operators use
+ * /platform-login. */
 export default function LoginPage() {
   const { login } = useSession();
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     if (busy) return;
-    if (!phone.trim()) {
-      setError("Enter your phone number to sign in.");
+    if (!phone.trim() || !password) {
+      setError("Enter your phone number and password.");
       return;
     }
     setError("");
     setBusy(true);
-    const res = await login(phone.trim());
+    const res = await login(phone.trim(), password);
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Sign-in failed.");
   };
@@ -53,6 +55,20 @@ export default function LoginPage() {
             className="min-h-11 w-full bg-transparent text-[13px] font-bold outline-none"
           />
         </div>
+        <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          Password
+        </div>
+        <div className="mb-3 flex items-center gap-2 rounded-btn border border-border px-3">
+          <Icon icon={Lock} size={14} className="shrink-0 text-text-secondary" />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="Your password"
+            type="password"
+            className="min-h-11 w-full bg-transparent text-[13px] font-bold outline-none"
+          />
+        </div>
         {error && (
           <div className="mb-3 rounded-btn bg-danger-soft px-3 py-2 text-[10.5px] font-bold text-danger">
             {error}
@@ -62,7 +78,8 @@ export default function LoginPage() {
           {busy ? "Signing in…" : "Sign in"}
         </Button>
         <div className="mt-2 text-center text-[9.5px] font-semibold text-text-secondary">
-          Demo build — your phone number is your sign-in, no password needed.
+          Existing account, first time with a password? Your phone number is
+          your password.
         </div>
       </Card>
 

@@ -54,6 +54,7 @@ export function buildSeed(): Tables {
     usedBookListings: [],
     studyAbroadItems: [],
     studyLeads: [],
+    passwordHashes: {},
     heroPromoSettings: {
       sources: { study: true, offers: true, grocery: true, books: true },
       intervalSec: 4,

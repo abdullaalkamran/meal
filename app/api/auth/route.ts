@@ -1,12 +1,12 @@
 // Server-side auth endpoint.
 //   GET    → the current session's user (or null)
-//   POST   → sign in by phone; issues the signed httpOnly session cookie
+//   POST   → sign in by phone + password; issues the signed httpOnly session cookie
 //   DELETE → sign out; clears the cookie
-// Phone-only, server-verified: the account must exist in the server store.
+// Server-verified: the account and password hash must match in the server store.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { getUserById, getUserByPhone } from "@/lib/data/server/db";
+import { getUserById, verifyPassword } from "@/lib/data/server/db";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { phone?: string; scope?: "hostel" | "platform" };
+  let body: { phone?: string; password?: string; scope?: "hostel" | "platform" };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -42,20 +42,22 @@ export async function POST(req: NextRequest) {
   }
 
   const phone = (body.phone ?? "").trim();
-  if (!phone) {
-    return NextResponse.json({ error: "Enter your phone number." }, { status: 400 });
+  const password = body.password ?? "";
+  if (!phone || !password) {
+    return NextResponse.json({ error: "Enter your phone number and password." }, { status: 400 });
   }
   const scope = body.scope === "platform" ? "platform" : "hostel";
-  const user = await getUserByPhone(phone);
+  const user = await verifyPassword(phone, password);
 
-  // Uniform 401s — don't reveal which numbers exist.
+  // Uniform 401 for "no such account" and "wrong password" — don't reveal
+  // which numbers exist or leak which half of the credential was wrong.
   if (!user) {
     return NextResponse.json(
       {
         error:
           scope === "platform"
-            ? "No platform-team account with this number."
-            : "No account found with this phone number — check the number or create an account.",
+            ? "No platform-team account with that number and password."
+            : "Wrong phone number or password.",
       },
       { status: 401 }
     );

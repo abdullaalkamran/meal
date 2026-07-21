@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ChevronLeft, Phone, ShieldCheck } from "lucide-react";
+import { ChevronLeft, Lock, Phone, ShieldCheck } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -15,18 +15,19 @@ import { Button } from "@/components/ui/Button";
 export default function PlatformLoginPage() {
   const { login } = useSession();
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     if (busy) return;
-    if (!phone.trim()) {
-      setError("Enter your team phone number.");
+    if (!phone.trim() || !password) {
+      setError("Enter your team phone number and password.");
       return;
     }
     setError("");
     setBusy(true);
-    const res = await login(phone.trim(), "platform");
+    const res = await login(phone.trim(), password, "platform");
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Sign-in failed.");
   };
@@ -63,6 +64,20 @@ export default function PlatformLoginPage() {
             onKeyDown={(e) => e.key === "Enter" && submit()}
             placeholder="01700-000010"
             inputMode="tel"
+            className="min-h-11 w-full bg-transparent text-[13px] font-bold outline-none"
+          />
+        </div>
+        <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          Password
+        </div>
+        <div className="mb-3 flex items-center gap-2 rounded-btn border border-border px-3">
+          <Icon icon={Lock} size={14} className="shrink-0 text-text-secondary" />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="Your password"
+            type="password"
             className="min-h-11 w-full bg-transparent text-[13px] font-bold outline-none"
           />
         </div>

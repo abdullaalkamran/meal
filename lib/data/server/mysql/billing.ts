@@ -129,8 +129,11 @@ export const expenses: ExpenseRepository = {
 
 export const shoppingCosts: ShoppingCostRepository = {
   async listByHostel(hostelId) {
-    const rows = await all<{ id: string; hostel_id: string; user_id: string; amount: number; items: string | null; created_at: string }>(
-      "SELECT id, hostel_id, user_id, amount, items, created_at FROM shopping_costs WHERE hostel_id = ?",
+    const rows = await all<{
+      id: string; hostel_id: string; user_id: string; amount: number; items: string | null;
+      status: "pending" | "approved" | "denied"; created_at: string;
+    }>(
+      "SELECT id, hostel_id, user_id, amount, items, status, created_at FROM shopping_costs WHERE hostel_id = ?",
       [hostelId]
     );
     if (!rows.length) return [];
@@ -151,6 +154,7 @@ export const shoppingCosts: ShoppingCostRepository = {
       dates: byCost.get(r.id) ?? [],
       amount: Number(r.amount),
       items: r.items ?? undefined,
+      status: r.status,
       createdAt: toIso(r.created_at),
     }));
   },
@@ -159,7 +163,7 @@ export const shoppingCosts: ShoppingCostRepository = {
     await transaction(async (tx) => {
       const id = newId("shopcost");
       await run(
-        "INSERT INTO shopping_costs (id, hostel_id, user_id, amount, items, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO shopping_costs (id, hostel_id, user_id, amount, items, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
         [id, cost.hostelId, cost.userId, cost.amount, cost.items ?? null, fromIso(new Date().toISOString())],
         tx
       );
@@ -167,6 +171,10 @@ export const shoppingCosts: ShoppingCostRepository = {
         await run("INSERT IGNORE INTO shopping_cost_dates (cost_id, day) VALUES (?, ?)", [id, day], tx);
       }
     });
+  },
+
+  async decide(id, status) {
+    await run("UPDATE shopping_costs SET status = ? WHERE id = ?", [status, id]);
   },
 };
 
@@ -341,9 +349,14 @@ export const bills: BillRepository = {
     );
   },
 
-  /** Greedily settles the chosen targets — previous balance first, then
-   * sections in a fixed order — recording exactly what went where so a later
-   * rejection can reverse it precisely. */
+  /**
+   * Records the payment claim and computes how it WOULD settle the chosen
+   * targets — previous balance first, then sections in a fixed order — but
+   * does not touch the bill yet. Nothing is actually owed-down until a
+   * manager verifies it (decidePayment); a member merely claiming to have
+   * paid must never move the balance on its own, or "pending" verification
+   * would be theater while the money already counted.
+   */
   async pay(payment) {
     await transaction(async (tx) => {
       const [bill] = await loadBills("id = ?", [payment.billId], tx);
@@ -354,7 +367,6 @@ export const bills: BillRepository = {
           const due = bill.previousBalance - bill.previousBalancePaid;
           if (due > 0 && remaining > 0) {
             const applied = Math.min(remaining, due);
-            await applySectionPaid(bill.id, "previousBalance", applied, tx);
             breakdown.previousBalance = applied;
             remaining -= applied;
           }
@@ -367,7 +379,6 @@ export const bills: BillRepository = {
           const due = section.total - section.paid;
           if (due > 0) {
             const applied = Math.min(remaining, due);
-            await applySectionPaid(bill.id, label, applied, tx);
             breakdown[label] = (breakdown[label] ?? 0) + applied;
             remaining -= applied;
           }
@@ -377,11 +388,9 @@ export const bills: BillRepository = {
           // whichever target the member chose first.
           const fallback = payment.targets[0];
           if (fallback) {
-            await applySectionPaid(bill.id, fallback, remaining, tx);
             breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
           }
         }
-        await run("UPDATE bills SET paid = paid + ? WHERE id = ?", [payment.amount, bill.id], tx);
       }
 
       const paymentId = newId("pay");
@@ -390,7 +399,7 @@ export const bills: BillRepository = {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           paymentId, payment.billId, payment.amount, fromIso(payment.paidAt), payment.method,
-          payment.reference ?? null, payment.senderNumber ?? null, payment.verified ? 1 : 0,
+          payment.reference ?? null, payment.senderNumber ?? null, 0,
         ],
         tx
       );
@@ -409,26 +418,28 @@ export const bills: BillRepository = {
 
   async decidePayment(paymentId, status) {
     await transaction(async (tx) => {
-      const payment = await one<{ id: string; bill_id: string; amount: number }>(
-        "SELECT id, bill_id, amount FROM payments WHERE id = ?",
+      const payment = await one<{ id: string; bill_id: string; amount: number; verified: number }>(
+        "SELECT id, bill_id, amount, verified FROM payments WHERE id = ?",
         [paymentId],
         tx
       );
-      if (!payment) return;
+      if (!payment || payment.verified) return; // already decided (or gone) — nothing to do.
       if (status === "verified") {
+        // Apply the exact split computed at submission time — the balance
+        // moves for the first time right here, not when the member submitted.
+        const breakdown = await all<{ target: BillTarget; amount: number }>(
+          "SELECT target, amount FROM payment_breakdown WHERE payment_id = ?",
+          [paymentId],
+          tx
+        );
+        for (const b of breakdown) {
+          await applySectionPaid(payment.bill_id, b.target, Number(b.amount), tx);
+        }
+        await run("UPDATE bills SET paid = paid + ? WHERE id = ?", [Number(payment.amount), payment.bill_id], tx);
         await run("UPDATE payments SET verified = 1 WHERE id = ?", [paymentId], tx);
         return;
       }
-      // Declined: reverse exactly what this payment applied, then drop it.
-      const breakdown = await all<{ target: BillTarget; amount: number }>(
-        "SELECT target, amount FROM payment_breakdown WHERE payment_id = ?",
-        [paymentId],
-        tx
-      );
-      for (const b of breakdown) {
-        await applySectionPaid(payment.bill_id, b.target, -Number(b.amount), tx);
-      }
-      await run("UPDATE bills SET paid = paid - ? WHERE id = ?", [Number(payment.amount), payment.bill_id], tx);
+      // Declined: nothing was ever applied to the bill, so just drop the claim.
       await run("DELETE FROM payments WHERE id = ?", [paymentId], tx);
     });
   },
@@ -672,7 +683,7 @@ export const bills: BillRepository = {
 async function mealRateFor(hostelId: string, month: string, tx: Queryable) {
   const spend = await one<{ total: number | null }>(
     `SELECT SUM(c.amount) AS total FROM shopping_costs c
-      WHERE c.hostel_id = ?
+      WHERE c.hostel_id = ? AND c.status = 'approved'
         AND EXISTS (SELECT 1 FROM shopping_cost_dates d
                      WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)`,
     [hostelId, month],

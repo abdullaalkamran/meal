@@ -41,6 +41,8 @@ export default function SignupPage() {
   const [role, setRole] = useState<"student" | "owner">("student");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
   const [studentId, setStudentId] = useState("");
   const [department, setDepartment] = useState("");
@@ -50,8 +52,16 @@ export default function SignupPage() {
 
   const submit = async () => {
     if (saving) return;
-    if (!name.trim() || !phone.trim()) {
-      setError("Name and phone number are required.");
+    if (!name.trim() || !phone.trim() || !password) {
+      setError("Name, phone number, and password are required.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
       return;
     }
     setError("");
@@ -72,6 +82,7 @@ export default function SignupPage() {
       created = await repo.users.signup({
         name: name.trim(),
         phone: phone.trim(),
+        password,
         email: email.trim() || undefined,
         role,
         avatarSeed: `${role}-${slug(name)}`,
@@ -88,8 +99,8 @@ export default function SignupPage() {
       setError(err instanceof Error ? err.message : "Could not create the account.");
       return;
     }
-    // The account exists on the server now — sign in with its phone.
-    const res = await login(created.phone);
+    // The account exists on the server now — sign in with its own credentials.
+    const res = await login(created.phone, password);
     if (!res.ok) {
       setSaving(false);
       setError(res.error ?? "Account created, but sign-in failed — try signing in.");
@@ -127,6 +138,22 @@ export default function SignupPage() {
       <Card>
         <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahim Uddin" />
         <Field label="Phone number" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01711-123456" />
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 6 characters"
+          />
+          <Field
+            label="Confirm password"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter password"
+          />
+        </div>
         <Field label="Email" optional type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
         <GeoSelect label="Address" optional value={address} onChange={setAddress} />
 

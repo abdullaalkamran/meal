@@ -65,10 +65,18 @@ CREATE TABLE users (
   id                  VARCHAR(64)  NOT NULL PRIMARY KEY,
   role                ENUM('student','manager','owner','cook','superadmin','marketing','service') NOT NULL,
   name                VARCHAR(191) NOT NULL,
-  -- The sign-in credential today (phone-only, server-verified).
+  -- The sign-in identity (phone, server-verified) + the password paired
+  -- with it. phone_normalized is phone with all non-digits stripped (see
+  -- lib/utils/phone.ts normalizePhone) — the UNIQUE key lives on THIS
+  -- column, not raw `phone`, so "01711-123456" and "01711123456" can't
+  -- become two accounts just because they're formatted differently.
   phone               VARCHAR(32)  NOT NULL,
+  phone_normalized    VARCHAR(20)  NULL,
   email               VARCHAR(191) NULL,
-  -- Reserved for real credentials later; NULL while sign-in is phone-only.
+  -- Every account has one (scrypt, lib/data/server/password.ts). New
+  -- accounts set it at signup; accounts created by staff (owner adding a
+  -- manager/cook) or migrated from before this column existed default to
+  -- their own phone number as the password.
   password_hash       VARCHAR(255) NULL,
   avatar_seed         VARCHAR(191) NOT NULL DEFAULT '',
   -- NULL for owners/platform team and for members with no hostel yet.
@@ -91,6 +99,7 @@ CREATE TABLE users (
   notify_monthly_report BOOLEAN NOT NULL DEFAULT TRUE,
   created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_users_phone (phone),
+  UNIQUE KEY uq_users_phone_normalized (phone_normalized),
   INDEX idx_users_hostel (hostel_id),
   INDEX idx_users_room (room_id),
   INDEX idx_users_area (division, district, thana),
@@ -330,6 +339,10 @@ CREATE TABLE shopping_costs (
   user_id    VARCHAR(64) NOT NULL,
   amount     DECIMAL(10,2) NOT NULL,
   items      TEXT        NULL,
+  -- Manager must approve before this counts toward the month's actual meal
+  -- rate (mealRateFor sums 'approved' only) — an unreviewed number a member
+  -- typed in no longer silently inflates/deflates everyone's bill.
+  status     ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
   created_at DATETIME(3) NOT NULL,
   INDEX idx_shopping_hostel (hostel_id),
   CONSTRAINT fk_shopping_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,

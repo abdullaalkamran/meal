@@ -68,6 +68,9 @@ export interface User {
 export interface SignupInput {
   name: string;
   phone: string;
+  /** Plain text in transit only — hashed (scrypt) before it ever touches
+   * storage; never round-trips back to any client. Minimum 6 characters. */
+  password: string;
   email?: string;
   role: "student" | "owner";
   avatarSeed: string;
@@ -264,6 +267,10 @@ export interface ShoppingCost {
   dates: string[];
   amount: number;
   items?: string;
+  /** Manager must approve before this counts toward the month's actual meal
+   * rate (see billing's mealRateFor) — an unreviewed number a member typed
+   * in doesn't silently move everyone's bill. */
+  status: "pending" | "approved" | "denied";
   createdAt: string;
 }
 

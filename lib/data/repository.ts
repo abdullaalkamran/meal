@@ -242,7 +242,9 @@ export interface SwapRepository {
 
 export interface ShoppingCostRepository {
   listByHostel(hostelId: string): Promise<ShoppingCost[]>;
-  submit(cost: Omit<ShoppingCost, "id" | "createdAt">): Promise<void>;
+  submit(cost: Omit<ShoppingCost, "id" | "createdAt" | "status">): Promise<void>;
+  /** Manager approve/deny — only 'approved' spend counts toward the actual meal rate. */
+  decide(id: string, status: "approved" | "denied"): Promise<void>;
 }
 
 export interface ShortageRepository {

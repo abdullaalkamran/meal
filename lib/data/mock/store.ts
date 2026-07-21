@@ -91,6 +91,11 @@ export interface Tables {
   studyAbroadItems: StudyAbroadItem[];
   studyLeads: StudyLead[];
   heroPromoSettings: HeroPromoSettings;
+  /** userId -> scrypt password hash. Kept OUT of the `users` array (and thus
+   * the `User` type) so it can never be serialized back to a client — every
+   * User-returning read (getUser, listByHostel, subscribeUser, ...) reads
+   * straight off `users`, which never carries this field. */
+  passwordHashes: Record<string, string>;
 }
 
 interface Persisted {

@@ -21,6 +21,7 @@ import type {
 import type { HostelRepository, RoomRepository, UserRepository } from "../../repository";
 import { normalizePhone } from "../../../utils/phone";
 import { today } from "../../../utils/date";
+import { hashPassword, verifyPassword } from "../password";
 import {
   all,
   omitUndefined,
@@ -37,6 +38,16 @@ import { newId } from "./ids";
 const serverOnly = (): never => {
   throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
 };
+
+const PHONE_TAKEN_MESSAGE = "An account with this phone number already exists — sign in instead.";
+
+/** MySQL's duplicate-key errno — the DB-level backstop behind the
+ * pre-check, so two requests racing past phoneAvailable() at the same time
+ * still can't both create an account for the same number (see
+ * uq_users_phone_normalized in db/schema.mysql.sql). */
+function isDuplicateEntry(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { errno?: number }).errno === 1062;
+}
 
 // Roles that aren't boarders of a single hostel — excluded from per-hostel
 // member listings (mirrors isHostelMember in the JSON backend).
@@ -210,49 +221,71 @@ export const users: UserRepository = {
   async phoneAvailable(phone) {
     const target = normalizePhone(phone);
     if (!target) return false;
-    // Compare on the normalised form so "01711-1" and "017111" can't collide.
-    const rows = await all<{ phone: string }>("SELECT phone FROM users");
-    return !rows.some((r) => normalizePhone(r.phone) === target);
+    // Indexed lookup on the normalised column — "01711-1" and "017111"
+    // collide here exactly like they do in every other phone comparison.
+    const row = await one<{ id: string }>("SELECT id FROM users WHERE phone_normalized = ? LIMIT 1", [target]);
+    return !row;
   },
 
   async signup(input) {
     const name = (input.name ?? "").trim();
     const phone = (input.phone ?? "").trim();
+    const password = input.password ?? "";
     if (!name || !phone) throw new Error("Name and phone number are required.");
-    if (!(await users.phoneAvailable(phone))) {
-      throw new Error("An account with this phone number already exists — sign in instead.");
-    }
+    if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+    const normalized = normalizePhone(phone);
+    if (!(await users.phoneAvailable(phone))) throw new Error(PHONE_TAKEN_MESSAGE);
     // Whitelisted: this runs unauthenticated, so it may only ever produce a
     // hostel-less student or owner.
     const role: Role = input.role === "owner" ? "owner" : "student";
     const id = newId("user");
-    await run(
-      `INSERT INTO users (id, role, name, phone, email, avatar_seed, student_id, department, division, district, thana)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, role, name, phone, input.email?.trim() || null,
-        input.avatarSeed || name,
-        role === "student" ? input.studentId?.trim() || null : null,
-        role === "student" ? input.department?.trim() || null : null,
-        input.address?.division ?? null, input.address?.district ?? null, input.address?.thana ?? null,
-      ]
-    );
+    try {
+      await run(
+        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, avatar_seed, student_id, department, division, district, thana)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, role, name, phone, normalized, hashPassword(password), input.email?.trim() || null,
+          input.avatarSeed || name,
+          role === "student" ? input.studentId?.trim() || null : null,
+          role === "student" ? input.department?.trim() || null : null,
+          input.address?.division ?? null, input.address?.district ?? null, input.address?.thana ?? null,
+        ]
+      );
+    } catch (err) {
+      // Closes the race between the phoneAvailable() check above and this
+      // insert — two concurrent signups for the same number (e.g. a
+      // double-tapped submit button) can both pass the check, but only one
+      // wins the DB's unique index; the loser gets the same friendly error.
+      if (isDuplicateEntry(err)) throw new Error(PHONE_TAKEN_MESSAGE);
+      throw err;
+    }
     return (await loadUser(id))!;
   },
 
   async create(user) {
+    const normalized = normalizePhone(user.phone);
+    if (!(await users.phoneAvailable(user.phone))) throw new Error(PHONE_TAKEN_MESSAGE);
     const id = newId("user");
-    await run(
-      `INSERT INTO users (id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department,
-                          division, district, thana, meals_suspended, banned, joined_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, user.role, user.name, user.phone, user.email ?? null, user.avatarSeed ?? user.name,
-        user.hostelId || null, user.roomId ?? null, user.studentId ?? null, user.department ?? null,
-        user.address?.division ?? null, user.address?.district ?? null, user.address?.thana ?? null,
-        user.mealsSuspended ? 1 : 0, user.banned ? 1 : 0, user.joinedAt ?? null,
-      ]
-    );
+    try {
+      await run(
+        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, avatar_seed, hostel_id, room_id, student_id, department,
+                            division, district, thana, meals_suspended, banned, joined_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          // Staff-created accounts (owner adding a manager/cook) start with
+          // their own phone number as their password — the same rule an
+          // account migrated from before passwords existed gets.
+          id, user.role, user.name, user.phone, normalized, hashPassword(normalized), user.email ?? null,
+          user.avatarSeed ?? user.name,
+          user.hostelId || null, user.roomId ?? null, user.studentId ?? null, user.department ?? null,
+          user.address?.division ?? null, user.address?.district ?? null, user.address?.thana ?? null,
+          user.mealsSuspended ? 1 : 0, user.banned ? 1 : 0, user.joinedAt ?? null,
+        ]
+      );
+    } catch (err) {
+      if (isDuplicateEntry(err)) throw new Error(PHONE_TAKEN_MESSAGE);
+      throw err;
+    }
     return (await loadUser(id))!;
   },
 
@@ -262,7 +295,16 @@ export const users: UserRepository = {
     const put = (col: string, val: unknown) => { sets.push(`${col} = ?`); params.push(val); };
 
     if (patch.name !== undefined) put("name", patch.name);
-    if (patch.phone !== undefined) put("phone", patch.phone);
+    if (patch.phone !== undefined) {
+      const normalized = normalizePhone(patch.phone);
+      const existing = await one<{ id: string }>(
+        "SELECT id FROM users WHERE phone_normalized = ? AND id <> ? LIMIT 1",
+        [normalized, userId]
+      );
+      if (existing) throw new Error("Another account already uses this phone number.");
+      put("phone", patch.phone);
+      put("phone_normalized", normalized);
+    }
     if (patch.email !== undefined) put("email", patch.email ?? null);
     if (patch.role !== undefined) put("role", patch.role);
     if (patch.avatarSeed !== undefined) put("avatar_seed", patch.avatarSeed);
@@ -288,7 +330,12 @@ export const users: UserRepository = {
     }
     if (!sets.length) return;
     params.push(userId);
-    await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, params);
+    try {
+      await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, params);
+    } catch (err) {
+      if (isDuplicateEntry(err)) throw new Error("Another account already uses this phone number.");
+      throw err;
+    }
   },
 
   async setBanned(userId, banned) {
@@ -381,6 +428,25 @@ export const users: UserRepository = {
   subscribe: serverOnly,
   subscribeUser: serverOnly,
 };
+
+/**
+ * Verifies a phone+password login. Deliberately NOT a method on `users`
+ * (UserRepository) — that object is reachable by name over /api/rpc for any
+ * signed-in session (see lib/data/server/policy.ts), and a password check
+ * callable that way would let one logged-in account brute-force another's
+ * password over the API. This is imported directly by the /api/auth route
+ * only, the same way getUserById/getUserByPhone are.
+ */
+export async function verifyUserPassword(phone: string, password: string): Promise<User | undefined> {
+  const target = normalizePhone(phone);
+  if (!target || !password) return undefined;
+  const row = await one<{ id: string; password_hash: string | null }>(
+    "SELECT id, password_hash FROM users WHERE phone_normalized = ? LIMIT 1",
+    [target]
+  );
+  if (!row || !row.password_hash || !verifyPassword(password, row.password_hash)) return undefined;
+  return loadUser(row.id);
+}
 
 // ── Rooms ──────────────────────────────────────────────────────────────────
 

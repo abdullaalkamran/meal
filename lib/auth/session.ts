@@ -18,16 +18,17 @@ export async function fetchSession(): Promise<User | null> {
   }
 }
 
-/** Signs in by phone; on success the server sets the session cookie. */
+/** Signs in by phone + password; on success the server sets the session cookie. */
 export async function serverLogin(
   phone: string,
+  password: string,
   scope: LoginScope = "hostel"
 ): Promise<{ ok: boolean; user?: User; error?: string }> {
   try {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone, scope }),
+      body: JSON.stringify({ phone, password, scope }),
     });
     const data = (await res.json().catch(() => ({}))) as { user?: User; error?: string };
     if (!res.ok) return { ok: false, error: data.error ?? "Sign-in failed." };

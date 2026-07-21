@@ -35,9 +35,10 @@ interface SessionContextValue {
   setViewRole: (role: Role) => void;
   activeHostelId: string | undefined;
   switchHostel: (hostelId: string) => void;
-  /** Signs in by phone against the server. Returns an error message on
-   * failure (bad number, wrong sign-in page) instead of throwing. */
-  login: (phone: string, scope?: LoginScope) => Promise<{ ok: boolean; error?: string }>;
+  /** Signs in by phone + password against the server. Returns an error
+   * message on failure (wrong credentials, wrong sign-in page) instead of
+   * throwing. */
+  login: (phone: string, password: string, scope?: LoginScope) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -123,8 +124,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   const login = useCallback(
-    async (phone: string, scope: LoginScope = "hostel") => {
-      const res = await serverLogin(phone, scope);
+    async (phone: string, password: string, scope: LoginScope = "hostel") => {
+      const res = await serverLogin(phone, password, scope);
       if (!res.ok || !res.user) return { ok: false, error: res.error };
       const u = res.user;
       setUser(u);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Ban, CreditCard, UserPlus } from "lucide-react";
+import { ArrowLeftRight, Ban, CreditCard, ShoppingBag, UserPlus } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealStops } from "@/hooks/useMealStops";
@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
-import { repo, type Bill, type BillTarget, type Payment } from "@/lib/data";
+import { repo, type Bill, type BillTarget, type Payment, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
@@ -39,6 +39,7 @@ function ManagerApprovalsPage() {
   );
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
   const { toast } = useToast();
 
   const refreshPayments = () => {
@@ -46,8 +47,15 @@ function ManagerApprovalsPage() {
     repo.bills.listPendingVerification(activeHostelId, currentMonth()).then(setPayments);
     repo.bills.listByHostel(activeHostelId, currentMonth()).then(setBills);
   };
+  const refreshShoppingCosts = () => {
+    if (!activeHostelId) return;
+    repo.shoppingCosts.listByHostel(activeHostelId).then(setShoppingCosts);
+  };
 
   useEffect(refreshPayments, [activeHostelId]);
+  useEffect(refreshShoppingCosts, [activeHostelId]);
+
+  const pendingShoppingCosts = shoppingCosts.filter((c) => c.status === "pending");
 
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   const billUserName = (billId: string) => {
@@ -55,7 +63,12 @@ function ManagerApprovalsPage() {
     return bill ? nameOf(bill.userId) : "Member";
   };
   const total =
-    mealStops.length + guestMeals.length + cookLeave.length + payments.length + transfersOut.length;
+    mealStops.length +
+    guestMeals.length +
+    cookLeave.length +
+    payments.length +
+    transfersOut.length +
+    pendingShoppingCosts.length;
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -299,6 +312,61 @@ function ManagerApprovalsPage() {
                       await repo.bills.decidePayment(p.id, "declined");
                       toast("Payment declined");
                       refreshPayments();
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                  >
+                    Decline
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pendingShoppingCosts.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-soft text-orange">
+              <Icon icon={ShoppingBag} size={13} />
+            </div>
+            <div className="text-[13.5px] font-extrabold">Shopping expenses</div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {pendingShoppingCosts.map((c) => (
+              <Card key={c.id}>
+                <div className="mb-2 flex items-center gap-2.5">
+                  <Avatar name={nameOf(c.userId)} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-extrabold">
+                      {nameOf(c.userId)} · {formatBDT(c.amount)}
+                    </div>
+                    <div className="truncate text-[10px] font-semibold text-text-secondary">
+                      {c.items || "No items listed"}
+                    </div>
+                  </div>
+                  <Chip tone="orange" active>
+                    Pending
+                  </Chip>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await repo.shoppingCosts.decide(c.id, "approved");
+                      toast("Shopping expense approved");
+                      refreshShoppingCosts();
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await repo.shoppingCosts.decide(c.id, "denied");
+                      toast("Shopping expense declined");
+                      refreshShoppingCosts();
                     }}
                     className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
                   >

@@ -17,7 +17,7 @@ import { SCHEMA_VERSION } from "../schema";
 import { normalizePhone } from "../../utils/phone";
 import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
-import { mockRepositories, setActingUser } from "../mock/mockRepositories";
+import { mockRepositories, setActingUser, verifyPassword as mockVerifyPassword } from "../mock/mockRepositories";
 import { authorize, type SessionUser } from "./policy";
 import { isMysqlConfigured } from "./mysql/connection";
 import {
@@ -27,6 +27,7 @@ import {
   mysqlRepositories,
   mysqlSystemQueries,
   runWithActor,
+  verifyUserPassword,
 } from "./mysql";
 
 export type { SessionUser };
@@ -155,6 +156,17 @@ export async function getUserByPhone(phone: string): Promise<User | undefined> {
   }
   ensureFresh();
   return store.data.users.find((u) => normalizePhone(u.phone) === target);
+}
+
+/** Verifies phone+password for /api/auth. Never exposed over /api/rpc — see
+ * the comment on verifyUserPassword/verifyPassword in each backend. */
+export async function verifyPassword(phone: string, password: string): Promise<User | undefined> {
+  if (usingMysql) {
+    await mysqlReady();
+    return verifyUserPassword(phone, password);
+  }
+  ensureFresh();
+  return mockVerifyPassword(phone, password);
 }
 
 export class RpcError extends Error {
