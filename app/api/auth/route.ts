@@ -29,7 +29,7 @@ function isSecure(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   const userId = verifySession(req.cookies.get(SESSION_COOKIE)?.value);
-  const user = userId ? getUserById(userId) : undefined;
+  const user = userId ? await getUserById(userId) : undefined;
   return NextResponse.json({ user: user ?? null });
 }
 
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Enter your phone number." }, { status: 400 });
   }
   const scope = body.scope === "platform" ? "platform" : "hostel";
-  const user = getUserByPhone(phone);
+  const user = await getUserByPhone(phone);
 
   // Uniform 401s — don't reveal which numbers exist.
   if (!user) {

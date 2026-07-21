@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Phone } from "lucide-react";
-import { loadDemoData, repo } from "@/lib/data";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -80,17 +79,6 @@ export default function LoginPage() {
       >
         Hostel ERP platform team? Sign in here
       </Link>
-
-      <button
-        type="button"
-        onClick={async () => {
-          await loadDemoData();
-          await repo.hostels.listAll();
-        }}
-        className="mx-auto text-[9.5px] font-semibold text-text-secondary underline-offset-2 hover:underline"
-      >
-        Load demo dataset
-      </button>
     </div>
   );
 }

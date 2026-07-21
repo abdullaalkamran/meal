@@ -1,0 +1,634 @@
+// MySQL implementations of the core repositories: users, hostels, rooms.
+//
+// Every multi-step change runs inside a transaction, so a partial change can
+// never be left behind (the JSON store had no such guarantee across the
+// concurrent Passenger processes shared hosting can spawn).
+//
+// The `subscribe*` methods are client-side only — the RPC layer never
+// dispatches them — so they throw if ever reached on the server.
+
+import type {
+  Hostel,
+  HostelSettings,
+  ManagerPermissions,
+  MealSlot,
+  NewHostel,
+  Role,
+  Room,
+  Stars,
+  User,
+} from "../../types";
+import type { HostelRepository, RoomRepository, UserRepository } from "../../repository";
+import { normalizePhone } from "../../../utils/phone";
+import { addDays, today } from "../../../utils/date";
+import {
+  all,
+  omitUndefined,
+  one,
+  run,
+  toBool,
+  toDay,
+  transaction,
+  type Queryable,
+} from "./connection";
+import { logActivity, notify } from "./context";
+import { newId } from "./ids";
+
+const serverOnly = (): never => {
+  throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
+};
+
+// Roles that aren't boarders of a single hostel — excluded from per-hostel
+// member listings (mirrors isHostelMember in the JSON backend).
+const NON_HOSTEL_ROLES: Role[] = ["owner", "superadmin", "marketing", "service"];
+const isHostelMember = (role: Role) => !NON_HOSTEL_ROLES.includes(role);
+
+const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
+
+// ── Row shapes ─────────────────────────────────────────────────────────────
+
+interface UserRow {
+  id: string; role: Role; name: string; phone: string; email: string | null;
+  avatar_seed: string; hostel_id: string | null; room_id: string | null;
+  student_id: string | null; department: string | null;
+  division: string | null; district: string | null; thana: string | null;
+  meals_suspended: number; banned: number;
+  manager_rating: number | null; manager_rating_note: string | null;
+  joined_at: string | null;
+  notify_announcements: number; notify_bills: number; notify_monthly_report: number;
+}
+
+interface HostelRow {
+  id: string; name: string; area: string;
+  division: string | null; district: string | null; thana: string | null;
+  owner_id: string; manager_id: string | null; cook_id: string | null;
+  meal_rate: number; kitchen_location: string | null; cook_monthly_salary: number | null;
+  suspended: number; guest_meal_price: number; meal_stop_requires_approval: number;
+  shopping_rotation_policy: "spin-wheel" | "manual"; service_charge_monthly: number;
+  offers_breakfast: number; offers_lunch: number; offers_dinner: number;
+}
+
+interface RoomRow {
+  id: string; hostel_id: string; number: string; capacity: number; seat_rent: number;
+}
+
+// ── Mappers ────────────────────────────────────────────────────────────────
+
+function toUser(r: UserRow): User {
+  return omitUndefined({
+    id: r.id,
+    hostelId: r.hostel_id ?? "",
+    name: r.name,
+    phone: r.phone,
+    email: r.email ?? undefined,
+    role: r.role,
+    roomId: r.room_id ?? undefined,
+    avatarSeed: r.avatar_seed,
+    studentId: r.student_id ?? undefined,
+    department: r.department ?? undefined,
+    address: r.division && r.district && r.thana
+      ? { division: r.division, district: r.district, thana: r.thana }
+      : undefined,
+    mealsSuspended: toBool(r.meals_suspended) || undefined,
+    banned: toBool(r.banned) || undefined,
+    managerRating: (r.manager_rating as Stars | null) ?? undefined,
+    managerRatingNote: r.manager_rating_note ?? undefined,
+    joinedAt: r.joined_at ? toDay(r.joined_at) : undefined,
+    notificationPrefs: {
+      announcements: toBool(r.notify_announcements),
+      bills: toBool(r.notify_bills),
+      monthlyReport: toBool(r.notify_monthly_report),
+    },
+  }) as User;
+}
+
+/** Owners carry their hostels as an array on the user record. */
+async function withOwnedHostels(user: User, on?: Queryable): Promise<User> {
+  if (user.role !== "owner") return user;
+  const rows = await all<{ id: string }>("SELECT id FROM hostels WHERE owner_id = ?", [user.id], on);
+  return { ...user, ownedHostelIds: rows.map((r) => r.id) };
+}
+
+async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
+  const cutoffs = await all<{ meal: MealSlot; cutoff_time: string }>(
+    "SELECT meal, cutoff_time FROM hostel_meal_cutoffs WHERE hostel_id = ?",
+    [r.id],
+    on
+  );
+  const perms = await one<Record<string, number>>(
+    "SELECT rooms, members, approvals, finance, billing, menu, duties, announcements, assign_manager FROM manager_permissions WHERE hostel_id = ?",
+    [r.id],
+    on
+  );
+  const settings: HostelSettings = {
+    mealCutoff: cutoffs.map((c) => ({ meal: c.meal, time: String(c.cutoff_time).slice(0, 5) })),
+    guestMealPrice: Number(r.guest_meal_price),
+    mealStopRequiresApproval: toBool(r.meal_stop_requires_approval),
+    shoppingRotationPolicy: r.shopping_rotation_policy,
+    serviceChargeMonthly: Number(r.service_charge_monthly),
+    mealsOffered: {
+      breakfast: toBool(r.offers_breakfast),
+      lunch: toBool(r.offers_lunch),
+      dinner: toBool(r.offers_dinner),
+    },
+    ...(perms
+      ? {
+          managerPermissions: {
+            rooms: toBool(perms.rooms), members: toBool(perms.members),
+            approvals: toBool(perms.approvals), finance: toBool(perms.finance),
+            billing: toBool(perms.billing), menu: toBool(perms.menu),
+            duties: toBool(perms.duties), announcements: toBool(perms.announcements),
+            assignManager: toBool(perms.assign_manager),
+          } as ManagerPermissions,
+        }
+      : {}),
+  };
+  return omitUndefined({
+    id: r.id,
+    name: r.name,
+    area: r.area,
+    address: r.division && r.district && r.thana
+      ? { division: r.division, district: r.district, thana: r.thana }
+      : undefined,
+    ownerId: r.owner_id,
+    managerId: r.manager_id ?? "",
+    cookId: r.cook_id ?? undefined,
+    mealRate: Number(r.meal_rate),
+    kitchenLocation: r.kitchen_location ?? undefined,
+    cookMonthlySalary: r.cook_monthly_salary == null ? undefined : Number(r.cook_monthly_salary),
+    settings,
+    suspended: toBool(r.suspended) || undefined,
+  }) as Hostel;
+}
+
+async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
+  const [occupants, facilities] = await Promise.all([
+    all<{ id: string }>("SELECT id FROM users WHERE room_id = ?", [r.id], on),
+    all<{ facility: string }>("SELECT facility FROM room_facilities WHERE room_id = ?", [r.id], on),
+  ]);
+  return omitUndefined({
+    id: r.id,
+    hostelId: r.hostel_id,
+    number: r.number,
+    capacity: r.capacity,
+    occupantIds: occupants.map((o) => o.id),
+    seatRent: Number(r.seat_rent),
+    facilities: facilities.length ? facilities.map((f) => f.facility) : undefined,
+  }) as Room;
+}
+
+const USER_COLS =
+  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, banned, manager_rating, manager_rating_note, joined_at, notify_announcements, notify_bills, notify_monthly_report";
+
+async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
+  const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
+  return row ? withOwnedHostels(toUser(row), on) : undefined;
+}
+
+// ── Users ──────────────────────────────────────────────────────────────────
+
+export const users: UserRepository = {
+  async getUser(userId) {
+    return loadUser(userId);
+  },
+
+  async listByHostel(hostelId) {
+    const rows = await all<UserRow>(
+      `SELECT ${USER_COLS} FROM users WHERE hostel_id = ? AND role NOT IN (?, ?, ?, ?) ORDER BY name`,
+      [hostelId, ...NON_HOSTEL_ROLES]
+    );
+    return rows.map(toUser);
+  },
+
+  async listAll() {
+    const rows = await all<UserRow>(`SELECT ${USER_COLS} FROM users ORDER BY name`);
+    return Promise.all(rows.map((r) => withOwnedHostels(toUser(r))));
+  },
+
+  async phoneAvailable(phone) {
+    const target = normalizePhone(phone);
+    if (!target) return false;
+    // Compare on the normalised form so "01711-1" and "017111" can't collide.
+    const rows = await all<{ phone: string }>("SELECT phone FROM users");
+    return !rows.some((r) => normalizePhone(r.phone) === target);
+  },
+
+  async signup(input) {
+    const name = (input.name ?? "").trim();
+    const phone = (input.phone ?? "").trim();
+    if (!name || !phone) throw new Error("Name and phone number are required.");
+    if (!(await users.phoneAvailable(phone))) {
+      throw new Error("An account with this phone number already exists — sign in instead.");
+    }
+    // Whitelisted: this runs unauthenticated, so it may only ever produce a
+    // hostel-less student or owner.
+    const role: Role = input.role === "owner" ? "owner" : "student";
+    const id = newId("user");
+    await run(
+      `INSERT INTO users (id, role, name, phone, email, avatar_seed, student_id, department, division, district, thana)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, role, name, phone, input.email?.trim() || null,
+        input.avatarSeed || name,
+        role === "student" ? input.studentId?.trim() || null : null,
+        role === "student" ? input.department?.trim() || null : null,
+        input.address?.division ?? null, input.address?.district ?? null, input.address?.thana ?? null,
+      ]
+    );
+    return (await loadUser(id))!;
+  },
+
+  async create(user) {
+    const id = newId("user");
+    await run(
+      `INSERT INTO users (id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department,
+                          division, district, thana, meals_suspended, banned, joined_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, user.role, user.name, user.phone, user.email ?? null, user.avatarSeed ?? user.name,
+        user.hostelId || null, user.roomId ?? null, user.studentId ?? null, user.department ?? null,
+        user.address?.division ?? null, user.address?.district ?? null, user.address?.thana ?? null,
+        user.mealsSuspended ? 1 : 0, user.banned ? 1 : 0, user.joinedAt ?? null,
+      ]
+    );
+    return (await loadUser(id))!;
+  },
+
+  async updateUser(userId, patch) {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    const put = (col: string, val: unknown) => { sets.push(`${col} = ?`); params.push(val); };
+
+    if (patch.name !== undefined) put("name", patch.name);
+    if (patch.phone !== undefined) put("phone", patch.phone);
+    if (patch.email !== undefined) put("email", patch.email ?? null);
+    if (patch.role !== undefined) put("role", patch.role);
+    if (patch.avatarSeed !== undefined) put("avatar_seed", patch.avatarSeed);
+    if (patch.hostelId !== undefined) put("hostel_id", patch.hostelId || null);
+    if (patch.roomId !== undefined) put("room_id", patch.roomId ?? null);
+    if (patch.studentId !== undefined) put("student_id", patch.studentId ?? null);
+    if (patch.department !== undefined) put("department", patch.department ?? null);
+    if (patch.mealsSuspended !== undefined) put("meals_suspended", patch.mealsSuspended ? 1 : 0);
+    if (patch.banned !== undefined) put("banned", patch.banned ? 1 : 0);
+    if (patch.managerRating !== undefined) put("manager_rating", patch.managerRating ?? null);
+    if (patch.managerRatingNote !== undefined) put("manager_rating_note", patch.managerRatingNote ?? null);
+    if (patch.joinedAt !== undefined) put("joined_at", patch.joinedAt ?? null);
+    if ("address" in patch) {
+      put("division", patch.address?.division ?? null);
+      put("district", patch.address?.district ?? null);
+      put("thana", patch.address?.thana ?? null);
+    }
+    if (patch.notificationPrefs !== undefined) {
+      const p = patch.notificationPrefs ?? {};
+      if (p.announcements !== undefined) put("notify_announcements", p.announcements ? 1 : 0);
+      if (p.bills !== undefined) put("notify_bills", p.bills ? 1 : 0);
+      if (p.monthlyReport !== undefined) put("notify_monthly_report", p.monthlyReport ? 1 : 0);
+    }
+    if (!sets.length) return;
+    params.push(userId);
+    await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, params);
+  },
+
+  async setBanned(userId, banned) {
+    await transaction(async (tx) => {
+      const user = await loadUser(userId, tx);
+      if (!user) return;
+      if (banned) {
+        // Evict from the room seat and stop meals, but keep the record so they
+        // can still transfer to another hostel.
+        await run("UPDATE users SET banned = 1, meals_suspended = 1, room_id = NULL WHERE id = ?", [userId], tx);
+      } else {
+        await run("UPDATE users SET banned = 0 WHERE id = ?", [userId], tx);
+      }
+      await logActivity(user.hostelId, banned ? "Member banned" : "Member un-banned", user.name, tx);
+    });
+  },
+
+  async remove(userId) {
+    await transaction(async (tx) => {
+      const user = await loadUser(userId, tx);
+      if (!user) return;
+      await logActivity(user.hostelId, "Member removed", user.name, tx);
+      // room_id is on this row, so deleting frees the seat automatically.
+      await run("DELETE FROM users WHERE id = ?", [userId], tx);
+    });
+  },
+
+  async rate(userId, stars, note) {
+    await run("UPDATE users SET manager_rating = ?, manager_rating_note = ? WHERE id = ?", [
+      stars, note ?? null, userId,
+    ]);
+  },
+
+  async attachToHostel(userId, hostelId, roomId) {
+    await transaction(async (tx) => {
+      const user = await loadUser(userId, tx);
+      if (!user) throw new Error("No member account found for this code.");
+      if (!isHostelMember(user.role) || user.role === "cook") {
+        throw new Error(`${user.name} is ${user.role} staff, not a boarder account.`);
+      }
+      // THE one-hostel rule.
+      if (user.hostelId && user.hostelId !== hostelId) {
+        const other = await one<{ name: string }>("SELECT name FROM hostels WHERE id = ?", [user.hostelId], tx);
+        throw new Error(
+          `${user.name} is already a member of ${other?.name ?? "another hostel"} — a member can only belong to one hostel. Use a hostel transfer instead.`
+        );
+      }
+      const room = await one<RoomRow>(
+        "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ? AND hostel_id = ? FOR UPDATE",
+        [roomId, hostelId],
+        tx
+      );
+      if (!room) throw new Error("Room not found in this hostel.");
+      const occupied = await one<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM users WHERE room_id = ? AND id <> ?",
+        [roomId, userId],
+        tx
+      );
+      if ((occupied?.n ?? 0) >= room.capacity) throw new Error(`Room ${room.number} is full.`);
+
+      const alreadyMember = user.hostelId === hostelId;
+      await run(
+        "UPDATE users SET hostel_id = ?, room_id = ?, joined_at = COALESCE(joined_at, ?) WHERE id = ?",
+        [hostelId, roomId, alreadyMember ? user.joinedAt ?? today() : today(), userId],
+        tx
+      );
+      // This attachment settles their pending requests: approved here, denied elsewhere.
+      await run(
+        "UPDATE join_requests SET status = IF(hostel_id = ?, 'approved', 'denied') WHERE user_id = ? AND status = 'pending'",
+        [hostelId, userId],
+        tx
+      );
+      await notify(
+        userId,
+        alreadyMember ? "Room changed" : "Welcome to your hostel",
+        alreadyMember
+          ? `You've been moved to Room ${room.number}.`
+          : `You're now a member — Room ${room.number} is yours. Your hostel dashboard is ready.`,
+        tx
+      );
+      await logActivity(
+        hostelId,
+        alreadyMember ? "Member room changed" : "Member added (QR scan)",
+        `${user.name} → Room ${room.number}`,
+        tx
+      );
+    });
+  },
+
+  subscribe: serverOnly,
+  subscribeUser: serverOnly,
+};
+
+// ── Rooms ──────────────────────────────────────────────────────────────────
+
+export const rooms: RoomRepository = {
+  async listByHostel(hostelId) {
+    const rows = await all<RoomRow>(
+      "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE hostel_id = ? ORDER BY number",
+      [hostelId]
+    );
+    return Promise.all(rows.map((r) => toRoom(r)));
+  },
+
+  async assignMember(roomId, userId) {
+    await transaction(async (tx) => {
+      const room = await one<RoomRow>(
+        "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ? FOR UPDATE",
+        [roomId],
+        tx
+      );
+      if (!room) return;
+      // Doubles as a room-to-room move: the seat is a column on the user, so
+      // setting it vacates whatever room they were in.
+      await run("UPDATE users SET room_id = ?, hostel_id = ? WHERE id = ?", [roomId, room.hostel_id, userId], tx);
+    });
+  },
+
+  async vacate(userId) {
+    await run("UPDATE users SET room_id = NULL WHERE id = ?", [userId]);
+  },
+
+  async create(room) {
+    await transaction(async (tx) => {
+      const id = newId("room");
+      await run(
+        "INSERT INTO rooms (id, hostel_id, number, capacity, seat_rent) VALUES (?, ?, ?, ?, ?)",
+        [id, room.hostelId, room.number, room.capacity, room.seatRent ?? 0],
+        tx
+      );
+      for (const f of room.facilities ?? []) {
+        await run("INSERT INTO room_facilities (room_id, facility) VALUES (?, ?)", [id, f], tx);
+      }
+      await logActivity(room.hostelId, "Room added", `Room ${room.number} · ${room.capacity} seats`, tx);
+    });
+  },
+
+  async update(roomId, patch) {
+    await transaction(async (tx) => {
+      const room = await one<RoomRow>("SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ?", [roomId], tx);
+      if (!room) return;
+      const sets: string[] = [];
+      const params: unknown[] = [];
+      if (patch.number !== undefined) { sets.push("number = ?"); params.push(patch.number); }
+      if (patch.capacity !== undefined) { sets.push("capacity = ?"); params.push(patch.capacity); }
+      if (patch.seatRent !== undefined) { sets.push("seat_rent = ?"); params.push(patch.seatRent); }
+      if (sets.length) {
+        params.push(roomId);
+        await run(`UPDATE rooms SET ${sets.join(", ")} WHERE id = ?`, params, tx);
+      }
+      if (patch.facilities !== undefined) {
+        await run("DELETE FROM room_facilities WHERE room_id = ?", [roomId], tx);
+        for (const f of patch.facilities) {
+          await run("INSERT INTO room_facilities (room_id, facility) VALUES (?, ?)", [roomId, f], tx);
+        }
+      }
+      await logActivity(room.hostel_id, "Room updated", `Room ${patch.number ?? room.number}`, tx);
+    });
+  },
+
+  subscribe: serverOnly,
+};
+
+// ── Hostels ────────────────────────────────────────────────────────────────
+
+const HOSTEL_COLS =
+  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, offers_breakfast, offers_lunch, offers_dinner";
+
+async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
+  if (settings.mealCutoff) {
+    await run("DELETE FROM hostel_meal_cutoffs WHERE hostel_id = ?", [hostelId], tx);
+    for (const c of settings.mealCutoff) {
+      await run(
+        "INSERT INTO hostel_meal_cutoffs (hostel_id, meal, cutoff_time) VALUES (?, ?, ?)",
+        [hostelId, c.meal, c.time.length === 5 ? `${c.time}:00` : c.time],
+        tx
+      );
+    }
+  }
+  if (settings.managerPermissions) {
+    const p = settings.managerPermissions;
+    await run(
+      `INSERT INTO manager_permissions (hostel_id, rooms, members, approvals, finance, billing, menu, duties, announcements, assign_manager)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE rooms=VALUES(rooms), members=VALUES(members), approvals=VALUES(approvals),
+         finance=VALUES(finance), billing=VALUES(billing), menu=VALUES(menu), duties=VALUES(duties),
+         announcements=VALUES(announcements), assign_manager=VALUES(assign_manager)`,
+      [
+        hostelId, p.rooms ? 1 : 0, p.members ? 1 : 0, p.approvals ? 1 : 0, p.finance ? 1 : 0,
+        p.billing ? 1 : 0, p.menu ? 1 : 0, p.duties ? 1 : 0, p.announcements ? 1 : 0,
+        p.assignManager ? 1 : 0,
+      ],
+      tx
+    );
+  }
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (settings.guestMealPrice !== undefined) { sets.push("guest_meal_price = ?"); params.push(settings.guestMealPrice); }
+  if (settings.mealStopRequiresApproval !== undefined) { sets.push("meal_stop_requires_approval = ?"); params.push(settings.mealStopRequiresApproval ? 1 : 0); }
+  if (settings.shoppingRotationPolicy !== undefined) { sets.push("shopping_rotation_policy = ?"); params.push(settings.shoppingRotationPolicy); }
+  if (settings.serviceChargeMonthly !== undefined) { sets.push("service_charge_monthly = ?"); params.push(settings.serviceChargeMonthly); }
+  if (settings.mealsOffered) {
+    for (const slot of MEALS) {
+      const v = settings.mealsOffered[slot];
+      if (v !== undefined) { sets.push(`offers_${slot} = ?`); params.push(v ? 1 : 0); }
+    }
+  }
+  if (sets.length) {
+    params.push(hostelId);
+    await run(`UPDATE hostels SET ${sets.join(", ")} WHERE id = ?`, params, tx);
+  }
+}
+
+export const hostels: HostelRepository = {
+  async getHostel(hostelId) {
+    const row = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ?`, [hostelId]);
+    return row ? toHostel(row) : undefined;
+  },
+
+  async listByOwner(ownerId) {
+    const rows = await all<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE owner_id = ? ORDER BY name`, [ownerId]);
+    return Promise.all(rows.map((r) => toHostel(r)));
+  },
+
+  async listAll() {
+    const rows = await all<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels ORDER BY name`);
+    return Promise.all(rows.map((r) => toHostel(r)));
+  },
+
+  async create(hostel: NewHostel) {
+    const id = newId("hostel");
+    await transaction(async (tx) => {
+      await run(
+        `INSERT INTO hostels (id, name, area, division, district, thana, owner_id, manager_id, cook_id,
+                              meal_rate, kitchen_location, cook_monthly_salary, suspended)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, hostel.name, hostel.area ?? "",
+          hostel.address?.division ?? null, hostel.address?.district ?? null, hostel.address?.thana ?? null,
+          hostel.ownerId, hostel.managerId || null, hostel.cookId ?? null,
+          hostel.mealRate ?? 0, hostel.kitchenLocation ?? null, hostel.cookMonthlySalary ?? null,
+          hostel.suspended ? 1 : 0,
+        ],
+        tx
+      );
+      await writeSettings(id, hostel.settings ?? {}, tx);
+    });
+    return (await hostels.getHostel(id))!;
+  },
+
+  async update(hostelId, patch) {
+    await transaction(async (tx) => {
+      const sets: string[] = [];
+      const params: unknown[] = [];
+      const put = (col: string, v: unknown) => { sets.push(`${col} = ?`); params.push(v); };
+      if (patch.name !== undefined) put("name", patch.name);
+      if (patch.area !== undefined) put("area", patch.area);
+      if (patch.ownerId !== undefined) put("owner_id", patch.ownerId);
+      if (patch.managerId !== undefined) put("manager_id", patch.managerId || null);
+      if (patch.cookId !== undefined) put("cook_id", patch.cookId ?? null);
+      if (patch.mealRate !== undefined) put("meal_rate", patch.mealRate);
+      if (patch.kitchenLocation !== undefined) put("kitchen_location", patch.kitchenLocation ?? null);
+      if (patch.cookMonthlySalary !== undefined) put("cook_monthly_salary", patch.cookMonthlySalary ?? null);
+      if (patch.suspended !== undefined) put("suspended", patch.suspended ? 1 : 0);
+      if ("address" in patch) {
+        put("division", patch.address?.division ?? null);
+        put("district", patch.address?.district ?? null);
+        put("thana", patch.address?.thana ?? null);
+      }
+      if (sets.length) {
+        params.push(hostelId);
+        await run(`UPDATE hostels SET ${sets.join(", ")} WHERE id = ?`, params, tx);
+      }
+      if ("managerId" in patch || "cookId" in patch) await logActivity(hostelId, "Staff assignment changed", undefined, tx);
+      if ("mealRate" in patch) await logActivity(hostelId, "Meal rate updated", `৳${patch.mealRate}/meal`, tx);
+    });
+  },
+
+  async changeManager(hostelId, newManagerId) {
+    await transaction(async (tx) => {
+      const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);
+      if (!hostel) throw new Error("Hostel not found.");
+      const next = await loadUser(newManagerId, tx);
+      if (!next) throw new Error("Member not found.");
+      if (next.hostelId !== hostelId || !isHostelMember(next.role)) {
+        throw new Error(`${next.name} isn't a member of this hostel.`);
+      }
+      if (next.role === "cook") throw new Error("The cook can't be made manager.");
+      if (next.banned) throw new Error(`${next.name} is banned — un-ban them first.`);
+      if (hostel.manager_id === newManagerId) return;
+
+      // Demote the outgoing manager to a regular boarder — they keep their
+      // room seat and meals, just lose manager access.
+      if (hostel.manager_id) {
+        const prev = await loadUser(hostel.manager_id, tx);
+        if (prev?.role === "manager") {
+          await run("UPDATE users SET role = 'student' WHERE id = ?", [prev.id], tx);
+          await notify(
+            prev.id,
+            "Manager role handed over",
+            `You're now a regular boarder of ${hostel.name}. ${next.name} is the new manager.`,
+            tx
+          );
+        }
+      }
+      await run("UPDATE users SET role = 'manager' WHERE id = ?", [newManagerId], tx);
+      await run("UPDATE hostels SET manager_id = ? WHERE id = ?", [newManagerId, hostelId], tx);
+      await notify(newManagerId, "You're the hostel manager", `You've been made the manager of ${hostel.name}.`, tx);
+      await logActivity(hostelId, "Manager changed", next.name, tx);
+    });
+  },
+
+  async updateSettings(hostelId, patch) {
+    await transaction(async (tx) => {
+      await writeSettings(hostelId, patch, tx);
+      if ("managerPermissions" in patch) await logActivity(hostelId, "Manager permissions changed", undefined, tx);
+      if ("serviceChargeMonthly" in patch) {
+        await logActivity(hostelId, "Service charge updated", `৳${patch.serviceChargeMonthly}/month per boarder`, tx);
+      }
+    });
+  },
+
+  async setMealOffered(hostelId, meal, offered) {
+    await transaction(async (tx) => {
+      await run(`UPDATE hostels SET offers_${meal} = ? WHERE id = ?`, [offered ? 1 : 0, hostelId], tx);
+      if (!offered) {
+        // Closing takes effect from TOMORROW: today's entries may already have
+        // been eaten and must stay billable. Past days are never touched.
+        await run(
+          "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND meal = ? AND day >= ?",
+          [hostelId, meal, addDays(today(), 1)],
+          tx
+        );
+      }
+      await logActivity(hostelId, offered ? "Meal opened (master)" : "Meal closed (master)", meal, tx);
+    });
+  },
+
+  async setSuspended(hostelId, suspended) {
+    await run("UPDATE hostels SET suspended = ? WHERE id = ?", [suspended ? 1 : 0, hostelId]);
+  },
+
+  subscribe: serverOnly,
+  subscribeAll: serverOnly,
+};

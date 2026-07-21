@@ -9,7 +9,7 @@ import { SESSION_COOKIE, verifySession } from "@/lib/data/server/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return Response.json(getStatus());
+  return Response.json(await getStatus());
 }
 
 export async function POST(req: NextRequest) {
@@ -20,12 +20,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   try {
-    // The activity-log actor is derived from the signed session cookie, never
-    // trusted from the request body — so who did what can't be spoofed.
+    // The caller's identity AND role come from the signed session cookie,
+    // never from the request body — this is what authorization is based on,
+    // so neither the actor nor the permissions can be spoofed by a client.
     const userId = verifySession(req.cookies.get(SESSION_COOKIE)?.value);
-    const actorUser = userId ? getUserById(userId) : undefined;
-    const actor = actorUser ? { id: actorUser.id, name: actorUser.name } : null;
-    const { result, rev } = await handleRpc({ ...body, actor });
+    const sessionUser = userId ? await getUserById(userId) : undefined;
+    const session = sessionUser
+      ? { id: sessionUser.id, name: sessionUser.name, role: sessionUser.role }
+      : null;
+    const { result, rev } = await handleRpc(body, session);
     return Response.json({ result, rev });
   } catch (err) {
     if (err instanceof RpcError) {

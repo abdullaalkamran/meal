@@ -51,6 +51,7 @@ import type {
   ServiceListing,
   ShoppingCost,
   ShortageRequest,
+  SignupInput,
   Stars,
   NewStudyAbroadItem,
   NewStudyLead,
@@ -69,8 +70,17 @@ export interface UserRepository {
   listAll(): Promise<User[]>;
   /** Creates a user record directly — used by the owner when adding a hostel
    * (its manager/cook) or assigning new staff. Boarders still arrive through
-   * join requests, not this. */
+   * join requests, not this. Staff-only: it can set ANY role, so it is NOT
+   * the public sign-up path — see `signup`. */
   create(user: Omit<User, "id">): Promise<User>;
+  /** Public account creation. Accepts only the fields in SignupInput and
+   * always produces a hostel-less student/owner, so the unauthenticated
+   * signup endpoint can't be used to mint a privileged account. Rejects a
+   * phone number that already has an account. */
+  signup(input: SignupInput): Promise<User>;
+  /** True when no account uses this phone number yet — lets the signup form
+   * check availability without pulling down everyone's details. */
+  phoneAvailable(phone: string): Promise<boolean>;
   updateUser(userId: string, patch: Partial<User>): Promise<void>;
   /** Ban/un-ban a member from their hostel. Banning evicts them from their
    * room seat and turns meals off; the user record is kept so they can still

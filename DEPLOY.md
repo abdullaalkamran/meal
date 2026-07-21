@@ -155,6 +155,56 @@ memory only: data resets on every restart and a warning is logged
 (`Could not write the database…`). Check `GET /api/rpc` —
 `"persistent": false` means writes aren't landing on disk.
 
+## Database: MySQL
+
+The app stores everything in **MySQL** (`db/schema.mysql.sql`, 61 tables). It
+creates the schema itself on first start, so there is nothing to import by
+hand.
+
+1. **cPanel → MySQL® Databases**: create a database and a user, then **add the
+   user to the database with ALL PRIVILEGES**.
+2. Add these to the Node.js App screen's environment variables:
+
+   ```
+   MYSQL_HOST=localhost
+   MYSQL_DATABASE=your_db_name
+   MYSQL_USER=your_db_user
+   MYSQL_PASSWORD=your_db_password
+   ```
+
+3. **Restart** the app. On first start it creates all tables and logs
+   `MySQL schema created.`
+
+Check it worked: `GET /api/rpc` returns `"backend": "mysql"`. If it says
+`"json"`, the MySQL variables aren't set and the app fell back to the local
+JSON file store.
+
+### The admin account
+
+Sign-in is by phone number, so admin phone numbers are **not** committed to the
+repo — they'd be published credentials. The platform accounts are created from
+environment variables on first start:
+
+```
+SUPERADMIN_PHONE=01xxxxxxxxx     # required, or the admin screens are unreachable
+SUPERADMIN_NAME=Your Name
+MARKETING_PHONE=01xxxxxxxxx      # optional
+SERVICE_PHONE=01xxxxxxxxx        # optional
+```
+
+These are only created if that role doesn't exist yet, so restarts never
+duplicate them. Everyone else signs up through the app: the first person
+registers as a **hostel owner** and creates their hostel.
+
+> The database ships **empty** — no demo hostels, members, meals or products.
+
+### Why MySQL rather than the JSON file
+
+Passenger can run more than one process. Two processes writing the same JSON
+file overwrite each other's changes, silently losing data. MySQL runs every
+multi-step change (approve a join request → move the member → free the old seat
+→ notify) in a **transaction**, so it either lands completely or not at all.
+
 ## Set a session secret (auth)
 
 Login issues a **signed httpOnly session cookie**. Set a long random secret so

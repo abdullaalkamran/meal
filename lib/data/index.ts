@@ -13,10 +13,9 @@ import type { Repositories } from "./repository";
 
 export const repo: Repositories = remoteRepositories;
 
-// loadDemoData swaps the server dataset for the rich demo seed. The activity
-// actor is derived from the server session cookie, so there's no client-side
-// "acting user" to set anymore.
-export { loadDemoData } from "./remote/remoteRepositories";
+// The activity actor and every permission check are derived from the server
+// session cookie (see lib/data/server/policy.ts), so there's no client-side
+// "acting user" to set — and no client-callable way to reseed/wipe the data.
 
 export type * from "./types";
 export type * from "./repository";

@@ -13,16 +13,16 @@ import type {
   User,
 } from "../types";
 import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository } from "../repository";
-import { SCHEMA_VERSION, STORAGE_KEY } from "../schema";
-
 const POLL_INTERVAL_MS = 2500;
 
 // The activity-log actor is derived server-side from the session cookie
 // (see app/api/rpc/route.ts) — the client no longer sends it.
 
-// ── One-time init: adopt this browser's legacy localStorage dataset ────────
-// If the server DB is still the untouched seed and this browser has data
-// from the old client-side build, push it up so nothing is lost.
+// ── One-time init: learn the server's current change counter ───────────────
+// (This used to also upload a browser's legacy localStorage dataset via a
+// `$system.importLegacy` call. That endpoint replaced the ENTIRE server
+// database from an unauthenticated request, so it was removed — the
+// migration it existed for is long done.)
 let readyPromise: Promise<void> | null = null;
 
 function ensureReady(): Promise<void> {
@@ -30,19 +30,8 @@ function ensureReady(): Promise<void> {
   if (!readyPromise) {
     readyPromise = (async () => {
       const res = await fetch("/api/rpc", { cache: "no-store" });
-      const status = (await res.json()) as { rev: number; pristine: boolean };
+      const status = (await res.json()) as { rev: number };
       lastRev = status.rev;
-      if (!status.pristine) return;
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      try {
-        const parsed = JSON.parse(raw) as { version?: number; data?: unknown };
-        if (parsed.version === SCHEMA_VERSION && parsed.data) {
-          await rawRpc("$system", "importLegacy", [parsed], true);
-        }
-      } catch {
-        // Unreadable legacy data — start from the server seed.
-      }
     })().catch(() => {
       // Server unreachable during init — individual calls will surface it.
     });
@@ -87,11 +76,6 @@ const isQueryMethod = (method: string) =>
 async function rpc<T>(repo: string, method: string, args: unknown[]): Promise<T> {
   await ensureReady();
   return rawRpc<T>(repo, method, args, !isQueryMethod(method));
-}
-
-/** Login-page helper: swap the server dataset for the rich demo seed. */
-export async function loadDemoData() {
-  await rpc("$system", "loadDemo", []);
 }
 
 // ── Subscriptions: poll the server rev, re-fetch on change ─────────────────

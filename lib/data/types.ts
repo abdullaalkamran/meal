@@ -62,6 +62,20 @@ export interface User {
   address?: GeoAddress;
 }
 
+/** What public sign-up is allowed to submit. Deliberately narrow: the role is
+ * limited to student/owner and no hostel, ban, rating or ownership field can
+ * be set, so the open signup endpoint can't mint a privileged account. */
+export interface SignupInput {
+  name: string;
+  phone: string;
+  email?: string;
+  role: "student" | "owner";
+  avatarSeed: string;
+  studentId?: string;
+  department?: string;
+  address?: GeoAddress;
+}
+
 /** One audited hostel action (expense recorded, bills generated, member
  * banned, settings changed, …) — the owner's activity log. */
 export interface ActivityLog {

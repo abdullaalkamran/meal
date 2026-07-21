@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { repo, type GeoAddress, type User } from "@/lib/data";
+import { repo, type GeoAddress } from "@/lib/data";
 import { useSession } from "@/lib/auth/SessionProvider";
-import { normalizePhone } from "@/lib/utils/phone";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -40,7 +39,6 @@ function Field({
 export default function SignupPage() {
   const { login } = useSession();
   const [role, setRole] = useState<"student" | "owner">("student");
-  const [users, setUsers] = useState<User[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -50,50 +48,46 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    repo.users.listAll().then(setUsers);
-  }, []);
-
   const submit = async () => {
     if (saving) return;
     if (!name.trim() || !phone.trim()) {
       setError("Name and phone number are required.");
       return;
     }
-    if (users.some((u) => normalizePhone(u.phone) === normalizePhone(phone))) {
+    setError("");
+    setSaving(true);
+    if (!(await repo.users.phoneAvailable(phone))) {
+      setSaving(false);
       setError("An account with this phone number already exists — sign in instead.");
       return;
     }
-    setError("");
-    setSaving(true);
 
     // Members start WITHOUT a hostel — after signup they find their hostel
     // (or scan its QR invite) and send a join request; the manager's approval
-    // + room assignment makes them a member.
-    const created = await repo.users.create(
-      role === "student"
-        ? {
-            hostelId: "",
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email.trim() || undefined,
-            role: "student",
-            avatarSeed: `student-${slug(name)}`,
-            studentId: studentId.trim() || undefined,
-            department: department.trim() || undefined,
-            address: isCompleteAddress(address) ? address : undefined,
-          }
-        : {
-            hostelId: "",
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email.trim() || undefined,
-            role: "owner",
-            avatarSeed: `owner-${slug(name)}`,
-            ownedHostelIds: [],
-            address: isCompleteAddress(address) ? address : undefined,
-          }
-    );
+    // + room assignment makes them a member. `signup` (not `users.create`) is
+    // the public path: it only ever mints a hostel-less student/owner, so the
+    // open endpoint can't be used to create a privileged account.
+    let created;
+    try {
+      created = await repo.users.signup({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+        role,
+        avatarSeed: `${role}-${slug(name)}`,
+        address: isCompleteAddress(address) ? address : undefined,
+        ...(role === "student"
+          ? {
+              studentId: studentId.trim() || undefined,
+              department: department.trim() || undefined,
+            }
+          : {}),
+      });
+    } catch (err) {
+      setSaving(false);
+      setError(err instanceof Error ? err.message : "Could not create the account.");
+      return;
+    }
     // The account exists on the server now — sign in with its phone.
     const res = await login(created.phone);
     if (!res.ok) {

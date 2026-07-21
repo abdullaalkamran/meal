@@ -18,6 +18,18 @@ import { normalizePhone } from "../../utils/phone";
 import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
 import { mockRepositories, setActingUser } from "../mock/mockRepositories";
+import { authorize, type SessionUser } from "./policy";
+import { isMysqlConfigured } from "./mysql/connection";
+import {
+  bumpRevision,
+  ensureReady as mysqlReady,
+  getRevision,
+  mysqlRepositories,
+  mysqlSystemQueries,
+  runWithActor,
+} from "./mysql";
+
+export type { SessionUser };
 
 interface DbFile {
   version: number;
@@ -99,20 +111,49 @@ function persist() {
   }
 }
 
-export function getStatus() {
+/** Which backend is live. MySQL takes over as soon as it's configured; the
+ * JSON file store remains the fallback so an un-configured deploy still runs. */
+export const usingMysql = isMysqlConfigured();
+
+export async function getStatus() {
+  if (usingMysql) {
+    await mysqlReady();
+    return {
+      rev: await getRevision(),
+      version: SCHEMA_VERSION,
+      pristine: false,
+      persistent: true,
+      backend: "mysql" as const,
+    };
+  }
   ensureFresh();
-  return { rev: store.rev, version: SCHEMA_VERSION, pristine, persistent: persistWorks };
+  return {
+    rev: store.rev,
+    version: SCHEMA_VERSION,
+    pristine,
+    persistent: persistWorks,
+    backend: "json" as const,
+  };
 }
 
 // ── Auth lookups (used by /api/auth and the /api/rpc actor derivation) ───────
-export function getUserById(userId: string): User | undefined {
+export async function getUserById(userId: string): Promise<User | undefined> {
+  if (usingMysql) {
+    await mysqlReady();
+    return mysqlRepositories.users.getUser(userId);
+  }
   ensureFresh();
   return store.data.users.find((u) => u.id === userId);
 }
 
-export function getUserByPhone(phone: string): User | undefined {
-  ensureFresh();
+export async function getUserByPhone(phone: string): Promise<User | undefined> {
   const target = normalizePhone(phone);
+  if (usingMysql) {
+    await mysqlReady();
+    const all = await mysqlRepositories.users.listAll();
+    return all.find((u) => normalizePhone(u.phone) === target);
+  }
+  ensureFresh();
   return store.data.users.find((u) => normalizePhone(u.phone) === target);
 }
 
@@ -140,43 +181,71 @@ export interface RpcRequest {
   repo: string;
   method: string;
   args?: unknown[];
-  actor?: { id: string; name: string } | null;
 }
 
-export async function handleRpc(body: RpcRequest): Promise<{ result: unknown; rev: number }> {
+/** A read-only call needs no revision bump — same naming rule the client uses
+ * to decide whether a call can invalidate its subscriptions. */
+const isQuery = (method: string) =>
+  method.startsWith("list") || method.startsWith("get") || method === "phoneAvailable";
+
+async function handleMysqlRpc(
+  body: RpcRequest,
+  args: unknown[],
+  session: SessionUser | null
+): Promise<{ result: unknown; rev: number }> {
+  await mysqlReady();
+  // The actor is bound to THIS request (AsyncLocalStorage), so concurrent
+  // requests can't attribute each other's actions in the activity log.
+  return runWithActor(session ? { id: session.id, name: session.name } : null, async () => {
+    let result: unknown;
+    if (body.repo === "$system") {
+      const fn = mysqlSystemQueries[body.method as keyof typeof mysqlSystemQueries];
+      if (typeof fn !== "function") throw new RpcError(`Unknown system method: ${body.method}`);
+      result = await fn(args[0] as string);
+      return { result: result ?? null, rev: await getRevision() };
+    }
+    const repoObj = Object.prototype.hasOwnProperty.call(mysqlRepositories, body.repo)
+      ? mysqlRepositories[body.repo as keyof typeof mysqlRepositories]
+      : undefined;
+    if (!repoObj) throw new RpcError(`Unknown repository: ${body.repo}`);
+    const fn = (repoObj as unknown as Record<string, unknown>)[body.method];
+    if (typeof fn !== "function" || body.method.startsWith("subscribe")) {
+      throw new RpcError(`Unknown method: ${body.repo}.${body.method}`);
+    }
+    result = await (fn as (...a: unknown[]) => Promise<unknown>).apply(repoObj, args);
+    const rev = isQuery(body.method) ? await getRevision() : await bumpRevision();
+    return { result: result ?? null, rev };
+  });
+}
+
+export async function handleRpc(
+  body: RpcRequest,
+  session: SessionUser | null
+): Promise<{ result: unknown; rev: number }> {
   if (!body || typeof body.repo !== "string" || typeof body.method !== "string") {
     throw new RpcError("Malformed RPC request");
   }
   const args = Array.isArray(body.args) ? body.args : [];
 
+  // Authorization first — this endpoint is the whole attack surface.
+  const denied = authorize(body.repo, body.method, session);
+  if (denied) throw new RpcError(denied.message, denied.status);
+
+  if (usingMysql) return handleMysqlRpc(body, args, session);
+
   ensureFresh();
   const revBefore = store.rev;
-  const actor = body.actor;
-  setActingUser(
-    actor && typeof actor.id === "string" && typeof actor.name === "string"
-      ? { id: actor.id, name: actor.name }
-      : undefined
-  );
+  // The activity-log actor comes from the verified session, never the body.
+  setActingUser(session ? { id: session.id, name: session.name } : undefined);
 
   try {
     let result: unknown;
     if (body.repo === "$system") {
-      if (body.method === "loadDemo") {
-        store.loadDemo();
-      } else if (body.method === "reset") {
-        store.reset();
-      } else if (body.method === "importLegacy") {
-        // One-time migration of a browser's old localStorage dataset — only
-        // while the server DB is still the untouched seed, so an already
-        // shared database can never be clobbered by a stale client.
-        const payload = args[0] as { version?: number; data?: Tables } | undefined;
-        if (pristine && payload?.data && payload.version === SCHEMA_VERSION) {
-          store.replaceData(payload.data, store.rev + 1);
-          result = { imported: true };
-        } else {
-          result = { imported: false };
-        }
-      } else if (body.method in systemQueries) {
+      // Read-only helpers only. loadDemo / reset / importLegacy used to live
+      // here and each REPLACED the entire database; exposed unauthenticated
+      // on one public endpoint they were a one-request way to wipe every
+      // account, so they are gone. Reseeding is a local-development action.
+      if (body.method in systemQueries) {
         const fn = systemQueries[body.method as keyof typeof systemQueries];
         result = fn(args[0] as string);
       } else {

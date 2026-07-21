@@ -48,7 +48,7 @@ import type {
   User,
 } from "../types";
 import { SCHEMA_VERSION, STORAGE_KEY } from "../schema";
-import { buildDemoSeed, buildSeed } from "./seed";
+import { buildSeed } from "./seed";
 
 export interface Tables {
   users: User[];
@@ -185,13 +185,6 @@ class MockStore {
 
   reset() {
     this.data = buildSeed();
-    this.schedulePersist();
-    this.emitAll();
-  }
-
-  /** Replaces the clean state with the rich demo dataset (login-page link). */
-  loadDemo() {
-    this.data = buildDemoSeed();
     this.schedulePersist();
     this.emitAll();
   }

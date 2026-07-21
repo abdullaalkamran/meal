@@ -36,7 +36,7 @@ import type {
   UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem, User } from "../types";
 import { addDays, currentMonth, formatShortDate, today } from "../../utils/date";
 import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
@@ -81,11 +81,6 @@ function ensureMealDay(hostelId: string, date: string): MealDay {
 let actingUser: { id: string; name: string } | null = null;
 export function setActingUser(user: { id: string; name: string } | undefined) {
   actingUser = user ?? null;
-}
-
-/** Login-page helper: swap the clean state for the rich demo dataset. */
-export function loadDemoData() {
-  store.loadDemo();
 }
 
 function logActivity(hostelId: string, action: string, detail?: string) {
@@ -168,6 +163,44 @@ const users: UserRepository = {
     const created = { ...user, id: nextId("user") };
     store.data.users.push(created);
     store.emit(`users:${created.hostelId}`);
+    return created;
+  },
+  async phoneAvailable(phone) {
+    const target = normalizePhone(phone);
+    if (!target) return false;
+    return !store.data.users.some((u) => normalizePhone(u.phone) === target);
+  },
+  async signup(input) {
+    const name = (input.name ?? "").trim();
+    const phone = (input.phone ?? "").trim();
+    if (!name || !phone) throw new Error("Name and phone number are required.");
+    const target = normalizePhone(phone);
+    if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
+      throw new Error("An account with this phone number already exists — sign in instead.");
+    }
+    // Whitelist every field: this path is reachable without a session, so it
+    // must never be able to set role, hostelId, ownedHostelIds, banned, …
+    // beyond a fresh, hostel-less student or owner.
+    const role = input.role === "owner" ? ("owner" as const) : ("student" as const);
+    const created: User = {
+      id: nextId("user"),
+      hostelId: "",
+      name,
+      phone,
+      email: input.email?.trim() || undefined,
+      role,
+      avatarSeed: input.avatarSeed || name,
+      address: input.address,
+      ...(role === "student"
+        ? {
+            studentId: input.studentId?.trim() || undefined,
+            department: input.department?.trim() || undefined,
+          }
+        : { ownedHostelIds: [] }),
+    };
+    store.data.users.push(created);
+    store.emit("users:");
+    emitUser(created.id);
     return created;
   },
   async updateUser(userId, patch) {
