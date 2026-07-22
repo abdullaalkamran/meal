@@ -99,13 +99,6 @@ export default function LoginPage() {
         New here? Create an account
       </Link>
 
-      <Link
-        href="/platform-login"
-        className="text-center text-[10.5px] font-bold text-text-secondary underline-offset-2 hover:underline"
-      >
-        MyDorm platform team? Sign in here
-      </Link>
-
       <ForgotPasswordSheet
         open={forgotOpen}
         onClose={() => setForgotOpen(false)}
