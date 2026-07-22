@@ -8,6 +8,7 @@ import {
   ChefHat,
   ChevronLeft,
   Home,
+  KeyRound,
   ShieldCheck,
   ShoppingCart,
   Sun,
@@ -29,6 +30,7 @@ import { StarRating } from "@/components/ui/StarRating";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { RateMemberSheet } from "@/components/manager/RateMemberSheet";
 import { MoveMemberSheet } from "@/components/manager/MoveMemberSheet";
+import { ResetPasswordSheet } from "@/components/hostel/ResetPasswordSheet";
 import { repo, type Bill, type BillSection, type Payment } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, formatShortDate, lastDayOfMonth } from "@/lib/utils/date";
@@ -65,6 +67,7 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmMakeManager, setConfirmMakeManager] = useState(false);
   const [confirmDemote, setConfirmDemote] = useState(false);
+  const [resetPwOpen, setResetPwOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth());
 
   useEffect(() => {
@@ -518,11 +521,27 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
                 remove the manager.
               </Card>
             ))}
+          {/* An owner can reset a member's password if they've forgotten it. */}
+          {isOwnerViewer && (
+            <button
+              type="button"
+              onClick={() => setResetPwOpen(true)}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-btn bg-bg text-[12px] font-extrabold text-text-secondary"
+            >
+              <Icon icon={KeyRound} size={15} /> Reset password
+            </button>
+          )}
         </div>
       </div>
 
       <RateMemberSheet open={rateOpen} onClose={() => setRateOpen(false)} member={member} />
       <MoveMemberSheet open={moveOpen} onClose={() => setMoveOpen(false)} member={member} />
+      <ResetPasswordSheet
+        open={resetPwOpen}
+        onClose={() => setResetPwOpen(false)}
+        userId={member.id}
+        name={member.name}
+      />
     </div>
   );
 }

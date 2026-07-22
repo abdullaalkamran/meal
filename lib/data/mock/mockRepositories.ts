@@ -377,6 +377,21 @@ export function verifyPassword(phone: string, password: string): User | undefine
   return user;
 }
 
+/** Verifies a password against ONE known account id (change-own-password). */
+export function verifyPasswordById(userId: string, password: string): boolean {
+  if (!password) return false;
+  const hash = store.data.passwordHashes[userId];
+  return !!(hash && verifyPasswordHash(password, hash));
+}
+
+/** Sets a new password hash — authorization enforced by the /api/auth routes. */
+export function setUserPassword(userId: string, newPassword: string): boolean {
+  if (!store.data.users.some((u) => u.id === userId)) return false;
+  store.data.passwordHashes[userId] = hashPassword(newPassword);
+  store.emit(`user-rec:${userId}`);
+  return true;
+}
+
 const rooms: RoomRepository = {
   async listByHostel(hostelId) {
     return store.data.rooms.filter((r) => r.hostelId === hostelId);

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { ResetPasswordSheet } from "@/components/hostel/ResetPasswordSheet";
 import { repo, type Hostel, type Role, type User } from "@/lib/data";
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -32,6 +33,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [resetUser, setResetUser] = useState<User | null>(null);
   const { toast } = useToast();
 
   const load = () => {
@@ -98,6 +100,16 @@ export default function AdminUsersPage() {
                       {ROLE_LABEL[u.role]}
                     </span>
                   </div>
+                  {/* Super Admin can reset ANY account's password (incl. staff). */}
+                  <div className="mt-2.5 flex border-t border-border pt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setResetUser(u)}
+                      className="flex-1 rounded-pill bg-bg py-1.5 text-[10px] font-extrabold text-text-secondary"
+                    >
+                      Reset password
+                    </button>
+                  </div>
                   {/* Platform accounts are provisioned, not managed here. */}
                   {u.role !== "superadmin" && u.role !== "marketing" && u.role !== "service" && (
                     <div className="mt-2.5 flex gap-2 border-t border-border pt-2.5">
@@ -148,6 +160,12 @@ export default function AdminUsersPage() {
           </div>
         );
       })}
+      <ResetPasswordSheet
+        open={!!resetUser}
+        onClose={() => setResetUser(null)}
+        userId={resetUser?.id}
+        name={resetUser?.name ?? ""}
+      />
     </div>
   );
 }

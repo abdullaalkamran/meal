@@ -46,3 +46,39 @@ export async function serverLogout(): Promise<void> {
     // Best-effort — the client clears its own state regardless.
   }
 }
+
+/** Changes the signed-in user's OWN password (needs the current one). */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return res.ok ? { ok: true } : { ok: false, error: data.error ?? "Could not change password." };
+  } catch {
+    return { ok: false, error: "Network error — please try again." };
+  }
+}
+
+/** Owner/superadmin resets another account's password (for a forgotten one). */
+export async function adminResetPassword(
+  userId: string,
+  newPassword: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId, newPassword }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return res.ok ? { ok: true } : { ok: false, error: data.error ?? "Could not reset password." };
+  } catch {
+    return { ok: false, error: "Network error — please try again." };
+  }
+}

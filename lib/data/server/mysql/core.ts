@@ -448,6 +448,28 @@ export async function verifyUserPassword(phone: string, password: string): Promi
   return loadUser(row.id);
 }
 
+/** Verifies a password against ONE known account id — used by the
+ * change-own-password flow, where the session already fixes whose password
+ * it is. Kept off UserRepository for the same reason as verifyUserPassword. */
+export async function verifyUserPasswordById(userId: string, password: string): Promise<boolean> {
+  if (!password) return false;
+  const row = await one<{ password_hash: string | null }>(
+    "SELECT password_hash FROM users WHERE id = ?",
+    [userId]
+  );
+  return !!(row?.password_hash && verifyPassword(password, row.password_hash));
+}
+
+/** Sets a new password hash for an account. Authorization (self, or an owner/
+ * superadmin resetting a member) is enforced by the /api/auth routes that
+ * call this — it is never reachable over /api/rpc. */
+export async function setUserPassword(userId: string, newPassword: string): Promise<boolean> {
+  const row = await one<{ id: string }>("SELECT id FROM users WHERE id = ?", [userId]);
+  if (!row) return false;
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(newPassword), userId]);
+  return true;
+}
+
 // ── Rooms ──────────────────────────────────────────────────────────────────
 
 export const rooms: RoomRepository = {

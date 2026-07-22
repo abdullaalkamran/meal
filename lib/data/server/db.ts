@@ -17,7 +17,13 @@ import { SCHEMA_VERSION } from "../schema";
 import { normalizePhone } from "../../utils/phone";
 import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
-import { mockRepositories, setActingUser, verifyPassword as mockVerifyPassword } from "../mock/mockRepositories";
+import {
+  mockRepositories,
+  setActingUser,
+  verifyPassword as mockVerifyPassword,
+  verifyPasswordById as mockVerifyPasswordById,
+  setUserPassword as mockSetUserPassword,
+} from "../mock/mockRepositories";
 import { authorize, type SessionUser } from "./policy";
 import { isMysqlConfigured } from "./mysql/connection";
 import {
@@ -28,6 +34,8 @@ import {
   mysqlSystemQueries,
   runWithActor,
   verifyUserPassword,
+  verifyUserPasswordById,
+  setUserPassword as mysqlSetUserPassword,
 } from "./mysql";
 
 export type { SessionUser };
@@ -167,6 +175,29 @@ export async function verifyPassword(phone: string, password: string): Promise<U
   }
   ensureFresh();
   return mockVerifyPassword(phone, password);
+}
+
+/** Verifies a password for one account id (change-own-password). */
+export async function verifyPasswordById(userId: string, password: string): Promise<boolean> {
+  if (usingMysql) {
+    await mysqlReady();
+    return verifyUserPasswordById(userId, password);
+  }
+  ensureFresh();
+  return mockVerifyPasswordById(userId, password);
+}
+
+/** Sets a new password for an account; persists on the JSON backend. Callers
+ * (the /api/auth password routes) enforce who may do this. */
+export async function setUserPassword(userId: string, newPassword: string): Promise<boolean> {
+  if (usingMysql) {
+    await mysqlReady();
+    return mysqlSetUserPassword(userId, newPassword);
+  }
+  ensureFresh();
+  const ok = mockSetUserPassword(userId, newPassword);
+  if (ok) persist();
+  return ok;
 }
 
 export class RpcError extends Error {

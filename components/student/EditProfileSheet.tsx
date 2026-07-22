@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
+import { ChangePasswordSheet } from "@/components/student/ChangePasswordSheet";
 import { repo, type GeoAddress, type User } from "@/lib/data";
 import { normalizePhone } from "@/lib/utils/phone";
 
@@ -47,6 +48,7 @@ export function EditProfileSheet({
   const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
 
   const prefilled = useRef(false);
   useEffect(() => {
@@ -117,6 +119,14 @@ export function EditProfileSheet({
       <Button fullWidth onClick={save} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </Button>
+      <button
+        type="button"
+        onClick={() => setPwOpen(true)}
+        className="mt-2 min-h-11 w-full rounded-btn border border-border text-[12px] font-extrabold text-text-secondary"
+      >
+        Change password
+      </button>
+      <ChangePasswordSheet open={pwOpen} onClose={() => setPwOpen(false)} />
     </Sheet>
   );
 }

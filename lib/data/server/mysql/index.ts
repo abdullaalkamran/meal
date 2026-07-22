@@ -5,7 +5,7 @@
 import type { Bill, Menu, SwapRequest } from "../../types";
 import type { Repositories } from "../../repository";
 import { all, one, run, toDay } from "./connection";
-import { hostels, rooms, users, verifyUserPassword } from "./core";
+import { hostels, rooms, users, verifyUserPassword, verifyUserPasswordById, setUserPassword } from "./core";
 import { comments, meals, menus, ratings } from "./meals";
 import { bills, expenses, shoppingCosts, shortages } from "./billing";
 import {
@@ -36,7 +36,7 @@ import {
 export { ensureReady } from "./bootstrap";
 export { closePool } from "./connection";
 export { runWithActor } from "./context";
-export { verifyUserPassword };
+export { verifyUserPassword, verifyUserPasswordById, setUserPassword };
 
 // ── Change counter + extra read queries the RPC layer needs ────────────────
 
