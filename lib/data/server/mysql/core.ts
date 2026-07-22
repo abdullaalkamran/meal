@@ -32,7 +32,7 @@ import {
   transaction,
   type Queryable,
 } from "./connection";
-import { logActivity, notify } from "./context";
+import { currentActor, logActivity, notify } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -690,6 +690,18 @@ export const hostels: HostelRepository = {
       await run("UPDATE users SET role = 'manager' WHERE id = ?", [newManagerId], tx);
       await run("UPDATE hostels SET manager_id = ? WHERE id = ?", [newManagerId, hostelId], tx);
       await notify(newManagerId, "You're the hostel manager", `You've been made the manager of ${hostel.name}.`, tx);
+      // Keep the owner in the loop — a manager can hand the role over with the
+      // assignManager permission, and the owner would otherwise learn nothing.
+      // (No self-notification when the owner made the change themselves.)
+      const actor = currentActor();
+      if (actor?.id !== hostel.owner_id) {
+        await notify(
+          hostel.owner_id,
+          "Hostel manager changed",
+          `${next.name} is now the manager of ${hostel.name}${actor ? ` (changed by ${actor.name})` : ""}.`,
+          tx
+        );
+      }
       await logActivity(hostelId, "Manager changed", next.name, tx);
     });
   },
@@ -712,6 +724,15 @@ export const hostels: HostelRepository = {
         );
       }
       await run("UPDATE hostels SET manager_id = NULL WHERE id = ?", [hostelId], tx);
+      const actor = currentActor();
+      if (actor?.id !== hostel.owner_id) {
+        await notify(
+          hostel.owner_id,
+          "Hostel manager removed",
+          `${prev?.name ?? "The manager"} is no longer the manager of ${hostel.name}${actor ? ` (removed by ${actor.name})` : ""}.`,
+          tx
+        );
+      }
       await logActivity(hostelId, "Manager removed", prev?.name, tx);
     });
   },

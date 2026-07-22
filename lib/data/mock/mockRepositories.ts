@@ -520,6 +520,20 @@ const hostels: HostelRepository = {
       createdAt: new Date().toISOString(),
     });
 
+    // Keep the owner informed — a manager can hand the role over with the
+    // assignManager permission, and the owner would otherwise learn nothing.
+    if (actingUser?.id !== hostel.ownerId) {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: hostel.ownerId,
+        title: "Hostel manager changed",
+        body: `${next.name} is now the manager of ${hostel.name}${actingUser ? ` (changed by ${actingUser.name})` : ""}.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${hostel.ownerId}`);
+      emitUser(hostel.ownerId);
+    }
     logActivity(hostelId, "Manager changed", next.name);
     store.emit(`notifications:${newManagerId}`);
     store.emit(`users:${hostelId}`);
@@ -549,6 +563,18 @@ const hostels: HostelRepository = {
       emitUser(prevManagerId);
     }
     store.data.hostels[hIdx] = { ...hostel, managerId: "" };
+    if (actingUser?.id !== hostel.ownerId) {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: hostel.ownerId,
+        title: "Hostel manager removed",
+        body: `${prevName ?? "The manager"} is no longer the manager of ${hostel.name}${actingUser ? ` (removed by ${actingUser.name})` : ""}.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${hostel.ownerId}`);
+      emitUser(hostel.ownerId);
+    }
     logActivity(hostelId, "Manager removed", prevName);
     store.emit(`users:${hostelId}`);
     store.emit(`hostel:${hostelId}`);
