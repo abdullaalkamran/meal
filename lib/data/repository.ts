@@ -137,6 +137,19 @@ export interface HostelRepository {
    * otherwise. Owner does this from staff/member screens; a manager may too
    * when granted the `assignManager` permission. */
   changeManager(hostelId: string, newManagerId: string): Promise<void>;
+  /** Sets this hostel's manager — the owner's primary way to staff a hostel
+   * that was created without one. Either creates a brand-new manager account
+   * (`mode: "new"`, default password = their phone number), or promotes an
+   * EXISTING platform account (`mode: "existing"`) — a current boarder here,
+   * or an account with no hostel yet; rejects an account already tied to a
+   * different hostel (one-hostel rule). Whichever manager was there before is
+   * demoted to a regular boarder in the same step. Owner/superadmin only. */
+  assignManager(
+    hostelId: string,
+    manager:
+      | { mode: "new"; name: string; phone: string }
+      | { mode: "existing"; userId: string }
+  ): Promise<void>;
   /** Strips the manager role WITHOUT naming a replacement — the outgoing
    * manager reverts to a regular boarder (keeps their room and meals) and the
    * hostel is left with no manager until one is assigned. This is what lets an

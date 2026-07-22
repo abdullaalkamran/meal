@@ -11,6 +11,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { ManagerPermissionsSheet } from "@/components/owner/ManagerPermissionsSheet";
 import { AddHostelSheet } from "@/components/owner/AddHostelSheet";
+import { HostelSetupSheet } from "@/components/owner/HostelSetupSheet";
 import { FinanceSettingsSheet } from "@/components/owner/FinanceSettingsSheet";
 import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
 import { repo, type Hostel, type User } from "@/lib/data";
@@ -34,6 +35,7 @@ export default function OwnerHostelsPage() {
   const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
   const [qrHostel, setQrHostel] = useState<Hostel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [setupHostel, setSetupHostel] = useState<Hostel | null>(null);
 
   const manageHostel = (hostelId: string) => {
     switchHostel(hostelId);
@@ -200,9 +202,17 @@ export default function OwnerHostelsPage() {
           open={addOpen}
           onClose={() => setAddOpen(false)}
           owner={user}
-          onCreated={(name) => toast(`${name} created — it's live for you now`)}
+          onCreated={(hostel) => {
+            toast(`${hostel.name} created`);
+            setSetupHostel(hostel);
+          }}
         />
       )}
+      <HostelSetupSheet
+        open={!!setupHostel}
+        onClose={() => setSetupHostel(null)}
+        hostel={setupHostel}
+      />
     </div>
   );
 }

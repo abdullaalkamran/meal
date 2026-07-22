@@ -580,6 +580,107 @@ const hostels: HostelRepository = {
     store.emit(`hostel:${hostelId}`);
     store.emit("hostels");
   },
+  async assignManager(hostelId, manager) {
+    const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
+    if (hIdx === -1) throw new Error("Hostel not found.");
+    const hostel = store.data.hostels[hIdx];
+
+    let newManagerId: string;
+    let newManagerName: string;
+    if (manager.mode === "new") {
+      const name = manager.name.trim();
+      const phone = manager.phone.trim();
+      if (!name || !phone) throw new Error("Name and phone number are required.");
+      const target = normalizePhone(phone);
+      if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
+        throw new Error(PHONE_TAKEN_MESSAGE);
+      }
+      const created: User = {
+        id: nextId("user"),
+        hostelId,
+        name,
+        phone,
+        role: "manager",
+        avatarSeed: `manager-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        joinedAt: today(),
+      };
+      store.data.users.push(created);
+      store.data.passwordHashes[created.id] = hashPassword(target);
+      newManagerId = created.id;
+      newManagerName = name;
+    } else {
+      const target = store.data.users.find((u) => u.id === manager.userId);
+      if (!target) throw new Error("Account not found.");
+      if (target.banned) throw new Error(`${target.name} is banned — un-ban them first.`);
+      if (!isHostelMember(target.role) || target.role === "cook") {
+        throw new Error(`${target.name} can't be made manager (they're ${target.role}).`);
+      }
+      if (target.hostelId && target.hostelId !== hostelId) {
+        const other = store.data.hostels.find((h) => h.id === target.hostelId);
+        throw new Error(
+          `${target.name} is already a member of ${other?.name ?? "another hostel"} — a member can only belong to one hostel.`
+        );
+      }
+      const idx = store.data.users.findIndex((u) => u.id === target.id);
+      store.data.users[idx] = {
+        ...store.data.users[idx],
+        role: "manager",
+        hostelId,
+        joinedAt: store.data.users[idx].joinedAt ?? today(),
+      };
+      newManagerId = target.id;
+      newManagerName = target.name;
+      emitUser(newManagerId);
+    }
+
+    if (hostel.managerId === newManagerId) return;
+
+    // Demote the outgoing manager.
+    if (hostel.managerId) {
+      const prevIdx = store.data.users.findIndex((u) => u.id === hostel.managerId);
+      if (prevIdx !== -1 && store.data.users[prevIdx].role === "manager") {
+        const prevId = store.data.users[prevIdx].id;
+        store.data.users[prevIdx] = { ...store.data.users[prevIdx], role: "student" };
+        store.data.notifications.push({
+          id: nextId("notif"),
+          userId: prevId,
+          title: "Manager role handed over",
+          body: `You're now a regular boarder of ${hostel.name}. ${newManagerName} is the new manager.`,
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+        store.emit(`notifications:${prevId}`);
+        emitUser(prevId);
+      }
+    }
+    store.data.hostels[hIdx] = { ...store.data.hostels[hIdx], managerId: newManagerId };
+    store.data.notifications.push({
+      id: nextId("notif"),
+      userId: newManagerId,
+      title: "You're the hostel manager",
+      body: `You've been made the manager of ${hostel.name}.`,
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`notifications:${newManagerId}`);
+    if (actingUser?.id !== hostel.ownerId) {
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: hostel.ownerId,
+        title: "Hostel manager changed",
+        body: `${newManagerName} is now the manager of ${hostel.name}${actingUser ? ` (changed by ${actingUser.name})` : ""}.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${hostel.ownerId}`);
+      emitUser(hostel.ownerId);
+    }
+    logActivity(hostelId, manager.mode === "new" ? "Manager account created" : "Manager assigned", newManagerName);
+    store.emit(`users:${hostelId}`);
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+    emitUser(newManagerId);
+  },
   async assignCook(hostelId, cook) {
     const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
     if (hIdx === -1) throw new Error("Hostel not found.");

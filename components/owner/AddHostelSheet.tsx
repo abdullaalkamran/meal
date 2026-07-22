@@ -4,12 +4,9 @@ import { useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
-import { repo, type GeoAddress, type User } from "@/lib/data";
+import { repo, type GeoAddress, type Hostel, type User } from "@/lib/data";
 import { formatAddress } from "@/lib/geo/bangladesh";
 import { DEFAULT_MANAGER_PERMISSIONS } from "@/lib/auth/permissions";
-
-const slug = (name: string) =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "user";
 
 function Field({
   label,
@@ -30,9 +27,10 @@ function Field({
   );
 }
 
-/** Owner creates a new hostel. A hostel can't exist without a manager, so the
- * form also creates its manager (and optionally a cook) as fresh users — they
- * appear on the login roster immediately. */
+/** Step 1 of setting up a hostel: just the hostel itself. It's created with
+ * NO manager and NO cook — the owner adds rooms, then a manager, then a cook
+ * as the next steps (see HostelSetupSheet). The owner can run the hostel via
+ * manage mode until a manager is assigned. */
 export function AddHostelSheet({
   open,
   onClose,
@@ -42,28 +40,15 @@ export function AddHostelSheet({
   open: boolean;
   onClose: () => void;
   owner: User;
-  onCreated: (hostelName: string) => void;
+  onCreated: (hostel: Hostel) => void;
 }) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [kitchenLocation, setKitchenLocation] = useState("");
-  const [managerName, setManagerName] = useState("");
-  const [managerPhone, setManagerPhone] = useState("");
-  const [cookName, setCookName] = useState("");
-  const [cookPhone, setCookPhone] = useState("");
-  const [cookSalary, setCookSalary] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // A cook needs a real phone number to log in — it can't be truly optional
-  // once a name is entered, so require both together or neither.
-  const cookNameGiven = cookName.trim().length > 0;
-  const valid =
-    name.trim() &&
-    isCompleteAddress(address) &&
-    managerName.trim() &&
-    managerPhone.trim() &&
-    (!cookNameGiven || cookPhone.trim());
+  const valid = name.trim() && isCompleteAddress(address);
 
   const submit = async () => {
     if (!valid || saving || !isCompleteAddress(address)) return;
@@ -77,12 +62,11 @@ export function AddHostelSheet({
         area: formatAddress(address),
         address,
         ownerId: owner.id,
-        managerId: "", // patched right after the manager user exists
+        managerId: "", // manager-less; assigned as the next step
         // DEPRECATED nominal value — the real per-meal cost is computed every
         // month as shopping spend ÷ meals eaten; nothing bills from this field.
         mealRate: 0,
         kitchenLocation: kitchenLocation.trim() || undefined,
-        cookMonthlySalary: cookNameGiven && Number(cookSalary) > 0 ? Number(cookSalary) : undefined,
         settings: {
           mealCutoff: [
             { meal: "breakfast", time: "21:00" },
@@ -99,40 +83,16 @@ export function AddHostelSheet({
         },
       });
 
-      const manager = await repo.users.create({
-        hostelId: hostel.id,
-        name: managerName.trim(),
-        phone: managerPhone.trim(),
-        role: "manager",
-        avatarSeed: `manager-${slug(managerName)}`,
-      });
-      let cookId: string | undefined;
-      if (cookNameGiven) {
-        const cook = await repo.users.create({
-          hostelId: hostel.id,
-          name: cookName.trim(),
-          phone: cookPhone.trim(),
-          role: "cook",
-          avatarSeed: `cook-${slug(cookName)}`,
-        });
-        cookId = cook.id;
-      }
-      await repo.hostels.update(hostel.id, { managerId: manager.id, cookId });
       await repo.users.updateUser(owner.id, {
         ownedHostelIds: [...(owner.ownedHostelIds ?? []), hostel.id],
       });
 
       setSaving(false);
-      onCreated(hostel.name);
+      onCreated(hostel);
       onClose();
       setName("");
       setAddress({});
       setKitchenLocation("");
-      setManagerName("");
-      setManagerPhone("");
-      setCookName("");
-      setCookPhone("");
-      setCookSalary("");
     } catch (err) {
       setSaving(false);
       setError(err instanceof Error ? err.message : "Could not create the hostel.");
@@ -143,26 +103,12 @@ export function AddHostelSheet({
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
       <GeoSelect label="Hostel address" value={address} onChange={setAddress} />
-      <div className="mb-3 rounded-btn bg-bg px-3 py-2 text-[10px] font-semibold text-text-secondary">
-        <span className="font-extrabold">Meal rate is automatic</span> — every month:
-        total shopping cost ÷ total meals (members + guests). Members and guests pay
-        the same actual per-meal cost.
-      </div>
       <Field label="Kitchen location" optional value={kitchenLocation} onChange={(e) => setKitchenLocation(e.target.value)} placeholder="e.g. Room 101 · GF" />
 
-      <div className="mb-3 mt-1 rounded-btn bg-bg px-3 py-2.5 text-[10.5px] font-bold text-text-secondary">
-        Every hostel needs a manager — this creates their account so they can log in right away.
+      <div className="mb-4 rounded-btn bg-bg px-3 py-2.5 text-[10px] font-semibold text-text-secondary">
+        Next you&rsquo;ll add rooms, then assign a manager and a cook. You can run the hostel
+        yourself until a manager is assigned.
       </div>
-      <Field label="Manager name" value={managerName} onChange={(e) => setManagerName(e.target.value)} placeholder="Full name" />
-      <Field label="Manager phone" value={managerPhone} onChange={(e) => setManagerPhone(e.target.value)} placeholder="01711-000000" />
-
-      <Field label="Cook name" optional value={cookName} onChange={(e) => setCookName(e.target.value)} placeholder="Full name" />
-      {cookNameGiven && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Cook phone" value={cookPhone} onChange={(e) => setCookPhone(e.target.value)} placeholder="01711-000000" />
-          <Field label="Cook salary (৳/mo)" optional type="number" min={0} inputMode="numeric" value={cookSalary} onChange={(e) => setCookSalary(e.target.value)} />
-        </div>
-      )}
 
       {error && (
         <div className="mb-3 rounded-btn bg-danger-soft px-3 py-2 text-[10.5px] font-bold text-danger">

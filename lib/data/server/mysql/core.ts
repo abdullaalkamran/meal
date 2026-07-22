@@ -706,6 +706,99 @@ export const hostels: HostelRepository = {
     });
   },
 
+  async assignManager(hostelId, manager) {
+    await transaction(async (tx) => {
+      const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);
+      if (!hostel) throw new Error("Hostel not found.");
+
+      let newManagerId: string;
+      let newManagerName: string;
+      if (manager.mode === "new") {
+        const name = manager.name.trim();
+        const phone = manager.phone.trim();
+        if (!name || !phone) throw new Error("Name and phone number are required.");
+        const normalized = normalizePhone(phone);
+        const existing = await one<{ id: string }>(
+          "SELECT id FROM users WHERE phone_normalized = ? LIMIT 1",
+          [normalized],
+          tx
+        );
+        if (existing) throw new Error(PHONE_TAKEN_MESSAGE);
+        newManagerId = newId("user");
+        newManagerName = name;
+        try {
+          await run(
+            `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, avatar_seed, hostel_id, joined_at)
+             VALUES (?, 'manager', ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              newManagerId, name, phone, normalized, hashPassword(normalized),
+              `manager-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, hostelId, today(),
+            ],
+            tx
+          );
+        } catch (err) {
+          if (isDuplicateEntry(err)) throw new Error(PHONE_TAKEN_MESSAGE);
+          throw err;
+        }
+      } else {
+        const target = await loadUser(manager.userId, tx);
+        if (!target) throw new Error("Account not found.");
+        if (target.banned) throw new Error(`${target.name} is banned — un-ban them first.`);
+        if (!isHostelMember(target.role) || target.role === "cook") {
+          throw new Error(`${target.name} can't be made manager (they're ${target.role}).`);
+        }
+        // One-hostel rule: an account tied to another hostel can't be pulled in.
+        if (target.hostelId && target.hostelId !== hostelId) {
+          const other = await one<{ name: string }>("SELECT name FROM hostels WHERE id = ?", [target.hostelId], tx);
+          throw new Error(
+            `${target.name} is already a member of ${other?.name ?? "another hostel"} — a member can only belong to one hostel.`
+          );
+        }
+        newManagerId = target.id;
+        newManagerName = target.name;
+        // Attach here (if they had no hostel) and promote.
+        await run(
+          "UPDATE users SET role = 'manager', hostel_id = ?, joined_at = COALESCE(joined_at, ?) WHERE id = ?",
+          [hostelId, today(), newManagerId],
+          tx
+        );
+      }
+
+      if (hostel.manager_id === newManagerId) return; // already the manager
+
+      // Demote the outgoing manager to a regular boarder.
+      if (hostel.manager_id) {
+        const prev = await loadUser(hostel.manager_id, tx);
+        if (prev?.role === "manager") {
+          await run("UPDATE users SET role = 'student' WHERE id = ?", [prev.id], tx);
+          await notify(
+            prev.id,
+            "Manager role handed over",
+            `You're now a regular boarder of ${hostel.name}. ${newManagerName} is the new manager.`,
+            tx
+          );
+        }
+      }
+      await run("UPDATE hostels SET manager_id = ? WHERE id = ?", [newManagerId, hostelId], tx);
+      await notify(newManagerId, "You're the hostel manager", `You've been made the manager of ${hostel.name}.`, tx);
+      const actor = currentActor();
+      if (actor?.id !== hostel.owner_id) {
+        await notify(
+          hostel.owner_id,
+          "Hostel manager changed",
+          `${newManagerName} is now the manager of ${hostel.name}${actor ? ` (changed by ${actor.name})` : ""}.`,
+          tx
+        );
+      }
+      await logActivity(
+        hostelId,
+        manager.mode === "new" ? "Manager account created" : "Manager assigned",
+        newManagerName,
+        tx
+      );
+    });
+  },
+
   async demoteManager(hostelId) {
     await transaction(async (tx) => {
       const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);

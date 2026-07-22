@@ -58,6 +58,9 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
     // manager-less — an owner-level decision, not something a manager should
     // do to themselves (they hand over via changeManager instead).
     demoteManager: ["owner", "superadmin"],
+    // Creating a manager account / staffing a manager-less hostel is an
+    // owner-level action (a manager hands over via changeManager instead).
+    assignManager: ["owner", "superadmin"],
     assignCook: [...HOSTEL_STAFF, "superadmin"],
     updateSettings: [...HOSTEL_STAFF, "superadmin"],
     setMealOffered: HOSTEL_STAFF,
