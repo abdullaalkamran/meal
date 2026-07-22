@@ -130,6 +130,20 @@ export default function StudentMorePage() {
         </div>
       </Card>
 
+      {user && !user.email && (
+        <button
+          type="button"
+          onClick={() => setProfileOpen(true)}
+          className="rounded-card bg-primary-soft px-4 py-3 text-left"
+        >
+          <div className="text-[11.5px] font-extrabold text-primary">Add your email</div>
+          <div className="mt-0.5 text-[10px] font-semibold leading-relaxed text-primary/80">
+            So you can reset your own password if you forget it — otherwise your
+            manager or owner has to do it. Tap to add one.
+          </div>
+        </button>
+      )}
+
       <Card padded={false}>
         <div className="flex flex-col">
           {rows.map((row) => {

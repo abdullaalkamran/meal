@@ -101,6 +101,12 @@ export function EditProfileSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Personal information">
+      {!email.trim() && (
+        <div className="mb-3 rounded-btn bg-primary-soft px-3 py-2.5 text-[10.5px] font-bold leading-relaxed text-primary">
+          Add an email so you can reset your own password if you forget it.
+          Without one, you&rsquo;ll need your manager or owner to reset it for you.
+        </div>
+      )}
       <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
       <Field label="Phone number (your sign-in)" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <Field label="Email" optional type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
