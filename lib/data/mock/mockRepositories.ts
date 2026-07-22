@@ -108,6 +108,17 @@ function isMealOffered(hostelId: string, meal: MealSlot): boolean {
   return hostel?.settings.mealsOffered?.[meal] ?? true;
 }
 
+/** True only once a manager/owner has confirmed this exact (hostel, date,
+ * meal) was actually cooked (cookAttendance.markCooked). Gates both the
+ * cooking count and everything meal-rate/billing derives from it — a slot
+ * nobody confirmed, or one confirmed as the cook being absent, contributes
+ * zero no matter what any member's own on/off toggle says. */
+function isMealConfirmedCooked(hostelId: string, date: string, meal: MealSlot): boolean {
+  return store.data.cookAttendanceReports.some(
+    (r) => r.hostelId === hostelId && r.date === date && r.meal === meal && r.status === "resolved_cooked"
+  );
+}
+
 /** The automatic per-meal cost of a month: actual shopping spend ÷ meals
  * eaten (member + guest) by current boarders. THE meal rate — bills, guest
  * quotes, and reports all derive from this; no one sets it by hand. */
@@ -123,9 +134,10 @@ function actualMealRateFor(hostelId: string, month: string) {
   let totalMeals = 0;
   for (const day of store.data.mealDays) {
     if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
-    for (const [userId, entry] of Object.entries(day.entries)) {
-      if (!boarderIds.has(userId)) continue;
-      for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+    for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+      if (!isMealConfirmedCooked(hostelId, day.date, slot)) continue;
+      for (const [userId, entry] of Object.entries(day.entries)) {
+        if (!boarderIds.has(userId)) continue;
         totalMeals += (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
       }
     }
@@ -1404,6 +1416,10 @@ const bills: BillRepository = {
         const entry = day.entries[u.id];
         if (!entry) continue;
         for (const slot of slots) {
+          // Only a (day, meal) the manager confirmed was actually cooked
+          // bills anyone for it — matches mealRateFor's denominator so the
+          // rate and the sum of everyone's billed meals always reconcile.
+          if (!isMealConfirmedCooked(hostelId, day.date, slot)) continue;
           // Guests are billed even when the HOST's own meal is off — an
           // approved guest ate regardless of whether the member did.
           if (entry[slot].on) ownMeals += 1;
@@ -1575,21 +1591,25 @@ const cookAttendance: CookAttendanceRepository = {
     return created;
   },
   async markCooked(hostelId, date, meal) {
+    // Manager/owner only (policy.ts) — records who actually confirmed it,
+    // since this is now what gates counting and billing, not a courtesy log.
+    const confirmedBy = actingUser?.id ?? "manager";
     const report = store.data.cookAttendanceReports.find(
       (r) => r.hostelId === hostelId && r.date === date && r.meal === meal
     );
     if (report) {
       report.status = "resolved_cooked";
+      report.reportedBy = confirmedBy;
     } else {
-      // The cook confirming a meal directly (no prior manager report) is
-      // recorded the same way — one canonical status per meal per day.
+      // Confirming a meal directly (no prior dispute) is recorded the same
+      // way — one canonical status per meal per day.
       store.data.cookAttendanceReports.push({
         id: nextId("cookattend"),
         hostelId,
         date,
         meal,
         status: "resolved_cooked",
-        reportedBy: "cook",
+        reportedBy: confirmedBy,
         createdAt: new Date().toISOString(),
       });
     }

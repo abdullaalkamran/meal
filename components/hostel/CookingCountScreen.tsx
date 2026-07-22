@@ -29,10 +29,16 @@ function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): History
   return days
     .map((d) => {
       const entries = Object.values(d.entries);
-      const total = MEAL_SLOTS.reduce(
-        (sum, meal) => sum + entries.reduce((s, e) => s + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0),
-        0
-      );
+      // Same gate as the live count and billing: a slot nobody confirmed
+      // cooked contributes nothing to the history total either, so this
+      // number always matches what actually got billed.
+      const total = MEAL_SLOTS.reduce((sum, meal) => {
+        const confirmed = reports.some(
+          (r) => r.date === d.date && r.meal === meal && r.status === "resolved_cooked"
+        );
+        if (!confirmed) return sum;
+        return sum + entries.reduce((s, e) => s + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
+      }, 0);
       const cancelledMeals = MEAL_SLOTS.filter((meal) =>
         reports.some((r) => r.date === d.date && r.meal === meal && r.status === "confirmed_absent")
       );
@@ -76,15 +82,20 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
     const entries = day ? Object.values(day.entries) : [];
     // A slot the hostel didn't offer THAT DAY is cooked for nobody.
     const offered = day?.mealsOffered?.[meal] ?? true;
+    // Nothing counts — for cooking count OR billing — until a manager has
+    // confirmed this exact slot was actually cooked. A member's own on/off
+    // toggle only decides who's IN the count once it's confirmed; it never
+    // counts on its own.
+    const confirmed = reports.some((r) => r.meal === meal && r.status === "resolved_cooked");
     const totalBoarders = entries.length;
-    const boardersOn = offered ? entries.filter((e) => e[meal].on).length : 0;
+    const boardersOn = offered && confirmed ? entries.filter((e) => e[meal].on).length : 0;
     // "count" is heads to actually cook for (boarders + their guests) — can
     // exceed totalBoarders, so the percentage is based on boarders-on only.
-    const count = offered
+    const count = offered && confirmed
       ? entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0)
       : 0;
     const pct = totalBoarders > 0 ? Math.round((boardersOn / totalBoarders) * 100) : 0;
-    return { meal, count, pct, offered };
+    return { meal, count, pct, offered, confirmed };
   });
   const totalToCook = mealCounts.reduce((sum, c) => sum + c.count, 0);
 
@@ -140,7 +151,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
         <div className="text-[20.5px] font-extrabold">{totalToCook}</div>
       </Card>
 
-      {mealCounts.map(({ meal, count, pct }) => {
+      {mealCounts.map(({ meal, count, pct, offered }) => {
         const report = reports.find((r) => r.meal === meal);
         const votes = report ? votesByReport[report.id] ?? [] : [];
         const yes = votes.filter((v) => v.choice === "yes").length;
@@ -157,7 +168,19 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
               <div className="h-2 rounded-pill bg-primary" style={{ width: `${pct}%` }} />
             </div>
 
-            {!report && !readOnly && (
+            {!offered && (
+              <Chip>Not offered — doesn&rsquo;t count</Chip>
+            )}
+
+            {offered && !report && (
+              <div className="mb-2">
+                <Chip tone="orange" active>
+                  Awaiting confirmation — not counted yet
+                </Chip>
+              </div>
+            )}
+
+            {offered && !report && !readOnly && (
               <div className="flex gap-2">
                 <Button
                   fullWidth

@@ -533,10 +533,20 @@ export const bills: BillRepository = {
       const from = `${month}-01`;
       const to = `${month}-${String(daysInMonth).padStart(2, "0")}`;
 
-      // Meal totals per member: stored rows only, matching the JSON backend.
+      // Meal totals per member: stored rows only, matching the JSON backend —
+      // and only for a (day, meal) the manager has actually confirmed was
+      // cooked. An unconfirmed or confirmed-absent slot bills nobody for it,
+      // no matter what any member's own toggle says.
       const mealTotals = await all<{ user_id: string; own: number | null; guests: number | null }>(
-        `SELECT user_id, SUM(is_on) AS own, SUM(guest_count) AS guests
-           FROM meal_entries WHERE hostel_id = ? AND day BETWEEN ? AND ? GROUP BY user_id`,
+        `SELECT e.user_id, SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
+           FROM meal_entries e
+          WHERE e.hostel_id = ? AND e.day BETWEEN ? AND ?
+            AND EXISTS (
+              SELECT 1 FROM cook_attendance_reports r
+               WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
+                 AND r.status = 'resolved_cooked'
+            )
+          GROUP BY e.user_id`,
         [hostelId, from, to],
         tx
       );
@@ -690,12 +700,20 @@ async function mealRateFor(hostelId: string, month: string, tx: Queryable) {
     tx
   );
   const totalShopping = Number(spend?.total ?? 0);
+  // Only a (day, meal) the manager has confirmed was actually cooked counts
+  // — an unconfirmed or confirmed-absent slot contributes zero, regardless
+  // of any member's own on/off toggle.
   const totals = await one<{ own: number | null; guests: number | null }>(
     `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
        FROM meal_entries e JOIN users u ON u.id = e.user_id
       WHERE e.hostel_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
         AND u.hostel_id = ? AND u.banned = 0
-        AND u.role NOT IN ('cook','owner','superadmin','marketing','service')`,
+        AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
+        AND EXISTS (
+          SELECT 1 FROM cook_attendance_reports r
+           WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
+             AND r.status = 'resolved_cooked'
+        )`,
     [hostelId, month, hostelId],
     tx
   );

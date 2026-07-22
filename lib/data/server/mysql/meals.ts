@@ -223,7 +223,10 @@ export const meals: MealRepository = {
     );
     const totalShopping = Number(spend?.total ?? 0);
 
-    // Only current, non-banned boarders count (cooks and platform roles never do).
+    // Only current, non-banned boarders count (cooks and platform roles never
+    // do) — AND only a (day, meal) the manager has confirmed was actually
+    // cooked. An unconfirmed or confirmed-absent slot contributes zero,
+    // regardless of any member's own on/off toggle.
     const meals = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e
@@ -232,7 +235,12 @@ export const meals: MealRepository = {
           AND DATE_FORMAT(e.day, '%Y-%m') = ?
           AND u.hostel_id = ?
           AND u.banned = 0
-          AND u.role NOT IN ('cook','owner','superadmin','marketing','service')`,
+          AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
+          AND EXISTS (
+            SELECT 1 FROM cook_attendance_reports r
+             WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
+               AND r.status = 'resolved_cooked'
+          )`,
       [hostelId, month, hostelId]
     );
     const totalMeals = Number(meals?.own ?? 0) + Number(meals?.guests ?? 0);

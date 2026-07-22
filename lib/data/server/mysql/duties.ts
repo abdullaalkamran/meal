@@ -19,6 +19,7 @@ import type {
   SwapRepository,
 } from "../../repository";
 import { all, fromIso, one, run, toDay, toIso, transaction, type Queryable } from "./connection";
+import { currentActor } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -395,11 +396,14 @@ export const cookAttendance: CookAttendanceRepository = {
   },
 
   async markCooked(hostelId, date, meal) {
+    // Manager/owner only (policy.ts) — records who actually confirmed it,
+    // since this is now what gates counting and billing, not a courtesy log.
+    const confirmedBy = currentActor()?.id ?? "manager";
     await run(
       `INSERT INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at)
-       VALUES (?, ?, ?, ?, 'resolved_cooked', 'cook', ?)
-       ON DUPLICATE KEY UPDATE status = 'resolved_cooked'`,
-      [newId("cookattend"), hostelId, date, meal, now()]
+       VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?)
+       ON DUPLICATE KEY UPDATE status = 'resolved_cooked', reported_by = VALUES(reported_by)`,
+      [newId("cookattend"), hostelId, date, meal, confirmedBy, now()]
     );
   },
 

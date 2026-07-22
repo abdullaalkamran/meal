@@ -139,21 +139,30 @@ export function MealsScreen({
   };
   const submitEdit = async (userId: string, requestId: string) => {
     if (!activeHostelId) return;
-    const memberDraft = drafts[userId];
-    if (memberDraft) {
-      await Promise.all(
-        (Object.entries(memberDraft) as [MealSlot, boolean][]).map(([meal, on]) =>
-          repo.meals.setMemberMealToggle(activeHostelId, userId, selectedDate, meal, on)
-        )
-      );
+    try {
+      const memberDraft = drafts[userId];
+      if (memberDraft) {
+        // setMemberMealApproved, NOT setMemberMealToggle: a meal-edit request
+        // only ever exists for an already-locked (past-cutoff) date — that's
+        // the whole reason it needed a vote — so the member's own cutoff-
+        // checked path would always reject it. This is the manager-approved
+        // bypass built for exactly this.
+        await Promise.all(
+          (Object.entries(memberDraft) as [MealSlot, boolean][]).map(([meal, on]) =>
+            repo.meals.setMemberMealApproved(activeHostelId, userId, selectedDate, meal, on)
+          )
+        );
+      }
+      await repo.mealEdits.withdraw(requestId);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      toast("Meal edit submitted — request again to edit further");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not submit the meal edit.");
     }
-    await repo.mealEdits.withdraw(requestId);
-    setDrafts((prev) => {
-      const next = { ...prev };
-      delete next[userId];
-      return next;
-    });
-    toast("Meal edit submitted — request again to edit further");
   };
 
   useEffect(() => {
