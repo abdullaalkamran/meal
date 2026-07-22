@@ -211,9 +211,12 @@ export const meals: MealRepository = {
     // Seal the month first so days nobody touched still contribute the meals
     // that were actually eaten.
     await sealDays(hostelId, `${month}-01`, `${month}-31`);
+    // Only APPROVED shopping counts — the same condition generateBills uses
+    // (billing.ts mealRateFor), so the rate members see matches the rate they
+    // are billed. Pending/denied costs are excluded until a manager approves.
     const spend = await one<{ total: number | null }>(
       `SELECT SUM(c.amount) AS total FROM shopping_costs c
-        WHERE c.hostel_id = ?
+        WHERE c.hostel_id = ? AND c.status = 'approved'
           AND EXISTS (SELECT 1 FROM shopping_cost_dates d
                        WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)`,
       [hostelId, month]
