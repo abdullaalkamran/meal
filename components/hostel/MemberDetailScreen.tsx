@@ -64,6 +64,7 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   const [moveOpen, setMoveOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmMakeManager, setConfirmMakeManager] = useState(false);
+  const [confirmDemote, setConfirmDemote] = useState(false);
   const [month, setMonth] = useState(currentMonth());
 
   useEffect(() => {
@@ -141,6 +142,21 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
       toast(err instanceof Error ? err.message : "Could not change the manager");
     }
   };
+  const demoteManager = async () => {
+    if (!activeHostelId) return;
+    try {
+      await repo.hostels.demoteManager(activeHostelId);
+      toast(`${member.name.split(" ")[0]} is no longer the manager`);
+      setConfirmDemote(false);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not remove the manager");
+    }
+  };
+
+  // Only the owner can act on the manager's account (a manager can't remove
+  // themselves). Once demoted the member becomes a regular boarder, at which
+  // point the move/ban/remove actions below apply normally.
+  const isOwnerViewer = user?.role === "owner";
 
   // Owner always may; a manager only with the owner-granted permission.
   // Only a non-banned boarder (not the current manager, not the cook) is a
@@ -460,11 +476,48 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
                 <Icon icon={Trash2} size={15} /> Remove from hostel
               </button>
             ))}
-          {member.role === "manager" && (
-            <Card className="text-center text-[10.5px] font-semibold text-text-secondary">
-              This is the hostel manager&rsquo;s own boarder account — it can&rsquo;t be moved, banned, or removed here.
-            </Card>
-          )}
+          {member.role === "manager" &&
+            (isOwnerViewer ? (
+              confirmDemote ? (
+                <div className="rounded-btn border border-orange/40 bg-orange-soft p-3">
+                  <div className="mb-2 text-[10.5px] font-bold text-orange">
+                    Remove {member.name.split(" ")[0]} as manager of {hostel?.name}? They stay a
+                    regular boarder (room and meals unchanged), and the hostel will have no
+                    manager until you assign one — you can still manage it yourself meanwhile.
+                    After this you can move, ban, or remove them like any member.
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={demoteManager}
+                      className="min-h-11 flex-1 rounded-btn bg-orange text-[12px] font-extrabold text-white"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDemote(false)}
+                      className="min-h-11 flex-1 rounded-btn border border-border text-[12px] font-extrabold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDemote(true)}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-btn bg-orange-soft text-[12px] font-extrabold text-orange"
+                >
+                  <Icon icon={ShieldCheck} size={15} /> Remove as manager
+                </button>
+              )
+            ) : (
+              <Card className="text-center text-[10.5px] font-semibold text-text-secondary">
+                This is the hostel manager&rsquo;s own boarder account — only the owner can change or
+                remove the manager.
+              </Card>
+            ))}
         </div>
       </div>
 

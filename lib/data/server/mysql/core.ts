@@ -672,6 +672,28 @@ export const hostels: HostelRepository = {
     });
   },
 
+  async demoteManager(hostelId) {
+    await transaction(async (tx) => {
+      const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);
+      if (!hostel) throw new Error("Hostel not found.");
+      if (!hostel.manager_id) return; // already manager-less
+      const prev = await loadUser(hostel.manager_id, tx);
+      // Only touch the role if they're actually a manager; either way clear the
+      // hostel's manager pointer so it never references a demoted user.
+      if (prev?.role === "manager") {
+        await run("UPDATE users SET role = 'student' WHERE id = ?", [prev.id], tx);
+        await notify(
+          prev.id,
+          "Manager role removed",
+          `The owner has removed your manager role at ${hostel.name}. You're now a regular boarder (your room and meals are unchanged).`,
+          tx
+        );
+      }
+      await run("UPDATE hostels SET manager_id = NULL WHERE id = ?", [hostelId], tx);
+      await logActivity(hostelId, "Manager removed", prev?.name, tx);
+    });
+  },
+
   async assignCook(hostelId, cook) {
     await transaction(async (tx) => {
       const hostel = await one<HostelRow>(`SELECT ${HOSTEL_COLS} FROM hostels WHERE id = ? FOR UPDATE`, [hostelId], tx);

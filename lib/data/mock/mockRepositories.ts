@@ -512,6 +512,33 @@ const hostels: HostelRepository = {
     store.emit("hostels");
     emitUser(newManagerId);
   },
+  async demoteManager(hostelId) {
+    const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
+    if (hIdx === -1) throw new Error("Hostel not found.");
+    const hostel = store.data.hostels[hIdx];
+    const prevManagerId = hostel.managerId;
+    if (!prevManagerId) return; // already manager-less
+    const prevIdx = store.data.users.findIndex((u) => u.id === prevManagerId);
+    const prevName = prevIdx !== -1 ? store.data.users[prevIdx].name : undefined;
+    if (prevIdx !== -1 && store.data.users[prevIdx].role === "manager") {
+      store.data.users[prevIdx] = { ...store.data.users[prevIdx], role: "student" };
+      store.data.notifications.push({
+        id: nextId("notif"),
+        userId: prevManagerId,
+        title: "Manager role removed",
+        body: `The owner has removed your manager role at ${hostel.name}. You're now a regular boarder (your room and meals are unchanged).`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      store.emit(`notifications:${prevManagerId}`);
+      emitUser(prevManagerId);
+    }
+    store.data.hostels[hIdx] = { ...hostel, managerId: "" };
+    logActivity(hostelId, "Manager removed", prevName);
+    store.emit(`users:${hostelId}`);
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+  },
   async assignCook(hostelId, cook) {
     const hIdx = store.data.hostels.findIndex((h) => h.id === hostelId);
     if (hIdx === -1) throw new Error("Hostel not found.");

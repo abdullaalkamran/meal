@@ -137,6 +137,14 @@ export interface HostelRepository {
    * otherwise. Owner does this from staff/member screens; a manager may too
    * when granted the `assignManager` permission. */
   changeManager(hostelId: string, newManagerId: string): Promise<void>;
+  /** Strips the manager role WITHOUT naming a replacement — the outgoing
+   * manager reverts to a regular boarder (keeps their room and meals) and the
+   * hostel is left with no manager until one is assigned. This is what lets an
+   * OWNER remove a manager who has no successor lined up; the manager can then
+   * be moved/banned/removed like any other member. Owner/superadmin only — a
+   * manager can't demote themselves this way (they'd hand over via
+   * changeManager instead). */
+  demoteManager(hostelId: string): Promise<void>;
   /** Adds, replaces, or removes this hostel's cook — the one safe, narrow
    * path for it (rather than the raw `users.create`, which can mint ANY
    * role and is owner/superadmin-only). Whatever cook was previously

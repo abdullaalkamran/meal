@@ -54,6 +54,10 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
     // student — closed alongside fixing the owner staff-page bug that made
     // this unreachable through the UI in the first place.
     changeManager: [...HOSTEL_STAFF, "superadmin"],
+    // Removing the manager WITHOUT a replacement leaves the hostel
+    // manager-less — an owner-level decision, not something a manager should
+    // do to themselves (they hand over via changeManager instead).
+    demoteManager: ["owner", "superadmin"],
     assignCook: [...HOSTEL_STAFF, "superadmin"],
     updateSettings: [...HOSTEL_STAFF, "superadmin"],
     setMealOffered: HOSTEL_STAFF,
