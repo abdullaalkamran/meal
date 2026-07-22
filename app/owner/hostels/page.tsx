@@ -27,7 +27,7 @@ interface HostelStats {
 
 export default function OwnerHostelsPage() {
   const router = useRouter();
-  const { user, activeHostelId, switchHostel, setViewRole } = useSession();
+  const { user, activeHostelId, switchHostel } = useSession();
   const hostels = useHostelsByOwner(user?.id);
   const { toast } = useToast();
   const [stats, setStats] = useState<Record<string, HostelStats>>({});
@@ -37,10 +37,11 @@ export default function OwnerHostelsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [setupHostel, setSetupHostel] = useState<Hostel | null>(null);
 
+  // Owners manage from their OWN native screens (hostel-scoped), not by
+  // impersonating the manager — so they see the owner view, not the manager's.
   const manageHostel = (hostelId: string) => {
     switchHostel(hostelId);
-    setViewRole("manager");
-    router.push("/manager");
+    router.push("/owner/members");
   };
 
   useEffect(() => {
