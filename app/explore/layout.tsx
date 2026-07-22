@@ -6,7 +6,7 @@ export default function ExploreLayout({ children }: { children: React.ReactNode 
   // (AppShell renders a clean header + main when navItems is empty).
   return (
     <AuthGuard>
-      <AppShell navItems={[]} title="Hostel ERP">
+      <AppShell navItems={[]} title="MyDorm">
         {children}
       </AppShell>
     </AuthGuard>

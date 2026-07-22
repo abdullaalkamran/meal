@@ -7,7 +7,7 @@ import { RequireHostel } from "@/components/student/RequireHostel";
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   return (
     <RoleGuard role="student">
-      <AppShell navItems={NAV_ITEMS.student} title="Hostel ERP">
+      <AppShell navItems={NAV_ITEMS.student} title="MyDorm">
         <BoarderViewBanner />
         <RequireHostel>{children}</RequireHostel>
       </AppShell>

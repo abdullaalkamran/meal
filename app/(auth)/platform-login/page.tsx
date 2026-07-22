@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 
-/** Separate sign-in for the Hostel ERP PLATFORM TEAM (Super Admin, Marketing,
+/** Separate sign-in for the MyDorm PLATFORM TEAM (Super Admin, Marketing,
  * Service) — hostel members/managers/owners use /login. Verified server-side
  * with the "platform" scope, so only platform-role accounts can sign in here.
  * There is no public sign-up: platform accounts are provisioned internally. */
@@ -47,7 +47,7 @@ export default function PlatformLoginPage() {
             Platform team
           </div>
           <div className="text-[11.5px] font-semibold text-text-secondary">
-            Hostel ERP staff sign-in — Super Admin, Marketing &amp; Service
+            MyDorm staff sign-in — Super Admin, Marketing &amp; Service
           </div>
         </div>
       </div>

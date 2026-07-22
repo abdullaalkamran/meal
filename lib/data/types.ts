@@ -1,4 +1,4 @@
-// Canonical entity types for the Hostel ERP data model.
+// Canonical entity types for the MyDorm data model.
 // These unify several inconsistent mock-data shapes found in the original
 // design prototype (see design_handoff_hostel_erp/) into single sources of truth.
 

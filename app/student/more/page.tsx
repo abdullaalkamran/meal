@@ -179,7 +179,7 @@ export default function StudentMorePage() {
       </button>
 
       <div className="text-center text-[9.5px] font-semibold text-text-secondary">
-        Hostel ERP v1.0
+        MyDorm v1.0
       </div>
 
       <EditProfileSheet

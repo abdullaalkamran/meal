@@ -5,7 +5,7 @@ import { NAV_ITEMS } from "@/components/layout/navItems";
 export default function CookLayout({ children }: { children: React.ReactNode }) {
   return (
     <RoleGuard role="cook">
-      <AppShell navItems={NAV_ITEMS.cook} title="Hostel ERP">
+      <AppShell navItems={NAV_ITEMS.cook} title="MyDorm">
         {children}
       </AppShell>
     </RoleGuard>

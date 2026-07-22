@@ -19,7 +19,7 @@ const notoBengali = Noto_Sans_Bengali({
 });
 
 export const metadata: Metadata = {
-  title: "Hostel ERP",
+  title: "MyDorm",
   description: "Student hostel & mess management",
 };
 

@@ -82,7 +82,7 @@ export default function AdminDashboardPage() {
     <div className="flex flex-col gap-5 pt-2">
       <div>
         <div className="text-[17.5px] font-extrabold tracking-tight">Platform overview</div>
-        <div className="text-[10.5px] font-semibold text-text-secondary">All hostels · Hostel ERP</div>
+        <div className="text-[10.5px] font-semibold text-text-secondary">All hostels · MyDorm</div>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5">

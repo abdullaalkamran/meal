@@ -1,4 +1,4 @@
-# Deploying Hostel ERP
+# Deploying MyDorm
 
 This app is a **long-lived Node server** (custom `server.js`, not the plain
 `next start` CLI) so it can run under **Phusion Passenger**, which is what

@@ -45,7 +45,7 @@ export default function HostelsPage() {
 
       <div>
         <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-          On Hostel ERP
+          On MyDorm
         </div>
         <div className="flex flex-col gap-2.5">
           {hostels.map((h) => {

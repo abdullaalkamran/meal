@@ -6,7 +6,7 @@ import { ManageModeBanner } from "@/components/owner/ManageModeBanner";
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {
   return (
     <RoleGuard role="manager">
-      <AppShell navItems={NAV_ITEMS.manager} title="Hostel ERP">
+      <AppShell navItems={NAV_ITEMS.manager} title="MyDorm">
         <ManageModeBanner />
         {children}
       </AppShell>

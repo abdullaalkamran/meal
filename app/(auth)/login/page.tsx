@@ -34,7 +34,7 @@ export default function LoginPage() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
       <div className="text-center">
-        <div className="mb-1 text-[19px] font-extrabold tracking-tight">Hostel ERP</div>
+        <div className="mb-1 text-[19px] font-extrabold tracking-tight">MyDorm</div>
         <div className="text-[11.5px] font-semibold text-text-secondary">
           Sign in to your hostel account
         </div>
@@ -94,7 +94,7 @@ export default function LoginPage() {
         href="/platform-login"
         className="text-center text-[10.5px] font-bold text-text-secondary underline-offset-2 hover:underline"
       >
-        Hostel ERP platform team? Sign in here
+        MyDorm platform team? Sign in here
       </Link>
     </div>
   );
