@@ -23,7 +23,17 @@ import {
   verifyPassword as mockVerifyPassword,
   verifyPasswordById as mockVerifyPasswordById,
   setUserPassword as mockSetUserPassword,
+  otpInsert as mockOtpInsert,
+  otpLatestActive as mockOtpLatestActive,
+  otpCountSince as mockOtpCountSince,
+  otpBumpAttempts as mockOtpBumpAttempts,
+  otpConsume as mockOtpConsume,
+  loadSmtp as mockLoadSmtp,
+  saveSmtp as mockSaveSmtp,
 } from "../mock/mockRepositories";
+import type { PasswordResetOtp, SmtpSettings } from "../types";
+import { hashPassword, verifyPassword as verifyHash } from "./password";
+import { decryptSecret, encryptSecret } from "./secretbox";
 import { authorize, type SessionUser } from "./policy";
 import { isMysqlConfigured } from "./mysql/connection";
 import {
@@ -36,7 +46,16 @@ import {
   verifyUserPassword,
   verifyUserPasswordById,
   setUserPassword as mysqlSetUserPassword,
+  otpInsert as mysqlOtpInsert,
+  otpLatestActive as mysqlOtpLatestActive,
+  otpCountSince as mysqlOtpCountSince,
+  otpBumpAttempts as mysqlOtpBumpAttempts,
+  otpConsume as mysqlOtpConsume,
+  loadSmtp as mysqlLoadSmtp,
+  saveSmtp as mysqlSaveSmtp,
 } from "./mysql";
+import { newId } from "./mysql/ids";
+import { randomInt } from "node:crypto";
 
 export type { SessionUser };
 
@@ -198,6 +217,175 @@ export async function setUserPassword(userId: string, newPassword: string): Prom
   const ok = mockSetUserPassword(userId, newPassword);
   if (ok) persist();
   return ok;
+}
+
+// ── Password-reset OTP (email) ──────────────────────────────────────────────
+// Backend-agnostic policy over the per-backend storage primitives above.
+
+const OTP_TTL_MS = 10 * 60 * 1000; // codes valid for 10 minutes
+const OTP_MAX_PER_HOUR = 5; // requests per account per hour
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000; // between successive codes
+const OTP_MAX_ATTEMPTS = 5; // wrong guesses before a code is dead
+
+const otpStore = () =>
+  usingMysql
+    ? {
+        insert: mysqlOtpInsert,
+        latest: mysqlOtpLatestActive,
+        countSince: mysqlOtpCountSince,
+        bump: mysqlOtpBumpAttempts,
+        consume: mysqlOtpConsume,
+      }
+    : {
+        insert: async (o: PasswordResetOtp) => mockOtpInsert(o),
+        latest: async (uid: string) => mockOtpLatestActive(uid),
+        countSince: async (uid: string, since: string) => mockOtpCountSince(uid, since),
+        bump: async (id: string) => mockOtpBumpAttempts(id),
+        consume: async (id: string) => mockOtpConsume(id),
+      };
+
+/** Creates + stores a reset code, returning the plaintext code for the caller
+ * to email (never persisted or returned to a client). Rate-limited. */
+export async function createResetOtp(userId: string): Promise<{ code?: string; error?: string }> {
+  if (usingMysql) await mysqlReady();
+  else ensureFresh();
+  const store = otpStore();
+
+  const sinceHour = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  if ((await store.countSince(userId, sinceHour)) >= OTP_MAX_PER_HOUR) {
+    return { error: "Too many reset requests — please try again later." };
+  }
+  const last = await store.latest(userId);
+  if (last && Date.now() - new Date(last.createdAt).getTime() < OTP_RESEND_COOLDOWN_MS) {
+    return { error: "Please wait a minute before requesting another code." };
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const now = new Date();
+  await store.insert({
+    id: newId("otp"),
+    userId,
+    codeHash: hashPassword(code),
+    expiresAt: new Date(now.getTime() + OTP_TTL_MS).toISOString(),
+    attempts: 0,
+    createdAt: now.toISOString(),
+  });
+  if (!usingMysql) persist();
+  return { code };
+}
+
+/** Verifies a code against the account's latest active reset code. */
+export async function verifyResetOtp(userId: string, code: string): Promise<{ ok: boolean; error?: string }> {
+  if (usingMysql) await mysqlReady();
+  else ensureFresh();
+  const store = otpStore();
+
+  const otp = await store.latest(userId);
+  if (!otp) return { ok: false, error: "No active reset code — request a new one." };
+  if (new Date(otp.expiresAt).getTime() < Date.now()) {
+    return { ok: false, error: "This code has expired — request a new one." };
+  }
+  if (otp.attempts >= OTP_MAX_ATTEMPTS) {
+    return { ok: false, error: "Too many attempts — request a new code." };
+  }
+  if (!verifyHash(code, otp.codeHash)) {
+    await store.bump(otp.id);
+    if (!usingMysql) persist();
+    return { ok: false, error: "Incorrect code." };
+  }
+  await store.consume(otp.id);
+  if (!usingMysql) persist();
+  return { ok: true };
+}
+
+// ── SMTP settings ───────────────────────────────────────────────────────────
+
+export interface SmtpConfig {
+  host: string; port: number; secure: boolean; username: string;
+  password: string; fromEmail: string; fromName: string;
+}
+
+function smtpFromEnv(): SmtpConfig | null {
+  const host = process.env.SMTP_HOST;
+  const username = process.env.SMTP_USER;
+  if (!host || !username) return null;
+  return {
+    host,
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: (process.env.SMTP_SECURE ?? "true") !== "false",
+    username,
+    password: process.env.SMTP_PASS ?? "",
+    fromEmail: process.env.MAIL_FROM_EMAIL || username,
+    fromName: process.env.MAIL_FROM_NAME || "MyDorm",
+  };
+}
+
+/** The usable SMTP config (decrypted password) for the mailer — DB first, then
+ * env as a fallback. Server-only; never sent to a client. */
+export async function getSmtpConfig(): Promise<SmtpConfig | null> {
+  const stored: SmtpSettings | null = usingMysql
+    ? (await (mysqlReady(), mysqlLoadSmtp()))
+    : (ensureFresh(), mockLoadSmtp());
+  if (stored && stored.host && stored.username) {
+    return { ...stored, password: decryptSecret(stored.password) };
+  }
+  return smtpFromEnv();
+}
+
+/** Sanitized view for the Super Admin UI — never includes the password. */
+export async function getSmtpConfigPublic(): Promise<{
+  configured: boolean; source: "db" | "env" | "none";
+  host: string; port: number; secure: boolean; username: string;
+  fromEmail: string; fromName: string; hasPassword: boolean;
+}> {
+  const stored: SmtpSettings | null = usingMysql
+    ? (await (mysqlReady(), mysqlLoadSmtp()))
+    : (ensureFresh(), mockLoadSmtp());
+  if (stored && stored.host && stored.username) {
+    return {
+      configured: true, source: "db",
+      host: stored.host, port: stored.port, secure: stored.secure, username: stored.username,
+      fromEmail: stored.fromEmail, fromName: stored.fromName, hasPassword: !!stored.password,
+    };
+  }
+  const env = smtpFromEnv();
+  if (env) {
+    return {
+      configured: true, source: "env",
+      host: env.host, port: env.port, secure: env.secure, username: env.username,
+      fromEmail: env.fromEmail, fromName: env.fromName, hasPassword: !!env.password,
+    };
+  }
+  return {
+    configured: false, source: "none",
+    host: "", port: 465, secure: true, username: "", fromEmail: "", fromName: "MyDorm", hasPassword: false,
+  };
+}
+
+/** Persists SMTP settings (Super Admin). A blank `password` keeps the stored
+ * one; otherwise it's encrypted at rest. */
+export async function saveSmtpConfig(input: {
+  host: string; port: number; secure: boolean; username: string;
+  password: string; fromEmail: string; fromName: string;
+}): Promise<void> {
+  const passwordEnc = input.password ? encryptSecret(input.password) : null;
+  const row = {
+    host: input.host.trim(),
+    port: input.port,
+    secure: input.secure,
+    username: input.username.trim(),
+    passwordEnc,
+    fromEmail: (input.fromEmail || input.username).trim(),
+    fromName: input.fromName.trim() || "MyDorm",
+  };
+  if (usingMysql) {
+    await mysqlReady();
+    await mysqlSaveSmtp(row);
+  } else {
+    ensureFresh();
+    mockSaveSmtp(row);
+    persist();
+  }
 }
 
 export class RpcError extends Error {

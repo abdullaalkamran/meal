@@ -888,6 +888,38 @@ CREATE TABLE hero_promo_settings (
 
 INSERT INTO hero_promo_settings (id) VALUES (1);
 
+-- One-time password-reset codes emailed to an account. The code is stored
+-- only as a scrypt hash; rate limiting/expiry are enforced in the app.
+CREATE TABLE password_reset_otps (
+  id          VARCHAR(64)  NOT NULL PRIMARY KEY,
+  user_id     VARCHAR(64)  NOT NULL,
+  code_hash   VARCHAR(255) NOT NULL,
+  expires_at  DATETIME(3)  NOT NULL,
+  attempts    INT          NOT NULL DEFAULT 0,
+  consumed_at DATETIME(3)  NULL,
+  created_at  DATETIME(3)  NOT NULL,
+  INDEX idx_reset_user (user_id, created_at),
+  CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Platform SMTP settings (single row, id=1), editable by the Super Admin.
+-- password_enc is AES-256-GCM encrypted at rest (see secretbox.ts) — never
+-- stored or transmitted in the clear.
+CREATE TABLE smtp_settings (
+  id           TINYINT      NOT NULL PRIMARY KEY DEFAULT 1,
+  host         VARCHAR(191) NOT NULL DEFAULT '',
+  port         INT          NOT NULL DEFAULT 465,
+  secure       BOOLEAN      NOT NULL DEFAULT TRUE,
+  username     VARCHAR(191) NOT NULL DEFAULT '',
+  password_enc TEXT         NULL,
+  from_email   VARCHAR(191) NOT NULL DEFAULT '',
+  from_name    VARCHAR(191) NOT NULL DEFAULT '',
+  configured   BOOLEAN      NOT NULL DEFAULT FALSE,
+  CONSTRAINT ck_smtp_singleton CHECK (id = 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO smtp_settings (id) VALUES (1);
+
 -- Single-row change counter. Clients poll GET /api/rpc and re-fetch their
 -- subscriptions when this moves, so it must be shared across processes —
 -- a per-process counter would leave other Passenger workers' clients stale.

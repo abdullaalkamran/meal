@@ -37,6 +37,15 @@ export { ensureReady } from "./bootstrap";
 export { closePool } from "./connection";
 export { runWithActor } from "./context";
 export { verifyUserPassword, verifyUserPasswordById, setUserPassword };
+export {
+  otpInsert,
+  otpLatestActive,
+  otpCountSince,
+  otpBumpAttempts,
+  otpConsume,
+  loadSmtp,
+  saveSmtp,
+} from "./email";
 
 // ── Change counter + extra read queries the RPC layer needs ────────────────
 

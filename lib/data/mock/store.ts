@@ -21,6 +21,8 @@ import type {
   ExploreInteraction,
   GuestMealRequest,
   HeroPromoSettings,
+  PasswordResetOtp,
+  SmtpSettings,
   Hostel,
   HostelTransferRequest,
   JoinRequest,
@@ -96,6 +98,10 @@ export interface Tables {
    * User-returning read (getUser, listByHostel, subscribeUser, ...) reads
    * straight off `users`, which never carries this field. */
   passwordHashes: Record<string, string>;
+  /** One-time password-reset codes (hashed). Server-side only. */
+  passwordResetOtps: PasswordResetOtp[];
+  /** Platform SMTP settings; null until the Super Admin (or env) configures it. */
+  smtpSettings: SmtpSettings | null;
 }
 
 interface Persisted {

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BedDouble, ChevronRight, Megaphone, Package, Users } from "lucide-react";
+import { BedDouble, ChevronRight, Mail, Megaphone, Package, Users } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { SmtpSettingsSheet } from "@/components/admin/SmtpSettingsSheet";
 import { repo, type Bill, type Hostel, type Order, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, today } from "@/lib/utils/date";
@@ -16,6 +17,7 @@ export default function AdminDashboardPage() {
   const [mealsToday, setMealsToday] = useState(0);
   const [orders, setOrders] = useState<Order[]>([]);
   const [leadCount, setLeadCount] = useState(0);
+  const [smtpOpen, setSmtpOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -114,6 +116,15 @@ export default function AdminDashboardPage() {
             <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
           </Card>
         </Link>
+        <button type="button" onClick={() => setSmtpOpen(true)} className="text-left">
+          <Card className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-soft text-orange">
+              <Icon icon={Mail} size={17} />
+            </div>
+            <div className="min-w-0 flex-1 text-[11.5px] font-extrabold">Email (SMTP) settings</div>
+            <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+          </Card>
+        </button>
       </div>
 
       <div>
@@ -132,6 +143,8 @@ export default function AdminDashboardPage() {
           ))}
         </div>
       </div>
+
+      <SmtpSettingsSheet open={smtpOpen} onClose={() => setSmtpOpen(false)} />
     </div>
   );
 }

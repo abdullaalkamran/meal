@@ -79,6 +79,32 @@ export interface SignupInput {
   address?: GeoAddress;
 }
 
+/** Platform email (SMTP) settings — server-managed, editable by the Super
+ * Admin. `password` is stored encrypted at rest (see secretbox.ts) and is
+ * NEVER sent to any client; the admin UI only ever sees whether it's set. */
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  /** Encrypted at rest; blank means "unchanged/keep existing" on save. */
+  password: string;
+  fromEmail: string;
+  fromName: string;
+}
+
+/** A one-time password-reset code emailed to an account's address. The code
+ * itself is only ever stored hashed. */
+export interface PasswordResetOtp {
+  id: string;
+  userId: string;
+  codeHash: string;
+  expiresAt: string;
+  attempts: number;
+  consumedAt?: string;
+  createdAt: string;
+}
+
 /** One audited hostel action (expense recorded, bills generated, member
  * banned, settings changed, …) — the owner's activity log. */
 export interface ActivityLog {

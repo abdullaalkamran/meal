@@ -36,7 +36,7 @@ import type {
   UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, Payment, Product, Role, ServiceListing, StudyAbroadItem, User } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
 import { addDays, currentMonth, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
@@ -390,6 +390,47 @@ export function setUserPassword(userId: string, newPassword: string): boolean {
   store.data.passwordHashes[userId] = hashPassword(newPassword);
   store.emit(`user-rec:${userId}`);
   return true;
+}
+
+// ── Password-reset OTPs + SMTP settings (JSON backend storage) ─────────────
+// Same primitives the MySQL backend exposes; db.ts holds the shared logic.
+
+export function otpInsert(o: PasswordResetOtp): void {
+  store.data.passwordResetOtps.push(o);
+}
+export function otpLatestActive(userId: string): PasswordResetOtp | undefined {
+  return [...store.data.passwordResetOtps]
+    .filter((o) => o.userId === userId && !o.consumedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+export function otpCountSince(userId: string, sinceIso: string): number {
+  return store.data.passwordResetOtps.filter((o) => o.userId === userId && o.createdAt >= sinceIso).length;
+}
+export function otpBumpAttempts(id: string): void {
+  const o = store.data.passwordResetOtps.find((x) => x.id === id);
+  if (o) o.attempts += 1;
+}
+export function otpConsume(id: string): void {
+  const o = store.data.passwordResetOtps.find((x) => x.id === id);
+  if (o) o.consumedAt = new Date().toISOString();
+}
+export function loadSmtp(): SmtpSettings | null {
+  return store.data.smtpSettings;
+}
+export function saveSmtp(s: {
+  host: string; port: number; secure: boolean; username: string;
+  passwordEnc: string | null; fromEmail: string; fromName: string;
+}): void {
+  const prev = store.data.smtpSettings;
+  store.data.smtpSettings = {
+    host: s.host,
+    port: s.port,
+    secure: s.secure,
+    username: s.username,
+    password: s.passwordEnc === null ? prev?.password ?? "" : s.passwordEnc,
+    fromEmail: s.fromEmail,
+    fromName: s.fromName,
+  };
 }
 
 const rooms: RoomRepository = {

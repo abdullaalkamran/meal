@@ -7,6 +7,7 @@ import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { ForgotPasswordSheet } from "@/components/auth/ForgotPasswordSheet";
 
 /** Sign-in for hostel people (members, managers, owners, cooks) — by phone
  * number + password, verified server-side. Platform-team operators use
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const submit = async () => {
     if (busy) return;
@@ -77,6 +79,13 @@ export default function LoginPage() {
         <Button fullWidth onClick={submit} disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </Button>
+        <button
+          type="button"
+          onClick={() => setForgotOpen(true)}
+          className="mt-2.5 w-full text-center text-[10.5px] font-extrabold text-primary"
+        >
+          Forgot password?
+        </button>
         <div className="mt-2 text-center text-[9.5px] font-semibold text-text-secondary">
           Existing account, first time with a password? Your phone number is
           your password.
@@ -96,6 +105,12 @@ export default function LoginPage() {
       >
         MyDorm platform team? Sign in here
       </Link>
+
+      <ForgotPasswordSheet
+        open={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        initialPhone={phone}
+      />
     </div>
   );
 }

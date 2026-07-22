@@ -26,6 +26,50 @@ async function tablesExist(): Promise<boolean> {
   return (row?.n ?? 0) > 0;
 }
 
+async function tableExists(table: string): Promise<boolean> {
+  const row = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+    [table]
+  );
+  return (row?.n ?? 0) > 0;
+}
+
+/** Creates the password-reset + SMTP tables on databases that predate them. */
+async function ensureEmailTables(): Promise<void> {
+  if (!(await tableExists("password_reset_otps"))) {
+    await run(
+      `CREATE TABLE password_reset_otps (
+         id VARCHAR(64) NOT NULL PRIMARY KEY,
+         user_id VARCHAR(64) NOT NULL,
+         code_hash VARCHAR(255) NOT NULL,
+         expires_at DATETIME(3) NOT NULL,
+         attempts INT NOT NULL DEFAULT 0,
+         consumed_at DATETIME(3) NULL,
+         created_at DATETIME(3) NOT NULL,
+         INDEX idx_reset_user (user_id, created_at),
+         CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+  if (!(await tableExists("smtp_settings"))) {
+    await run(
+      `CREATE TABLE smtp_settings (
+         id TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
+         host VARCHAR(191) NOT NULL DEFAULT '',
+         port INT NOT NULL DEFAULT 465,
+         secure BOOLEAN NOT NULL DEFAULT TRUE,
+         username VARCHAR(191) NOT NULL DEFAULT '',
+         password_enc TEXT NULL,
+         from_email VARCHAR(191) NOT NULL DEFAULT '',
+         from_name VARCHAR(191) NOT NULL DEFAULT '',
+         configured BOOLEAN NOT NULL DEFAULT FALSE,
+         CONSTRAINT ck_smtp_singleton CHECK (id = 1)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+  await run("INSERT IGNORE INTO smtp_settings (id) VALUES (1)");
+}
+
 async function columnExists(table: string, column: string): Promise<boolean> {
   const row = await one<{ n: number }>(
     "SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
@@ -186,6 +230,7 @@ export function ensureReady(): Promise<void> {
       if (!(await tablesExist())) await applySchema();
       await ensureUserCredentialColumns();
       await ensureShoppingCostStatusColumn();
+      await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();
     })().catch((err) => {

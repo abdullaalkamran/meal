@@ -65,6 +65,43 @@ export async function changePassword(
   }
 }
 
+/** Forgot-password step 1: request an emailed reset code by phone. */
+export async function requestPasswordReset(
+  phone: string
+): Promise<{ ok: boolean; message?: string; sentTo?: string; noEmail?: boolean; devCode?: string; error?: string }> {
+  try {
+    const res = await fetch("/api/auth/reset/request", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) return { ok: false, error: (data.error as string) ?? "Could not send a code." };
+    return { ok: true, ...data };
+  } catch {
+    return { ok: false, error: "Network error — please try again." };
+  }
+}
+
+/** Forgot-password step 2: verify the code and set a new password. */
+export async function submitPasswordReset(
+  phone: string,
+  code: string,
+  newPassword: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/auth/reset/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone, code, newPassword }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return res.ok ? { ok: true } : { ok: false, error: data.error ?? "Could not reset the password." };
+  } catch {
+    return { ok: false, error: "Network error — please try again." };
+  }
+}
+
 /** Owner/superadmin resets another account's password (for a forgotten one). */
 export async function adminResetPassword(
   userId: string,

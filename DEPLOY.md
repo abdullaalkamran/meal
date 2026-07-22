@@ -219,6 +219,43 @@ a warning. Sessions also set the cookie `Secure` only over HTTPS, so login
 works over plain HTTP before you attach a domain, and hardens automatically
 once HTTPS is on.
 
+`AUTH_SECRET` is **also** the key that encrypts the stored SMTP password (see
+below). Set it once and keep it stable — rotating it invalidates every session
+**and** makes the saved SMTP password unreadable (you'd re-enter it).
+
+## Email / password reset (SMTP)
+
+The **forgot-password** flow emails a 6-digit code. That needs an outgoing mail
+(SMTP) account. There are two ways to configure it; the database wins over env.
+
+**Option A — Super Admin UI (recommended).** Sign in as the Super Admin →
+**Email (SMTP) settings** → fill in host, port, username, password, from
+address → **Save**, then **Send a test email** to confirm. The password is
+encrypted at rest (AES-256-GCM, keyed off `AUTH_SECRET`) and never sent back to
+the browser. Nothing sensitive is committed to the repo.
+
+**Option B — environment variables** (used only when nothing is saved in the
+database):
+
+```
+SMTP_HOST=mail.spacemail.com
+SMTP_PORT=465
+SMTP_SECURE=true            # true = SSL (465); false = STARTTLS (587)
+SMTP_USER=noreply@yourdomain
+SMTP_PASS=<mailbox password>
+MAIL_FROM_EMAIL=noreply@yourdomain   # defaults to SMTP_USER
+MAIL_FROM_NAME=MyDorm
+```
+
+Do **not** put a real `SMTP_PASS` in any file that gets committed — set it in
+the CloudLinux **Environment variables** panel (or use Option A).
+
+If **no** SMTP is configured at all, reset still works for testing: set
+`OTP_DEV_MODE=true` and the request endpoint returns the code in its JSON
+response (and logs it) instead of emailing it. Leave this **off** in
+production. Rate limits: 5 codes/hour per account, 60-second resend cooldown,
+codes expire in 10 minutes, 5 verify attempts each.
+
 ## What this app deliberately does NOT use
 
 To stay compatible with Passenger/shared hosting, this app avoids:
