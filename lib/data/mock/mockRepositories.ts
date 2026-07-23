@@ -78,6 +78,63 @@ function ensureMealDay(hostelId: string, date: string): MealDay {
   return cloned;
 }
 
+/** Materialises meal rows for every date up to today, mirroring the MySQL
+ * backend's sealing: each day pins the hostel's offer, and every boarder who
+ * had already joined by that day gets an explicit entry (defaulting to that
+ * day's offer). Counting then reads real rows, so the roster, the day totals
+ * and billing always agree — a member who never opened the app is still
+ * counted, a closed slot is off for everyone, and a member is never counted
+ * for a day before they joined. Idempotent (sealed days are left untouched). */
+function sealMockDays(hostelId: string, from: string, to: string) {
+  const last = to < today() ? to : today();
+  if (from > last) return;
+  const hostel = store.data.hostels.find((h) => h.id === hostelId);
+  const offer = {
+    breakfast: hostel?.settings.mealsOffered?.breakfast ?? true,
+    lunch: hostel?.settings.mealsOffered?.lunch ?? true,
+    dinner: hostel?.settings.mealsOffered?.dinner ?? true,
+  };
+  const boarders = store.data.users.filter(
+    (u) => u.hostelId === hostelId && !u.banned && u.role !== "cook" && isHostelMember(u.role)
+  );
+  let changed = false;
+  for (let day = from; day <= last; day = addDays(day, 1)) {
+    const idx = store.data.mealDays.findIndex((d) => d.hostelId === hostelId && d.date === day);
+    const existing = idx === -1 ? undefined : store.data.mealDays[idx];
+    if (existing?.sealed) continue;
+    const mo = existing?.mealsOffered;
+    const mealsOffered = {
+      breakfast: mo?.breakfast ?? offer.breakfast,
+      lunch: mo?.lunch ?? offer.lunch,
+      dinner: mo?.dinner ?? offer.dinner,
+    };
+    const entries = { ...(existing?.entries ?? {}) };
+    for (const b of boarders) {
+      const joined = b.joinedAt?.slice(0, 10);
+      if (joined && joined > day) continue; // not a boarder yet
+      if (!entries[b.id]) {
+        entries[b.id] = {
+          breakfast: { on: mealsOffered.breakfast, guestCount: 0 },
+          lunch: { on: mealsOffered.lunch, guestCount: 0 },
+          dinner: { on: mealsOffered.dinner, guestCount: 0 },
+        };
+      }
+    }
+    const record: MealDay = {
+      hostelId,
+      date: day,
+      entries,
+      mealsOffered,
+      sealed: true,
+      ...(existing?.shoppingUserId ? { shoppingUserId: existing.shoppingUserId } : {}),
+    };
+    if (idx === -1) store.data.mealDays.push(record);
+    else store.data.mealDays[idx] = record;
+    changed = true;
+  }
+  if (changed) store.emit(`mealDay:${hostelId}`);
+}
+
 // ── Activity log ────────────────────────────────────────────────────────────
 // The mock layer records who performed each audited action. The session
 // provider registers the signed-in user here; a real backend would derive
@@ -857,24 +914,30 @@ const hostels: HostelRepository = {
         mealsOffered: { ...h.settings.mealsOffered, [meal]: offered },
       },
     };
-    if (!offered) {
-      // Closing takes effect from TOMORROW onward: today's entries are left
-      // untouched because meals (incl. guest meals) may already have been
-      // eaten and must stay billable. Past days always keep their data.
-      const from = addDays(today(), 1);
-      store.data.mealDays = store.data.mealDays.map((d) => {
-        if (d.hostelId !== hostelId || d.date < from) return d;
-        const entries = Object.fromEntries(
-          Object.entries(d.entries).map(([uid, e]) => [
-            uid,
-            { ...e, [meal]: { on: false, guestCount: 0 } },
-          ])
-        );
-        return { ...d, entries };
-      });
-    }
-    // Reopening changes only the setting — future days default on again for
-    // new entries, and members switch existing days back on themselves.
+    // Takes effect from TODAY onward, matching the MySQL backend: the offer is
+    // re-pinned on today and every future day on record, and closing zeroes
+    // today's count for the slot (incl. guests — nothing is cooked). Past days
+    // are never touched, so their accounts stay correct.
+    const from = today();
+    store.data.mealDays = store.data.mealDays.map((d) => {
+      if (d.hostelId !== hostelId || d.date < from) return d;
+      const base = d.mealsOffered ?? {
+        breakfast: h.settings.mealsOffered?.breakfast ?? true,
+        lunch: h.settings.mealsOffered?.lunch ?? true,
+        dinner: h.settings.mealsOffered?.dinner ?? true,
+      };
+      const mealsOffered = { ...base, [meal]: offered };
+      if (offered) return { ...d, mealsOffered };
+      const entries = Object.fromEntries(
+        Object.entries(d.entries).map(([uid, e]) => [
+          uid,
+          { ...e, [meal]: { on: false, guestCount: 0 } },
+        ])
+      );
+      return { ...d, mealsOffered, entries };
+    });
+    // Reopening re-pins the offer only — future days default on again for new
+    // entries, and members switch existing days back on themselves.
     logActivity(hostelId, offered ? "Meal opened (master)" : "Meal closed (master)", meal);
     store.emit(`hostel:${hostelId}`);
     store.emit("hostels");
@@ -904,12 +967,15 @@ const hostels: HostelRepository = {
 
 const meals: MealRepository = {
   async getActualMealRate(hostelId, month) {
+    sealMockDays(hostelId, `${month}-01`, `${month}-31`);
     return actualMealRateFor(hostelId, month);
   },
   async getMealDay(hostelId, date) {
+    sealMockDays(hostelId, date, date);
     return store.data.mealDays.find((d) => d.hostelId === hostelId && d.date === date) ?? emptyMealDay(hostelId, date);
   },
   async listMealDays(hostelId, range) {
+    sealMockDays(hostelId, range.from, range.to);
     return store.data.mealDays.filter(
       (d) => d.hostelId === hostelId && d.date >= range.from && d.date <= range.to
     );

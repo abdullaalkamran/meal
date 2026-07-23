@@ -44,8 +44,8 @@ function MealsOfferedCard() {
       <div className="mb-1 text-[13.5px] font-extrabold">Meals we offer</div>
       <div className="mb-3 text-[10px] font-semibold text-text-secondary">
         Master switch per meal — a closed meal shows as &ldquo;always closed&rdquo; to every
-        member and isn&rsquo;t counted. Changes apply from tomorrow onward; today and past
-        days keep their records so accounts stay correct.
+        member and isn&rsquo;t counted. Changes apply from today onward; past days keep
+        their records so accounts stay correct.
       </div>
       <div className="flex flex-col divide-y divide-border">
         {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
@@ -73,7 +73,7 @@ function MealsOfferedCard() {
                   <div className="mb-2.5 text-[10.5px] font-bold">
                     {pending.next
                       ? `Offer ${MEAL_LABEL[meal].toLowerCase()} again from today onward? New days will default to on, and members can turn it on themselves.`
-                      : `Close ${MEAL_LABEL[meal].toLowerCase()} from tomorrow onward? Members will see it as always closed and it won't be counted in meals or bills. Today and past days are not changed.`}
+                      : `Close ${MEAL_LABEL[meal].toLowerCase()} from today onward? Members will see it as always closed and it won't be counted in meals or bills. Past days are not changed.`}
                   </div>
                   <div className="flex gap-2">
                     <Button fullWidth onClick={confirm}>
@@ -343,7 +343,8 @@ export function MealsScreen({
         <div className="grid grid-cols-3 gap-2">
           {mealCounts.map((c) => {
             const meta = MEAL_COLORS[c.meal];
-            const closed = !(hostel?.settings.mealsOffered?.[c.meal] ?? true);
+            // The day's pinned offer, so a just-closed slot and the roster agree.
+            const closed = !(day?.mealsOffered?.[c.meal] ?? hostel?.settings.mealsOffered?.[c.meal] ?? true);
             return (
               <div key={c.meal} className={`rounded-btn ${closed ? "bg-bg" : meta.bg} p-2.5 text-center`}>
                 <div className={`text-[14px] font-extrabold ${closed ? "text-text-secondary" : meta.text}`}>
@@ -382,9 +383,12 @@ export function MealsScreen({
               const request = requestFor(m.id);
               // A member only boards from their join date on. Before it they
               // weren't here, so we show "—" (not a default "On") and offer no
-              // edit — matching the counts, which never include them either.
+              // edit. On a sealed day the stored rows ARE the truth: a member
+              // with no row wasn't counted (e.g. joined later that day), so we
+              // also show "—" — keeping the roster identical to the totals.
               const joinedDay = m.joinedAt?.slice(0, 10);
               const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
+              const counted = boarderThatDay && (!!entry || !day?.sealed);
               return (
                 <div
                   key={m.id}
@@ -399,7 +403,7 @@ export function MealsScreen({
                     )}
                   </div>
                   {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-                    if (!boarderThatDay) {
+                    if (!counted) {
                       return (
                         <div key={meal} className="w-6 text-center text-[9.5px] font-extrabold text-text-secondary">
                           —
@@ -426,7 +430,7 @@ export function MealsScreen({
                   })}
                   {!readOnly && (
                     <div className="flex w-16 justify-center">
-                      {!boarderThatDay ? null : request?.status === "approved" ? (
+                      {!counted ? null : request?.status === "approved" ? (
                         <span className="text-[9px] font-extrabold text-primary">Unlocked</span>
                       ) : request?.status === "pending" ? (
                         <button
