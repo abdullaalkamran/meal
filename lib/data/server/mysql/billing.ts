@@ -27,7 +27,7 @@ import type {
 import { currentMonth, formatMonthLabel, formatShortDate } from "../../../utils/date";
 import { isServiceChargeCategory } from "../../../utils/expenseCategories";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity } from "./context";
+import { logActivity, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -170,6 +170,12 @@ export const shoppingCosts: ShoppingCostRepository = {
       for (const day of cost.dates ?? []) {
         await run("INSERT IGNORE INTO shopping_cost_dates (cost_id, day) VALUES (?, ?)", [id, day], tx);
       }
+      await notifyHostelStaff(
+        cost.hostelId,
+        "Shopping cost to approve",
+        `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`,
+        tx
+      );
     });
   },
 

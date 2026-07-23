@@ -8,7 +8,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Queryable } from "./connection";
-import { fromIso, run } from "./connection";
+import { all, fromIso, run } from "./connection";
 import { newId } from "./ids";
 
 export interface Actor {
@@ -64,4 +64,29 @@ export async function notify(
     [newId("notif"), userId, title, body, fromIso(new Date().toISOString())],
     on
   );
+}
+
+/** Notifies the people who approve things for a hostel — its manager, and the
+ * owner too (they run the hostel and may need to act when there's no manager).
+ * Skips whoever performed the action, so a self-triggered request never
+ * notifies its own author. Used for every request that needs staff approval. */
+export async function notifyHostelStaff(
+  hostelId: string,
+  title: string,
+  body: string,
+  on?: Queryable
+): Promise<void> {
+  const [hostel] = await all<{ manager_id: string | null; owner_id: string | null }>(
+    "SELECT manager_id, owner_id FROM hostels WHERE id = ?",
+    [hostelId],
+    on
+  );
+  if (!hostel) return;
+  const actorId = currentActor()?.id;
+  const targets = new Set<string>();
+  if (hostel.manager_id) targets.add(hostel.manager_id);
+  if (hostel.owner_id) targets.add(hostel.owner_id);
+  for (const uid of targets) {
+    if (uid && uid !== actorId) await notify(uid, title, body, on);
+  }
 }

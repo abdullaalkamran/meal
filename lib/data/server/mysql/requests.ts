@@ -28,7 +28,7 @@ import type {
 import { normalizePhone } from "../../../utils/phone";
 import { addDays, today } from "../../../utils/date";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity, notify } from "./context";
+import { logActivity, notify, notifyHostelStaff } from "./context";
 import { ensureEntries, offeredOnDay } from "./meals";
 import { newId } from "./ids";
 
@@ -91,6 +91,12 @@ export const joinRequests: JoinRequestRepository = {
       await run(
         "INSERT INTO join_requests (id, hostel_id, user_id, name, phone, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
         [newId("join"), req.hostelId, req.userId, req.name, req.phone, now()],
+        tx
+      );
+      await notifyHostelStaff(
+        req.hostelId,
+        "New join request",
+        `${req.name} has requested to join your hostel. Review it in Approvals.`,
         tx
       );
     });
@@ -231,6 +237,13 @@ export const transfers: TransferRepository = {
         [newId("tl"), id, now()],
         tx
       );
+      // The member's CURRENT hostel reviews the transfer-out first.
+      await notifyHostelStaff(
+        req.fromHostelId,
+        "Hostel transfer request",
+        "A member has requested to transfer out of your hostel. Review it in Approvals.",
+        tx
+      );
     });
   },
 
@@ -311,6 +324,12 @@ export const mealStops: MealStopRepository = {
       for (const m of req.meals ?? []) {
         await run("INSERT IGNORE INTO meal_stop_meals (request_id, meal) VALUES (?, ?)", [id, m], tx);
       }
+      await notifyHostelStaff(
+        req.hostelId,
+        req.desiredOn ? "Meal resume request" : "Meal stop request",
+        `A member has requested a meal change for ${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}. Review it in Approvals.`,
+        tx
+      );
     });
   },
 
@@ -393,6 +412,12 @@ export const guestMeals: GuestMealRepository = {
     await run(
       "INSERT INTO guest_meal_requests (id, hostel_id, user_id, meal, day, guest_name, qty, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
       [newId("guest"), req.hostelId, req.userId, req.meal, req.date, req.guestName, req.qty]
+    );
+    await notifyHostelStaff(
+      req.hostelId,
+      "Guest meal request",
+      `A member has requested ${req.qty} guest meal${req.qty > 1 ? "s" : ""} (${req.meal}) for ${req.date}. Review it in Approvals.`,
+      undefined
     );
   },
 

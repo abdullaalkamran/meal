@@ -165,6 +165,33 @@ function logActivity(hostelId: string, action: string, detail?: string) {
   store.emit(`activity:${hostelId}`);
 }
 
+function notifyUser(userId: string, title: string, body: string) {
+  store.data.notifications.push({
+    id: nextId("notif"),
+    userId,
+    title,
+    body,
+    read: false,
+    createdAt: new Date().toISOString(),
+  });
+  store.emit(`notifications:${userId}`);
+}
+
+/** Notifies a hostel's manager and owner (the people who approve things),
+ * skipping whoever performed the action. Used for every request that needs
+ * staff approval, so incoming requests never go unseen. */
+function notifyHostelStaff(hostelId: string, title: string, body: string) {
+  const hostel = store.data.hostels.find((h) => h.id === hostelId);
+  if (!hostel) return;
+  const actorId = actingUser?.id;
+  const targets = new Set<string>();
+  if (hostel.managerId) targets.add(hostel.managerId);
+  if (hostel.ownerId) targets.add(hostel.ownerId);
+  for (const uid of targets) {
+    if (uid && uid !== actorId) notifyUser(uid, title, body);
+  }
+}
+
 /** True when the hostel currently cooks this meal slot at all (master meal
  * on/off, set by the manager/owner). Missing settings mean offered. */
 function isMealOffered(hostelId: string, meal: MealSlot): boolean {
@@ -1270,6 +1297,11 @@ const shoppingCosts: ShoppingCostRepository = {
       status: "pending",
       createdAt: new Date().toISOString(),
     });
+    notifyHostelStaff(
+      cost.hostelId,
+      "Shopping cost to approve",
+      `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`
+    );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
   async decide(id, status) {
@@ -1707,6 +1739,11 @@ const cookLeave: CookLeaveRepository = {
       status: "pending",
       createdAt: new Date().toISOString(),
     });
+    notifyHostelStaff(
+      req.hostelId,
+      "Cook leave request",
+      `The cook has requested leave for ${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}. Review it in Approvals.`
+    );
     store.emit(`cookLeave:${req.hostelId}`);
   },
   async decide(id, status, decidedBy) {
@@ -2037,6 +2074,11 @@ const transfers: TransferRepository = {
       stage: "requested",
       timeline: [{ stage: "requested", at: new Date().toISOString() }],
     });
+    notifyHostelStaff(
+      req.fromHostelId,
+      "Hostel transfer request",
+      "A member has requested to transfer out of your hostel. Review it in Approvals."
+    );
     store.emit(`transfers:${req.fromHostelId}`);
     store.emit(`transfers:${req.toHostelId}`);
   },
@@ -2120,6 +2162,11 @@ const joinRequests: JoinRequestRepository = {
       status: "pending",
       createdAt: new Date().toISOString(),
     });
+    notifyHostelStaff(
+      req.hostelId,
+      "New join request",
+      `${req.name} has requested to join your hostel. Review it in Approvals.`
+    );
     store.emit(`joinRequests:${req.hostelId}`);
   },
   async decide(id, status, roomId) {
@@ -2227,6 +2274,11 @@ const mealStops: MealStopRepository = {
   },
   async request(req) {
     store.data.mealStopRequests.push({ ...req, id: nextId("stop"), status: "pending" });
+    notifyHostelStaff(
+      req.hostelId,
+      req.desiredOn ? "Meal resume request" : "Meal stop request",
+      `A member has requested a meal change for ${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}. Review it in Approvals.`
+    );
     store.emit(`mealStops:${req.hostelId}`);
   },
   async decide(id, status) {
@@ -2260,6 +2312,11 @@ const guestMeals: GuestMealRepository = {
   },
   async request(req) {
     store.data.guestMealRequests.push({ ...req, id: nextId("guest"), status: "pending" });
+    notifyHostelStaff(
+      req.hostelId,
+      "Guest meal request",
+      `A member has requested ${req.qty} guest meal${req.qty > 1 ? "s" : ""} (${req.meal}) for ${req.date}. Review it in Approvals.`
+    );
     store.emit(`guestMeals:${req.hostelId}`);
   },
   async decide(id, status) {

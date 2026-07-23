@@ -19,7 +19,7 @@ import type {
   SwapRepository,
 } from "../../repository";
 import { all, fromIso, one, run, toDay, toIso, transaction, type Queryable } from "./connection";
-import { currentActor } from "./context";
+import { currentActor, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -352,6 +352,12 @@ export const cookLeave: CookLeaveRepository = {
       for (const m of req.meals ?? []) {
         await run("INSERT IGNORE INTO cook_leave_meals (request_id, meal) VALUES (?, ?)", [id, m], tx);
       }
+      await notifyHostelStaff(
+        req.hostelId,
+        "Cook leave request",
+        `The cook has requested leave for ${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}. Review it in Approvals.`,
+        tx
+      );
     });
   },
 
