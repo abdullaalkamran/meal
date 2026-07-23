@@ -28,15 +28,24 @@ import { formatMonthLabel, today } from "@/lib/utils/date";
  * past days keep their data so accounts stay correct. */
 function MealsOfferedCard() {
   const { hostel, activeHostelId } = useSession();
+  const { toast } = useToast();
   const [pending, setPending] = useState<{ meal: MealSlot; next: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!hostel) return null;
   const offered = (meal: MealSlot) => hostel.settings.mealsOffered?.[meal] ?? true;
 
   const confirm = async () => {
-    if (!pending || !activeHostelId) return;
-    await repo.hostels.setMealOffered(activeHostelId, pending.meal, pending.next);
-    setPending(null);
+    if (!pending || !activeHostelId || saving) return;
+    setSaving(true);
+    try {
+      await repo.hostels.setMealOffered(activeHostelId, pending.meal, pending.next);
+      setPending(null);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not update this meal.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -65,6 +74,7 @@ function MealsOfferedCard() {
                 </div>
                 <Switch
                   checked={isOn}
+                  disabled={saving}
                   onChange={(next) => setPending({ meal, next })}
                 />
               </div>
@@ -76,10 +86,10 @@ function MealsOfferedCard() {
                       : `Close ${MEAL_LABEL[meal].toLowerCase()} from today onward? Members will see it as always closed and it won't be counted in meals or bills. Past days are not changed.`}
                   </div>
                   <div className="flex gap-2">
-                    <Button fullWidth onClick={confirm}>
-                      {pending.next ? "Yes, offer it" : "Yes, close it"}
+                    <Button fullWidth onClick={confirm} disabled={saving}>
+                      {saving ? "Saving…" : pending.next ? "Yes, offer it" : "Yes, close it"}
                     </Button>
-                    <Button fullWidth variant="secondary" onClick={() => setPending(null)}>
+                    <Button fullWidth variant="secondary" onClick={() => setPending(null)} disabled={saving}>
                       Cancel
                     </Button>
                   </div>

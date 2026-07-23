@@ -121,6 +121,31 @@ export async function ensureEntries(hostelId: string, day: string, userId: strin
 export async function sealDays(hostelId: string, from: string, to: string): Promise<void> {
   const last = to < today() ? to : today();
   if (from > last) return;
+
+  // Fast path: this runs on every getMealDay/listMealDays/getActualMealRate
+  // call — and getActualMealRate reseals the WHOLE MONTH every time — so on
+  // an ordinary poll (every 2.5s, per active viewer) almost always nothing
+  // has changed since the last call. If every day in range is already
+  // sealed and no boarder has joined since the range started, there is
+  // nothing left to top up, so skip the loop below entirely. Without this,
+  // the same top-up work reran on every single poll all day even when
+  // nothing had changed — on its own enough to saturate the shared-hosting
+  // connection pool under normal traffic.
+  const expectedDays = Math.round((Date.parse(last) - Date.parse(from)) / 86_400_000) + 1;
+  const sealedCount = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ? AND sealed_at IS NOT NULL",
+    [hostelId, from, last]
+  );
+  if (Number(sealedCount?.n ?? 0) === expectedDays) {
+    const newJoiner = await one<{ id: string }>(
+      `SELECT id FROM users WHERE hostel_id = ? AND banned = 0
+         AND role NOT IN ('cook','owner','superadmin','marketing','service')
+         AND joined_at >= ? LIMIT 1`,
+      [hostelId, from]
+    );
+    if (!newJoiner) return;
+  }
+
   await transaction(async (tx) => {
     for (let day = from; day <= last; day = addDays(day, 1)) {
       await ensureMealDay(hostelId, day, tx);
