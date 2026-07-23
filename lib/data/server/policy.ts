@@ -65,6 +65,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
     updateSettings: [...HOSTEL_STAFF, "superadmin"],
     setMealOffered: HOSTEL_STAFF,
     setSuspended: PLATFORM_ADMIN,
+    setVerified: SERVICE_TEAM,
   },
   rooms: {
     create: HOSTEL_STAFF,

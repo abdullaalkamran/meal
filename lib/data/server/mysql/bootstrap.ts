@@ -150,6 +150,11 @@ async function ensureDutyGroupSizeColumn(): Promise<void> {
   await run("ALTER TABLE duty_plans ADD COLUMN group_size INT NOT NULL DEFAULT 1 AFTER budget_per_day");
 }
 
+async function ensureHostelVerifiedColumn(): Promise<void> {
+  if (await columnExists("hostels", "verified")) return;
+  await run("ALTER TABLE hostels ADD COLUMN verified BOOLEAN NOT NULL DEFAULT FALSE AFTER meal_toggle_cutoff");
+}
+
 async function ensureAdvanceRentColumns(): Promise<void> {
   if (!(await columnExists("hostels", "advance_rent_required"))) {
     await run(
@@ -250,6 +255,7 @@ export function ensureReady(): Promise<void> {
       await ensureShoppingCostStatusColumn();
       await ensureAdvanceRentColumns();
       await ensureDutyGroupSizeColumn();
+      await ensureHostelVerifiedColumn();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

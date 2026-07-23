@@ -984,6 +984,14 @@ const hostels: HostelRepository = {
     store.emit(`hostel:${hostelId}`);
     store.emit("hostels");
   },
+  async setVerified(hostelId, verified) {
+    const idx = store.data.hostels.findIndex((x) => x.id === hostelId);
+    if (idx === -1) return;
+    store.data.hostels[idx] = { ...store.data.hostels[idx], verified };
+    logActivity(hostelId, verified ? "Hostel verified" : "Hostel verification removed");
+    store.emit(`hostel:${hostelId}`);
+    store.emit("hostels");
+  },
   subscribe(hostelId, cb) {
     const fire = () => {
       const h = store.data.hostels.find((x) => x.id === hostelId);

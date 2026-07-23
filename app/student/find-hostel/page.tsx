@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Building2, Clock, QrCode, ScanLine, Search } from "lucide-react";
+import { BadgeCheck, Building2, ChevronRight, Clock, QrCode, ScanLine, Search } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { QrScannerSheet } from "@/components/ui/QrScannerSheet";
 import { MyQrSheet } from "@/components/student/MyQrSheet";
+import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
 import { parseHostelCode } from "@/lib/utils/qr";
 import { repo, type Hostel, type JoinRequest, type Room } from "@/lib/data";
 
@@ -26,6 +27,7 @@ function FindHostelInner() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [myQrOpen, setMyQrOpen] = useState(false);
   const [scannedHostel, setScannedHostel] = useState<Hostel | null>(null);
+  const [detailHostel, setDetailHostel] = useState<Hostel | null>(null);
 
   const load = async () => {
     const all = (await repo.hostels.listAll()).filter((h) => !h.suspended);
@@ -184,25 +186,34 @@ function FindHostelInner() {
           const invited = h.id === invitedHostelId;
           return (
             <Card key={h.id} className={invited ? "border border-primary" : undefined}>
-              <div className="mb-2.5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDetailHostel(h)}
+                className="mb-2.5 flex w-full items-center gap-3 text-left"
+              >
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-                  <Icon icon={Building2} size={17} />
+                  <Icon icon={h.verified ? BadgeCheck : Building2} size={17} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-[12.5px] font-extrabold">
-                    {h.name}
+                  <div className="flex items-center gap-1.5 text-[12.5px] font-extrabold">
+                    <span className="truncate">{h.name}</span>
+                    {h.verified && (
+                      <span className="flex shrink-0 items-center gap-0.5 rounded-pill bg-primary-soft px-1.5 py-0.5 text-[8px] font-extrabold text-primary">
+                        <Icon icon={BadgeCheck} size={9} /> Verified
+                      </span>
+                    )}
                     {invited && (
-                      <span className="rounded-pill bg-primary-soft px-2 py-0.5 text-[8.5px] font-extrabold text-primary">
+                      <span className="shrink-0 rounded-pill bg-primary-soft px-2 py-0.5 text-[8.5px] font-extrabold text-primary">
                         Invited
                       </span>
                     )}
                   </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
-                    {h.area} · {seats} free seat{seats === 1 ? "" : "s"} · meals at actual
-                    monthly cost
+                    {h.area} · {seats} free seat{seats === 1 ? "" : "s"} · tap for details
                   </div>
                 </div>
-              </div>
+                <Icon icon={ChevronRight} size={16} className="shrink-0 text-text-secondary" />
+              </button>
               {pending ? (
                 <div className="rounded-btn bg-bg px-3 py-2.5 text-center text-[11px] font-extrabold text-text-secondary">
                   Request pending…
@@ -225,6 +236,16 @@ function FindHostelInner() {
         onScan={(text) => void handleScan(text)}
       />
       <MyQrSheet open={myQrOpen} onClose={() => setMyQrOpen(false)} user={user} />
+      <HostelDetailSheet
+        open={!!detailHostel}
+        onClose={() => setDetailHostel(null)}
+        hostel={detailHostel}
+        pending={!!(detailHostel && requestFor(detailHostel.id))}
+        onSendRequest={(h) => {
+          void sendRequest(h);
+          setDetailHostel(null);
+        }}
+      />
     </div>
   );
 }

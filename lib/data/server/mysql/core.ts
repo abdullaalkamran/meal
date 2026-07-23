@@ -78,7 +78,7 @@ interface HostelRow {
   shopping_rotation_policy: "spin-wheel" | "manual"; service_charge_monthly: number;
   advance_rent_required: number;
   offers_breakfast: number; offers_lunch: number; offers_dinner: number;
-  meal_toggle_cutoff: string;
+  meal_toggle_cutoff: string; verified: number;
 }
 
 interface RoomRow {
@@ -174,6 +174,7 @@ async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
     cookMonthlySalary: r.cook_monthly_salary == null ? undefined : Number(r.cook_monthly_salary),
     settings,
     suspended: toBool(r.suspended) || undefined,
+    verified: toBool(r.verified) || undefined,
   }) as Hostel;
 }
 
@@ -547,7 +548,7 @@ export const rooms: RoomRepository = {
 // ── Hostels ────────────────────────────────────────────────────────────────
 
 const HOSTEL_COLS =
-  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff";
+  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff, verified";
 
 async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
   if (settings.mealCutoff) {
@@ -951,6 +952,11 @@ export const hostels: HostelRepository = {
 
   async setSuspended(hostelId, suspended) {
     await run("UPDATE hostels SET suspended = ? WHERE id = ?", [suspended ? 1 : 0, hostelId]);
+  },
+
+  async setVerified(hostelId, verified) {
+    await run("UPDATE hostels SET verified = ? WHERE id = ?", [verified ? 1 : 0, hostelId]);
+    await logActivity(hostelId, verified ? "Hostel verified" : "Hostel verification removed");
   },
 
   subscribe: serverOnly,

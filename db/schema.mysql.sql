@@ -59,6 +59,8 @@ CREATE TABLE hostels (
   offers_dinner        BOOLEAN NOT NULL DEFAULT TRUE,
   -- Members may toggle a date until this time on the previous day.
   meal_toggle_cutoff   TIME NOT NULL DEFAULT '22:00:00',
+  -- The platform's Service Manager verified this hostel's details are genuine.
+  verified             BOOLEAN NOT NULL DEFAULT FALSE,
   created_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   INDEX idx_hostels_owner (owner_id),
   INDEX idx_hostels_area (division, district, thana)

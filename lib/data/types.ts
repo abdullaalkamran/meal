@@ -209,6 +209,9 @@ export interface Hostel {
   /** Super Admin suspended this hostel from the platform — a soft flag shown in
    * the admin directory; kept out of "active hostels" counts. */
   suspended?: boolean;
+  /** The platform's Service Manager has verified this hostel (its details are
+   * genuine) — shows a "Verified" badge to people browsing hostels to join. */
+  verified?: boolean;
 }
 
 export type NewHostel = Omit<Hostel, "id">;

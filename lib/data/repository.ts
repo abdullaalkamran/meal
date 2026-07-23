@@ -181,6 +181,8 @@ export interface HostelRepository {
   setMealOffered(hostelId: string, meal: MealSlot, offered: boolean): Promise<void>;
   /** Super Admin suspend/reactivate a hostel on the platform. */
   setSuspended(hostelId: string, suspended: boolean): Promise<void>;
+  /** Service Manager marks a hostel's details as verified (or removes it). */
+  setVerified(hostelId: string, verified: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (hostel: Hostel) => void): Unsubscribe;
   /** Fires on any hostel-list change (create/update/suspend). */
   subscribeAll(cb: (hostels: Hostel[]) => void): Unsubscribe;
