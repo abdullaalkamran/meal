@@ -104,11 +104,19 @@ export async function ensureEntries(hostelId: string, day: string, userId: strin
  * active boarder an explicit row (without touching rows that already exist,
  * so members' own choices win).
  *
- * Runs the per-boarder INSERT IGNORE even for already-sealed days, so a
- * member who joins AFTER a day was first sealed still gets counted for every
- * day since they joined — a hostel adding a member mid-day still cooks for
- * them today. Existing rows are never rewritten, so it stays idempotent and a
- * sealed day's history can't be altered.
+ * Tops up already-sealed days too (not just brand-new ones), so a member who
+ * joins AFTER a day was first sealed still gets counted for every day since
+ * they joined — a hostel adding a member mid-day still cooks for them today.
+ * Existing rows are never rewritten, so it stays idempotent and a sealed
+ * day's history can't be altered.
+ *
+ * The top-up is one INSERT IGNORE ... SELECT per meal slot (3 queries),
+ * not one query per boarder per slot — this runs on every getMealDay/
+ * listMealDays/getActualMealRate call (the last one seals the WHOLE month
+ * every time), so it must stay O(days), never O(days × boarders). A
+ * per-boarder loop here previously reprocessed every already-sealed day on
+ * every single read, which under shared-hosting query-rate/CPU limits was
+ * enough to time out the whole site under normal traffic.
  */
 export async function sealDays(hostelId: string, from: string, to: string): Promise<void> {
   const last = to < today() ? to : today();
@@ -117,26 +125,22 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
     for (let day = from; day <= last; day = addDays(day, 1)) {
       await ensureMealDay(hostelId, day, tx);
       const offered = await offeredOnDay(hostelId, day, tx);
-      // Every active boarder who had already joined by this day. A member who
-      // joined later gets no row for days before their join (join-date filter),
-      // but IS topped up for every day on/after it, even if the day was sealed
-      // before they arrived.
-      const boarders = await all<{ id: string }>(
-        `SELECT id FROM users
-          WHERE hostel_id = ? AND banned = 0
-            AND role NOT IN ('cook','owner','superadmin','marketing','service')
-            AND (joined_at IS NULL OR joined_at <= ?)`,
-        [hostelId, day],
-        tx
-      );
-      for (const b of boarders) {
-        for (const slot of MEALS) {
-          await run(
-            "INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count) VALUES (?, ?, ?, ?, ?, 0)",
-            [hostelId, day, b.id, slot, offered[slot] ? 1 : 0],
-            tx
-          );
-        }
+      // Every active boarder who had already joined by this day gets a row
+      // for each slot, server-side — no per-row round trip. A member who
+      // joined later gets no row for days before their join (join-date
+      // filter), but IS topped up for every day on/after it, even if the
+      // day was sealed before they arrived.
+      for (const slot of MEALS) {
+        await run(
+          `INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count)
+           SELECT ?, ?, u.id, ?, ?, 0
+             FROM users u
+            WHERE u.hostel_id = ? AND u.banned = 0
+              AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
+              AND (u.joined_at IS NULL OR u.joined_at <= ?)`,
+          [hostelId, day, slot, offered[slot] ? 1 : 0, hostelId, day],
+          tx
+        );
       }
       await run(
         "UPDATE meal_days SET sealed_at = ? WHERE hostel_id = ? AND day = ? AND sealed_at IS NULL",
