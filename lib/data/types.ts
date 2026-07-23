@@ -278,8 +278,13 @@ export interface DutyPlan {
   startDate: string;
   endDate: string;
   memberIds: string[];
-  /** Each block's userIds has length 1 (individual) or 2 (companion pair) for shopping duty. */
+  /** Each block is a date slot. For a spin rotation it starts empty and fills
+   * as members spin to claim it, up to `groupSize` members (1 = solo, 2 =
+   * companion pair). Cleaning duty is pre-assigned, so userIds is set upfront. */
   blocks: { userIds: string[]; dates: string[] }[];
+  /** How many members share one block (1 individual, 2 companion) — a block's
+   * capacity when members spin to claim it. Defaults to 1. */
+  groupSize?: number;
   spun: Record<string, boolean>;
   /** Daily shopping budget, e.g. 2500 (৳/day) — only meaningful for type 'shopping'. */
   budgetPerDay?: number;

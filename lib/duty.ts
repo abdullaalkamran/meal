@@ -55,6 +55,31 @@ export function buildEqualBlocks(
   });
 }
 
+/** Splits a date range into `blockCount` equal (remainder-distributed)
+ * consecutive date slots with NO members assigned — used for the shopping
+ * spin rotation, where members claim a slot by spinning the wheel rather than
+ * being pre-assigned. */
+export function buildOpenBlocks(
+  startDate: string,
+  endDate: string,
+  blockCount: number
+): DutyBlock[] {
+  const dates = datesBetween(startDate, endDate);
+  const n = Math.max(1, blockCount);
+  const base = Math.floor(dates.length / n);
+  let extra = dates.length % n;
+  let cursor = 0;
+  const blocks: DutyBlock[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const count = base + (extra > 0 ? 1 : 0);
+    if (extra > 0) extra -= 1;
+    blocks.push({ userIds: [], dates: dates.slice(cursor, cursor + count) });
+    cursor += count;
+  }
+  // Drop trailing empty slots when there are fewer dates than blocks.
+  return blocks.filter((b) => b.dates.length > 0);
+}
+
 /** Splits a fixed number of days-per-member sequentially across a
  * randomly-ordered set of members — used for Cleaning duty (no spin). */
 export function buildFixedBlocks(

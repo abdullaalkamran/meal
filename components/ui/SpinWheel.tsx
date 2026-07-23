@@ -42,32 +42,44 @@ function segmentPath(startDeg: number, endDeg: number): string {
 
 interface SpinWheelProps {
   segments: { id: string; label: string }[];
-  targetIndex: number;
+  /** Called on tap; resolves the segment index the wheel should land on (the
+   * server decides which open slot the member claims). Return -1 to abort. */
+  onSpin: () => Promise<number>;
   disabled?: boolean;
-  onSpinEnd?: () => void;
+  onSpinEnd?: (index: number) => void;
 }
 
-export function SpinWheel({ segments, targetIndex, disabled, onSpinEnd }: SpinWheelProps) {
+export function SpinWheel({ segments, onSpin, disabled, onSpinEnd }: SpinWheelProps) {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
+  const landedRef = useRef(-1);
   const n = segments.length || 1;
   const segAngle = 360 / n;
 
-  const handleTap = () => {
+  const handleTap = async () => {
     if (disabled || spinning || n === 0) return;
-    const midAngle = targetIndex * segAngle + segAngle / 2;
+    setSpinning(true);
+    let index: number;
+    try {
+      index = await onSpin();
+    } catch {
+      setSpinning(false);
+      return;
+    }
+    if (index < 0 || index >= segments.length) {
+      setSpinning(false);
+      return;
+    }
+    landedRef.current = index;
+    const midAngle = index * segAngle + segAngle / 2;
     const targetFinalMod = (360 - midAngle + 360) % 360;
     const delta = ((targetFinalMod - (rotation % 360)) + 360) % 360;
-    const next = rotation + 360 * 6 + delta;
-    setSpinning(true);
-    setRotation(next);
+    setRotation(rotation + 360 * 6 + delta);
   };
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleTransitionEnd = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
     setSpinning(false);
-    onSpinEnd?.();
+    if (landedRef.current >= 0) onSpinEnd?.(landedRef.current);
   };
 
   return (
@@ -135,7 +147,7 @@ export function SpinWheel({ segments, targetIndex, disabled, onSpinEnd }: SpinWh
             height: INNER_R * 2,
           }}
         >
-          {spinning ? "..." : disabled ? "Spun" : "Tap to spin"}
+          {spinning ? "..." : disabled ? "Done" : "Tap to spin"}
         </button>
       </div>
     </div>

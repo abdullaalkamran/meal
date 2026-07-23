@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Calendar } from "@/components/ui/Calendar";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { repo } from "@/lib/data";
-import { buildEqualBlocks } from "@/lib/duty";
+import { buildOpenBlocks } from "@/lib/duty";
 import { today } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
 
@@ -62,7 +62,11 @@ function ManagerShoppingDutyPage() {
   const create = async () => {
     if (!activeHostelId || !rangeStart || !rangeEnd || selected.size < 2) return;
     const memberIds = [...selected];
-    const blocks = buildEqualBlocks(rangeStart, rangeEnd, memberIds, mode === "companion" ? 2 : 1);
+    const groupSize = mode === "companion" ? 2 : 1;
+    // Empty date slots — members claim one by spinning. One slot per member
+    // (individual) or per pair (companion).
+    const blockCount = groupSize === 2 ? Math.ceil(memberIds.length / 2) : memberIds.length;
+    const blocks = buildOpenBlocks(rangeStart, rangeEnd, blockCount);
     await repo.duties.createPlan({
       hostelId: activeHostelId,
       type: "shopping",
@@ -71,6 +75,7 @@ function ManagerShoppingDutyPage() {
       endDate: rangeEnd,
       memberIds,
       blocks,
+      groupSize,
       budgetPerDay: Number(budgetPerDay) || undefined,
     });
     toast("Shopping duty rotation created — spin-the-wheel announcement sent");
@@ -168,26 +173,29 @@ function ManagerShoppingDutyPage() {
 
       {activePlan && (
         <Card>
-          <div className="mb-3 text-[13.5px] font-extrabold">Plan preview</div>
+          <div className="mb-1 text-[13.5px] font-extrabold">Rotation slots</div>
+          <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+            Members claim a slot by spinning the wheel — nobody&rsquo;s dates are set until they spin.
+          </div>
           <div className="flex flex-col gap-2">
-            {activePlan.blocks.map((b) => {
+            {activePlan.blocks.map((b, i) => {
+              const claimed = b.userIds.length > 0;
               const names = b.userIds
                 .map((id) => users.find((u) => u.id === id)?.name ?? id)
                 .join(" + ");
-              const allSpun = b.userIds.every((id) => activePlan.spun[id]);
               return (
                 <div
-                  key={b.userIds.join("-")}
+                  key={i}
                   className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
                 >
                   <div>
-                    <div className="text-[12px] font-bold">{names}</div>
+                    <div className="text-[12px] font-bold">{claimed ? names : "Not claimed yet"}</div>
                     <div className="text-[10.5px] font-semibold text-text-secondary">
                       {b.dates[0]} → {b.dates[b.dates.length - 1]}
                     </div>
                   </div>
-                  <Chip tone={allSpun ? "primary" : "orange"} active>
-                    {allSpun ? "Spun" : "Pending"}
+                  <Chip tone={claimed ? "primary" : "orange"} active>
+                    {claimed ? "Claimed" : "Open"}
                   </Chip>
                 </div>
               );

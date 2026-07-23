@@ -280,6 +280,8 @@ CREATE TABLE duty_plans (
   start_date      DATE        NOT NULL,
   end_date        DATE        NOT NULL,
   budget_per_day  DECIMAL(10,2) NULL,
+  -- How many members share one block when they spin to claim it (1 solo, 2 companion).
+  group_size      INT         NOT NULL DEFAULT 1,
   created_at      DATETIME(3) NOT NULL,
   INDEX idx_duty_plans_hostel (hostel_id),
   CONSTRAINT fk_duty_plans_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE

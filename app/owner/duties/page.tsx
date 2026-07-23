@@ -54,23 +54,23 @@ export default function OwnerDutiesPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {plan.blocks.map((b) => {
+          {plan.blocks.map((b, i) => {
+            const claimed = b.userIds.length > 0;
             const isToday = b.dates.includes(today());
             const isDone = b.dates[b.dates.length - 1] < today();
             const status = isToday ? "Today" : isDone ? "Done" : "Upcoming";
-            const spun = plan.requiresSpin
-              ? b.userIds.every((id) => plan.spun[id])
-                ? "Spun"
-                : "Pending spin"
-              : null;
+            // For a spin rotation an unclaimed slot has no one yet.
+            const note = plan.requiresSpin && !claimed ? "Not claimed yet" : null;
             return (
-              <Card key={b.userIds.join("-")} className="flex items-center justify-between gap-2">
+              <Card key={i} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate text-[12px] font-bold">{b.userIds.map(nameOf).join(" + ")}</div>
+                  <div className="truncate text-[12px] font-bold">
+                    {claimed ? b.userIds.map(nameOf).join(" + ") : "Open slot"}
+                  </div>
                   <div className="text-[10.5px] font-semibold text-text-secondary">
                     {formatShortDate(b.dates[0])}
                     {b.dates.length > 1 ? ` – ${formatShortDate(b.dates[b.dates.length - 1])}` : ""}
-                    {spun ? ` · ${spun}` : ""}
+                    {note ? ` · ${note}` : ""}
                   </div>
                 </div>
                 <span

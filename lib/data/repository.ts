@@ -266,7 +266,9 @@ export interface DutyRepository {
   createPlan(
     plan: Omit<DutyPlan, "id" | "spun" | "createdAt">
   ): Promise<DutyPlan>;
-  spin(planId: string, userId: string): Promise<void>;
+  /** The member claims a still-open block by spinning. Returns the position
+   * (index) of the block they landed on, or -1 if the rotation is full. */
+  spin(planId: string, userId: string): Promise<number>;
   subscribe(hostelId: string, cb: (plans: DutyPlan[]) => void): Unsubscribe;
 }
 

@@ -48,10 +48,10 @@ async function postAnnouncement(
 async function loadPlans(where: string, params: unknown[], on?: Queryable): Promise<DutyPlan[]> {
   const rows = await all<{
     id: string; hostel_id: string; type: DutyPlan["type"]; requires_spin: number;
-    start_date: string; end_date: string; budget_per_day: number | null; created_at: string;
+    start_date: string; end_date: string; budget_per_day: number | null; group_size: number; created_at: string;
   }>(
-    `SELECT id, hostel_id, type, requires_spin, start_date, end_date, budget_per_day, created_at
-       FROM duty_plans WHERE ${where}`,
+    `SELECT id, hostel_id, type, requires_spin, start_date, end_date, budget_per_day, group_size, created_at
+       FROM duty_plans WHERE ${where} ORDER BY created_at DESC`,
     params,
     on
   );
@@ -113,6 +113,7 @@ async function loadPlans(where: string, params: unknown[], on?: Queryable): Prom
     endDate: toDay(r.end_date),
     memberIds: membersByPlan.get(r.id) ?? [],
     blocks: blocksByPlan.get(r.id) ?? [],
+    groupSize: Number(r.group_size) || 1,
     spun: spunByPlan.get(r.id) ?? {},
     ...(r.budget_per_day == null ? {} : { budgetPerDay: Number(r.budget_per_day) }),
     createdAt: toIso(r.created_at),
@@ -127,12 +128,22 @@ export const duties: DutyRepository = {
   async createPlan(plan) {
     const id = newId("duty");
     await transaction(async (tx) => {
+      // A new rotation of the same type REPLACES any still-active one for this
+      // hostel (its blocks/members/spins cascade away), so members never see a
+      // stale previous rotation and are cleanly re-prompted to spin.
+      const stale = await all<{ id: string }>(
+        "SELECT id FROM duty_plans WHERE hostel_id = ? AND type = ? AND end_date >= ?",
+        [plan.hostelId, plan.type, plan.startDate],
+        tx
+      );
+      for (const s of stale) await run("DELETE FROM duty_plans WHERE id = ?", [s.id], tx);
+
       await run(
-        `INSERT INTO duty_plans (id, hostel_id, type, requires_spin, start_date, end_date, budget_per_day, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO duty_plans (id, hostel_id, type, requires_spin, start_date, end_date, budget_per_day, group_size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id, plan.hostelId, plan.type, plan.requiresSpin ? 1 : 0,
-          plan.startDate, plan.endDate, plan.budgetPerDay ?? null, now(),
+          plan.startDate, plan.endDate, plan.budgetPerDay ?? null, plan.groupSize ?? 1, now(),
         ],
         tx
       );
@@ -143,6 +154,8 @@ export const duties: DutyRepository = {
         const block = plan.blocks[i];
         const blockId = newId("block");
         await run("INSERT INTO duty_blocks (id, plan_id, position) VALUES (?, ?, ?)", [blockId, id, i], tx);
+        // For a spin rotation blocks start EMPTY — members claim a slot by
+        // spinning. Cleaning (pre-assigned) still carries its userIds here.
         for (const uid of block.userIds) {
           await run("INSERT IGNORE INTO duty_block_members (block_id, user_id) VALUES (?, ?)", [blockId, uid], tx);
         }
@@ -153,7 +166,7 @@ export const duties: DutyRepository = {
       if (plan.requiresSpin) {
         await postAnnouncement(
           plan.hostelId, "spin-wheel-cta", "Spin the wheel — shopping duty",
-          "A new shopping duty rotation is ready. Spin to reveal your dates.",
+          "A new shopping duty rotation is ready. Spin to claim your dates.",
           { planId: id }, tx
         );
       }
@@ -161,8 +174,44 @@ export const duties: DutyRepository = {
     return (await loadPlans("id = ?", [id]))[0];
   },
 
+  /** Claim a still-open block for this member. Random among blocks that still
+   * have a free seat (< group_size members); returns the block's position, or
+   * -1 if none are open. Idempotent: re-spinning returns the block already
+   * claimed. Serialised per plan by locking its block rows. */
   async spin(planId, userId) {
-    await run("UPDATE duty_plan_members SET spun = 1 WHERE plan_id = ? AND user_id = ?", [planId, userId]);
+    return transaction(async (tx) => {
+      const blockRows = await all<{ id: string; position: number }>(
+        "SELECT id, position FROM duty_blocks WHERE plan_id = ? ORDER BY position FOR UPDATE",
+        [planId],
+        tx
+      );
+      if (blockRows.length === 0) return -1;
+      const groupSize =
+        (await one<{ group_size: number }>("SELECT group_size FROM duty_plans WHERE id = ?", [planId], tx))
+          ?.group_size ?? 1;
+      const ids = blockRows.map((b) => b.id);
+      const memberRows = await all<{ block_id: string; user_id: string }>(
+        `SELECT block_id, user_id FROM duty_block_members WHERE block_id IN (${ids.map(() => "?").join(",")})`,
+        ids,
+        tx
+      );
+      const countByBlock = new Map<string, number>();
+      let already: { id: string; position: number } | undefined;
+      for (const m of memberRows) {
+        countByBlock.set(m.block_id, (countByBlock.get(m.block_id) ?? 0) + 1);
+        if (m.user_id === userId) already = blockRows.find((b) => b.id === m.block_id);
+      }
+      if (already) {
+        await run("UPDATE duty_plan_members SET spun = 1 WHERE plan_id = ? AND user_id = ?", [planId, userId], tx);
+        return already.position;
+      }
+      const open = blockRows.filter((b) => (countByBlock.get(b.id) ?? 0) < groupSize);
+      if (open.length === 0) return -1;
+      const pick = open[Math.floor(Math.random() * open.length)];
+      await run("INSERT IGNORE INTO duty_block_members (block_id, user_id) VALUES (?, ?)", [pick.id, userId], tx);
+      await run("UPDATE duty_plan_members SET spun = 1 WHERE plan_id = ? AND user_id = ?", [planId, userId], tx);
+      return pick.position;
+    });
   },
 
   subscribe: serverOnly,

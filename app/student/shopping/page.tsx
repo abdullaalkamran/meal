@@ -213,14 +213,21 @@ export default function StudentShoppingPage() {
           className="flex flex-col items-center rounded-card py-6 shadow-soft"
           style={{ background: "#181c2e" }}
         >
-          <div className="mb-4 text-[11.5px] font-bold text-white/70">Spin to reveal your dates</div>
+          <div className="mb-4 text-[11.5px] font-bold text-white/70">Spin to claim your dates</div>
           <SpinWheel
-            segments={plan.blocks.map((b) => ({
-              id: b.userIds.join("-"),
-              label: b.userIds.map((id) => nameOf(id).split(" ")[0]).join("+"),
+            segments={plan.blocks.map((b, i) => ({
+              id: String(i),
+              label:
+                b.dates.length > 1
+                  ? `${formatShortDate(b.dates[0])}–${formatShortDate(b.dates.at(-1)!)}`
+                  : formatShortDate(b.dates[0]),
             }))}
-            targetIndex={myBlockIndex}
-            onSpinEnd={() => user && repo.duties.spin(plan.id, user.id)}
+            onSpin={async () => {
+              if (!user) return -1;
+              const index = await repo.duties.spin(plan.id, user.id);
+              if (index < 0) toast("This rotation is already full — ask your manager.");
+              return index;
+            }}
           />
         </div>
       ) : (
@@ -300,7 +307,7 @@ export default function StudentShoppingPage() {
             <div className="mb-3 text-[13.5px] font-extrabold">Request a swap</div>
             <div className="flex flex-col gap-2">
               {plan.blocks
-                .filter((b) => !b.userIds.includes(user?.id ?? ""))
+                .filter((b) => b.userIds.length > 0 && !b.userIds.includes(user?.id ?? ""))
                 .map((b) => (
                   <div
                     key={b.userIds.join("-")}
@@ -382,21 +389,24 @@ export default function StudentShoppingPage() {
           Rotation · {formatMonthLabel(plan.startDate.slice(0, 7))}
         </div>
         <div className="flex flex-col gap-2">
-          {plan.blocks.map((b) => {
+          {plan.blocks.map((b, i) => {
+            const claimed = b.userIds.length > 0;
             const isMe = b.userIds.includes(user?.id ?? "");
             const isToday = b.dates.includes(today());
             const isDone = b.dates.at(-1)! < today();
-            const status = isMe ? "You" : isToday ? "Today" : isDone ? "Done" : "Next";
+            const status = !claimed ? "Open" : isMe ? "You" : isToday ? "Today" : isDone ? "Done" : "Taken";
             return (
               <div
-                key={b.userIds.join("-")}
+                key={i}
                 className={clsx(
                   "flex items-center justify-between rounded-btn px-3 py-2.5 shadow-chip",
                   isMe ? "bg-primary-soft" : "bg-card"
                 )}
               >
                 <div className="min-w-0">
-                  <div className="truncate text-[12px] font-bold">{b.userIds.map(nameOf).join(" + ")}</div>
+                  <div className="truncate text-[12px] font-bold">
+                    {claimed ? b.userIds.map(nameOf).join(" + ") : "Not claimed yet"}
+                  </div>
                   <div className="text-[10.5px] font-semibold text-text-secondary">
                     {formatShortDate(b.dates[0])}
                     {b.dates.length > 1 ? ` – ${formatShortDate(b.dates.at(-1)!)}` : ""}
@@ -409,7 +419,9 @@ export default function StudentShoppingPage() {
                       ? "bg-primary text-white"
                       : status === "Today"
                         ? "bg-orange-soft text-orange"
-                        : "bg-bg text-text-secondary"
+                        : status === "Open"
+                          ? "bg-primary-soft text-primary"
+                          : "bg-bg text-text-secondary"
                   )}
                 >
                   {status}

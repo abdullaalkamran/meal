@@ -145,6 +145,11 @@ async function ensureShoppingCostStatusColumn(): Promise<void> {
   await run("UPDATE shopping_costs SET status = 'approved'");
 }
 
+async function ensureDutyGroupSizeColumn(): Promise<void> {
+  if (await columnExists("duty_plans", "group_size")) return;
+  await run("ALTER TABLE duty_plans ADD COLUMN group_size INT NOT NULL DEFAULT 1 AFTER budget_per_day");
+}
+
 async function ensureAdvanceRentColumns(): Promise<void> {
   if (!(await columnExists("hostels", "advance_rent_required"))) {
     await run(
@@ -244,6 +249,7 @@ export function ensureReady(): Promise<void> {
       await ensureUserCredentialColumns();
       await ensureShoppingCostStatusColumn();
       await ensureAdvanceRentColumns();
+      await ensureDutyGroupSizeColumn();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

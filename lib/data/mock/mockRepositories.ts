@@ -1150,9 +1150,17 @@ const duties: DutyRepository = {
     return store.data.dutyPlans.filter((p) => p.hostelId === hostelId);
   },
   async createPlan(plan) {
+    // A new rotation of the same type REPLACES any still-active one for this
+    // hostel, so members never see a stale rotation and are re-prompted cleanly.
+    store.data.dutyPlans = store.data.dutyPlans.filter(
+      (p) => !(p.hostelId === plan.hostelId && p.type === plan.type && p.endDate >= plan.startDate)
+    );
     const created = {
       ...plan,
       id: nextId("duty"),
+      // Spin blocks start empty (members claim by spinning); keep any userIds
+      // for pre-assigned cleaning duty.
+      blocks: plan.blocks.map((b) => ({ ...b, userIds: [...b.userIds] })),
       spun: Object.fromEntries(plan.memberIds.map((id) => [id, false])),
       createdAt: new Date().toISOString(),
     };
@@ -1163,7 +1171,7 @@ const duties: DutyRepository = {
         hostelId: plan.hostelId,
         kind: "spin-wheel-cta",
         title: "Spin the wheel — shopping duty",
-        body: "A new shopping duty rotation is ready. Spin to reveal your dates.",
+        body: "A new shopping duty rotation is ready. Spin to claim your dates.",
         payload: { planId: created.id },
         createdAt: new Date().toISOString(),
       });
@@ -1174,9 +1182,23 @@ const duties: DutyRepository = {
   },
   async spin(planId, userId) {
     const plan = store.data.dutyPlans.find((p) => p.id === planId);
-    if (!plan || plan.spun[userId]) return;
+    if (!plan) return -1;
+    const groupSize = plan.groupSize ?? 1;
+    const existingIdx = plan.blocks.findIndex((b) => b.userIds.includes(userId));
+    if (existingIdx >= 0) {
+      plan.spun[userId] = true;
+      store.emit(`duties:${plan.hostelId}`);
+      return existingIdx;
+    }
+    const openIdxs = plan.blocks
+      .map((b, i) => (b.userIds.length < groupSize ? i : -1))
+      .filter((i) => i >= 0);
+    if (openIdxs.length === 0) return -1;
+    const pick = openIdxs[Math.floor(Math.random() * openIdxs.length)];
+    plan.blocks[pick].userIds.push(userId);
     plan.spun[userId] = true;
     store.emit(`duties:${plan.hostelId}`);
+    return pick;
   },
   subscribe(hostelId, cb) {
     const fire = () => cb(store.data.dutyPlans.filter((p) => p.hostelId === hostelId));
