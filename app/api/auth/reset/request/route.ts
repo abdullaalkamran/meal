@@ -45,12 +45,28 @@ export async function POST(req: NextRequest) {
   if (created.error) return NextResponse.json({ error: created.error }, { status: 429 });
 
   const result = await sendResetEmail(user.email, created.code!, user.name);
+  const devMode = process.env.OTP_DEV_MODE === "true";
+
+  // The email didn't actually go out (SMTP not set up, or the send failed).
+  // Don't pretend a code was sent — tell the user plainly so they aren't left
+  // waiting for a mail that will never arrive. In dev mode we still return the
+  // code below so the flow stays testable without a mail server.
+  if (!result.sent && !devMode) {
+    return NextResponse.json({
+      ok: true,
+      noEmail: true,
+      message:
+        "We couldn't send a reset email right now — email isn't set up for this app yet. " +
+        "Ask your hostel manager or owner to reset your password.",
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     sentTo: maskEmail(user.email),
     message: `A reset code was sent to ${maskEmail(user.email)}.`,
     // DEV ONLY: surfaces the code when SMTP isn't set up, so the flow is
     // testable without a mail server. Never enabled in production.
-    ...(process.env.OTP_DEV_MODE === "true" ? { devCode: created.code, delivered: result.sent } : {}),
+    ...(devMode ? { devCode: created.code, delivered: result.sent } : {}),
   });
 }
