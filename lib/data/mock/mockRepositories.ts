@@ -126,11 +126,13 @@ function actualMealRateFor(hostelId: string, month: string) {
   const totalShopping = store.data.shoppingCosts
     .filter((c) => c.hostelId === hostelId && c.status === "approved" && c.dates.some((d) => d.startsWith(month)))
     .reduce((sum, c) => sum + c.amount, 0);
-  const boarderIds = new Set(
-    store.data.users
-      .filter((u) => u.hostelId === hostelId && u.role !== "cook" && isHostelMember(u.role) && !u.banned)
-      .map((u) => u.id)
+  const boarders = store.data.users.filter(
+    (u) => u.hostelId === hostelId && u.role !== "cook" && isHostelMember(u.role) && !u.banned
   );
+  const boarderIds = new Set(boarders.map((u) => u.id));
+  // A member only counts from their join date on — before it they weren't
+  // here to eat, so a day earlier than their join never bills to them.
+  const joinedById = new Map(boarders.map((u) => [u.id, u.joinedAt?.slice(0, 10)]));
   let totalMeals = 0;
   for (const day of store.data.mealDays) {
     if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
@@ -138,6 +140,8 @@ function actualMealRateFor(hostelId: string, month: string) {
       if (!isMealConfirmedCooked(hostelId, day.date, slot)) continue;
       for (const [userId, entry] of Object.entries(day.entries)) {
         if (!boarderIds.has(userId)) continue;
+        const joined = joinedById.get(userId);
+        if (joined && joined > day.date) continue;
         totalMeals += (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
       }
     }
@@ -1412,7 +1416,10 @@ const bills: BillRepository = {
 
       let ownMeals = 0;
       let guestMeals = 0;
+      const joinedDay = u.joinedAt?.slice(0, 10);
       for (const day of monthDays) {
+        // Never bill a member for a day before they joined the hostel.
+        if (joinedDay && joinedDay > day.date) continue;
         const entry = day.entries[u.id];
         if (!entry) continue;
         for (const slot of slots) {

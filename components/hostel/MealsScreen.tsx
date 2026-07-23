@@ -380,14 +380,37 @@ export function MealsScreen({
             {users.map((m) => {
               const entry = day?.entries[m.id];
               const request = requestFor(m.id);
+              // A member only boards from their join date on. Before it they
+              // weren't here, so we show "—" (not a default "On") and offer no
+              // edit — matching the counts, which never include them either.
+              const joinedDay = m.joinedAt?.slice(0, 10);
+              const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
               return (
                 <div
                   key={m.id}
                   className={`grid ${rosterCols} items-center gap-2 rounded-btn bg-bg px-2 py-2`}
                 >
-                  <div className="min-w-0 text-[11px] font-bold">{m.name}</div>
+                  <div className="min-w-0 text-[11px] font-bold">
+                    {m.name}
+                    {!boarderThatDay && (
+                      <span className="ml-1 text-[8.5px] font-semibold text-text-secondary">
+                        not joined yet
+                      </span>
+                    )}
+                  </div>
                   {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-                    const on = entry?.[meal]?.on ?? true;
+                    if (!boarderThatDay) {
+                      return (
+                        <div key={meal} className="w-6 text-center text-[9.5px] font-extrabold text-text-secondary">
+                          —
+                        </div>
+                      );
+                    }
+                    // Boarding that day but no explicit row yet (e.g. a future
+                    // day not sealed): fall back to what the day offers.
+                    const offeredThatDay =
+                      day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+                    const on = entry?.[meal]?.on ?? offeredThatDay;
                     const guests = entry?.[meal]?.guestCount ?? 0;
                     return (
                       <div
@@ -403,7 +426,7 @@ export function MealsScreen({
                   })}
                   {!readOnly && (
                     <div className="flex w-16 justify-center">
-                      {request?.status === "approved" ? (
+                      {!boarderThatDay ? null : request?.status === "approved" ? (
                         <span className="text-[9px] font-extrabold text-primary">Unlocked</span>
                       ) : request?.status === "pending" ? (
                         <button

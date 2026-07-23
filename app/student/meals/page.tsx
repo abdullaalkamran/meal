@@ -52,6 +52,10 @@ export default function StudentMealsPage() {
   // Whether the member may still change this date themselves — the same rule
   // the server enforces, so the UI can never offer something that will fail.
   const lock = canToggleMeal(selectedDate, hostel?.settings.mealToggleCutoff);
+  // Before their join date the member wasn't boarding, so a slot has no real
+  // value to show or toggle — never a default "on".
+  const joinedDay = user?.joinedAt?.slice(0, 10);
+  const notYetJoined = !!joinedDay && joinedDay > selectedDate;
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
@@ -236,7 +240,7 @@ export default function StudentMealsPage() {
             // when the day was sealed — not of the hostel's current setting,
             // so past days keep showing what actually happened.
             const closed = !((day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true);
-            const on = !closed && (entry?.on ?? true);
+            const on = !closed && !notYetJoined && (entry?.on ?? true);
             return (
               <div key={meal} className="flex items-center gap-3 py-2.5">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${closed ? "bg-bg" : c.bg}`}>
@@ -250,7 +254,9 @@ export default function StudentMealsPage() {
                       : menu?.dishes[meal]?.join(" · ") || "Menu not set yet"}
                   </div>
                 </div>
-                {closed ? (
+                {notYetJoined ? (
+                  <Chip>Not a boarder yet</Chip>
+                ) : closed ? (
                   <Chip tone="danger" active>
                     Always closed
                   </Chip>

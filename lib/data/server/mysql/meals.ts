@@ -129,12 +129,15 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
       if (knownSet.has(day) && !existing.has(day)) continue; // already sealed
       await ensureMealDay(hostelId, day, tx);
       const offered = await offeredOnDay(hostelId, day, tx);
-      // Everyone who is an active boarder at sealing time.
+      // Everyone who is an active boarder at sealing time AND had already
+      // joined by this day — a member who joined later was not here to eat, so
+      // they get no row (and thus never count) for days before their join.
       const boarders = await all<{ id: string }>(
         `SELECT id FROM users
           WHERE hostel_id = ? AND banned = 0
-            AND role NOT IN ('cook','owner','superadmin','marketing','service')`,
-        [hostelId],
+            AND role NOT IN ('cook','owner','superadmin','marketing','service')
+            AND (joined_at IS NULL OR joined_at <= ?)`,
+        [hostelId, day],
         tx
       );
       for (const b of boarders) {
@@ -236,6 +239,7 @@ export const meals: MealRepository = {
           AND u.hostel_id = ?
           AND u.banned = 0
           AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
+          AND (u.joined_at IS NULL OR u.joined_at <= e.day)
           AND EXISTS (
             SELECT 1 FROM cook_attendance_reports r
              WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
