@@ -79,12 +79,17 @@ function ensureMealDay(hostelId: string, date: string): MealDay {
 }
 
 /** Materialises meal rows for every date up to today, mirroring the MySQL
- * backend's sealing: each day pins the hostel's offer, and every boarder who
- * had already joined by that day gets an explicit entry (defaulting to that
- * day's offer). Counting then reads real rows, so the roster, the day totals
- * and billing always agree — a member who never opened the app is still
- * counted, a closed slot is off for everyone, and a member is never counted
- * for a day before they joined. Idempotent (sealed days are left untouched). */
+ * backend's sealing: each day pins the hostel's offer, and every current
+ * boarder who had already joined by that day gets an explicit entry
+ * (defaulting to that day's offer). Counting then reads real rows, so the
+ * roster, the day totals and billing always agree — a member who never
+ * opened the app is still counted, a closed slot is off for everyone, and a
+ * member is never counted for a day before they joined.
+ *
+ * The per-boarder top-up runs even for already-sealed days (existing rows are
+ * never overwritten), so a member who joins AFTER a day was first sealed is
+ * still counted for every day since they joined — adding a member mid-day
+ * still cooks for them today. */
 function sealMockDays(hostelId: string, from: string, to: string) {
   const last = to < today() ? to : today();
   if (from > last) return;
@@ -101,7 +106,6 @@ function sealMockDays(hostelId: string, from: string, to: string) {
   for (let day = from; day <= last; day = addDays(day, 1)) {
     const idx = store.data.mealDays.findIndex((d) => d.hostelId === hostelId && d.date === day);
     const existing = idx === -1 ? undefined : store.data.mealDays[idx];
-    if (existing?.sealed) continue;
     const mo = existing?.mealsOffered;
     const mealsOffered = {
       breakfast: mo?.breakfast ?? offer.breakfast,
@@ -109,6 +113,7 @@ function sealMockDays(hostelId: string, from: string, to: string) {
       dinner: mo?.dinner ?? offer.dinner,
     };
     const entries = { ...(existing?.entries ?? {}) };
+    let added = !existing || !existing.sealed;
     for (const b of boarders) {
       const joined = b.joinedAt?.slice(0, 10);
       if (joined && joined > day) continue; // not a boarder yet
@@ -118,8 +123,10 @@ function sealMockDays(hostelId: string, from: string, to: string) {
           lunch: { on: mealsOffered.lunch, guestCount: 0 },
           dinner: { on: mealsOffered.dinner, guestCount: 0 },
         };
+        added = true;
       }
     }
+    if (!added) continue; // already sealed and no new members to top up
     const record: MealDay = {
       hostelId,
       date: day,

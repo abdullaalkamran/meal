@@ -99,39 +99,28 @@ export async function ensureEntries(hostelId: string, day: string, userId: strin
 }
 
 /**
- * Seals every unsealed day in [from, min(to, today)]: pins the day's offer and
- * gives every currently-active boarder an explicit row (without touching rows
- * that already exist, so members' own choices win).
+ * Ensures every day in [from, min(to, today)] has a row for every current
+ * boarder, from their join date on: pins the day's offer and gives each
+ * active boarder an explicit row (without touching rows that already exist,
+ * so members' own choices win).
  *
- * This is what makes a member who never opens the app still count, and what
- * freezes a day so later bans/removals/setting changes can't rewrite it.
- * Idempotent, so it's safe to call before any read or count.
+ * Runs the per-boarder INSERT IGNORE even for already-sealed days, so a
+ * member who joins AFTER a day was first sealed still gets counted for every
+ * day since they joined — a hostel adding a member mid-day still cooks for
+ * them today. Existing rows are never rewritten, so it stays idempotent and a
+ * sealed day's history can't be altered.
  */
 export async function sealDays(hostelId: string, from: string, to: string): Promise<void> {
   const last = to < today() ? to : today();
   if (from > last) return;
   await transaction(async (tx) => {
-    const unsealed = await all<{ day: string }>(
-      `SELECT d.day FROM meal_days d
-        WHERE d.hostel_id = ? AND d.day BETWEEN ? AND ? AND d.sealed_at IS NULL`,
-      [hostelId, from, last],
-      tx
-    );
-    // Days nobody ever touched have no row yet — they still need sealing.
-    const existing = new Set(unsealed.map((d) => toDay(d.day)));
-    const known = await all<{ day: string }>(
-      "SELECT day FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ?",
-      [hostelId, from, last],
-      tx
-    );
-    const knownSet = new Set(known.map((d) => toDay(d.day)));
     for (let day = from; day <= last; day = addDays(day, 1)) {
-      if (knownSet.has(day) && !existing.has(day)) continue; // already sealed
       await ensureMealDay(hostelId, day, tx);
       const offered = await offeredOnDay(hostelId, day, tx);
-      // Everyone who is an active boarder at sealing time AND had already
-      // joined by this day — a member who joined later was not here to eat, so
-      // they get no row (and thus never count) for days before their join.
+      // Every active boarder who had already joined by this day. A member who
+      // joined later gets no row for days before their join (join-date filter),
+      // but IS topped up for every day on/after it, even if the day was sealed
+      // before they arrived.
       const boarders = await all<{ id: string }>(
         `SELECT id FROM users
           WHERE hostel_id = ? AND banned = 0
