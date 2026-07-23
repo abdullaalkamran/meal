@@ -65,7 +65,7 @@ interface UserRow {
   division: string | null; district: string | null; thana: string | null;
   meals_suspended: number; banned: number;
   manager_rating: number | null; manager_rating_note: string | null;
-  joined_at: string | null;
+  joined_at: string | null; advance_held: number;
   notify_announcements: number; notify_bills: number; notify_monthly_report: number;
 }
 
@@ -76,6 +76,7 @@ interface HostelRow {
   meal_rate: number; kitchen_location: string | null; cook_monthly_salary: number | null;
   suspended: number; guest_meal_price: number; meal_stop_requires_approval: number;
   shopping_rotation_policy: "spin-wheel" | "manual"; service_charge_monthly: number;
+  advance_rent_required: number;
   offers_breakfast: number; offers_lunch: number; offers_dinner: number;
   meal_toggle_cutoff: string;
 }
@@ -106,6 +107,7 @@ function toUser(r: UserRow): User {
     managerRating: (r.manager_rating as Stars | null) ?? undefined,
     managerRatingNote: r.manager_rating_note ?? undefined,
     joinedAt: r.joined_at ? toDay(r.joined_at) : undefined,
+    advanceHeld: Number(r.advance_held) || undefined,
     notificationPrefs: {
       announcements: toBool(r.notify_announcements),
       bills: toBool(r.notify_bills),
@@ -138,6 +140,7 @@ async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
     mealStopRequiresApproval: toBool(r.meal_stop_requires_approval),
     shoppingRotationPolicy: r.shopping_rotation_policy,
     serviceChargeMonthly: Number(r.service_charge_monthly),
+    advanceRentRequired: toBool(r.advance_rent_required) || undefined,
     mealsOffered: {
       breakfast: toBool(r.offers_breakfast),
       lunch: toBool(r.offers_lunch),
@@ -191,7 +194,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, banned, manager_rating, manager_rating_note, joined_at, notify_announcements, notify_bills, notify_monthly_report";
+  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
@@ -317,6 +320,7 @@ export const users: UserRepository = {
     if (patch.managerRating !== undefined) put("manager_rating", patch.managerRating ?? null);
     if (patch.managerRatingNote !== undefined) put("manager_rating_note", patch.managerRatingNote ?? null);
     if (patch.joinedAt !== undefined) put("joined_at", patch.joinedAt ?? null);
+    if (patch.advanceHeld !== undefined) put("advance_held", patch.advanceHeld ?? 0);
     if ("address" in patch) {
       put("division", patch.address?.division ?? null);
       put("district", patch.address?.district ?? null);
@@ -543,7 +547,7 @@ export const rooms: RoomRepository = {
 // ── Hostels ────────────────────────────────────────────────────────────────
 
 const HOSTEL_COLS =
-  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff";
+  "id, name, area, division, district, thana, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff";
 
 async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
   if (settings.mealCutoff) {
@@ -578,6 +582,7 @@ async function writeSettings(hostelId: string, settings: Partial<HostelSettings>
   if (settings.mealStopRequiresApproval !== undefined) { sets.push("meal_stop_requires_approval = ?"); params.push(settings.mealStopRequiresApproval ? 1 : 0); }
   if (settings.shoppingRotationPolicy !== undefined) { sets.push("shopping_rotation_policy = ?"); params.push(settings.shoppingRotationPolicy); }
   if (settings.serviceChargeMonthly !== undefined) { sets.push("service_charge_monthly = ?"); params.push(settings.serviceChargeMonthly); }
+  if (settings.advanceRentRequired !== undefined) { sets.push("advance_rent_required = ?"); params.push(settings.advanceRentRequired ? 1 : 0); }
   if (settings.mealToggleCutoff !== undefined) {
     const t = settings.mealToggleCutoff;
     sets.push("meal_toggle_cutoff = ?");

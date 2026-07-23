@@ -162,6 +162,7 @@ export function GenerateBillsSheet({
   const [includedSalaryIds, setIncludedSalaryIds] = useState<Set<string>>(new Set());
   const [otherExpenseCount, setOtherExpenseCount] = useState(0);
   const [dueDate, setDueDate] = useState(lastDayOfMonth(month));
+  const [rentMonth, setRentMonth] = useState(month);
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
@@ -191,6 +192,7 @@ export function GenerateBillsSheet({
     });
     queueMicrotask(() => {
       setDueDate(lastDayOfMonth(month));
+      setRentMonth(month);
     });
   }, [open, hostelId, month]);
 
@@ -210,6 +212,7 @@ export function GenerateBillsSheet({
       includeServiceExpenseIds: [...billedUtilities.map((e) => e.id), ...includedUtilityIds],
       includeSalaryExpenseIds: [...billedSalary.map((e) => e.id), ...includedSalaryIds],
       dueDate: dueDate || undefined,
+      rentMonth: rentMonth || undefined,
     });
     setGenerating(false);
     onGenerated(created.length);
@@ -267,6 +270,21 @@ export function GenerateBillsSheet({
           billed to members — visible in Recent expenses only.
         </div>
       )}
+
+      <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+        Rent is for the month of
+      </div>
+      <input
+        type="month"
+        value={rentMonth}
+        onChange={(e) => setRentMonth(e.target.value)}
+        className="mb-1 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+      />
+      <div className="mb-4 text-[9.5px] font-semibold text-text-secondary">
+        Labels the room-rent line on each bill{" "}
+        {rentMonth && rentMonth !== month ? `(${formatMonthLabel(rentMonth)})` : `(defaults to ${formatMonthLabel(month)})`}.
+        Use this if you collect rent for a specific — often the next — month.
+      </div>
 
       <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
         Last day of payment

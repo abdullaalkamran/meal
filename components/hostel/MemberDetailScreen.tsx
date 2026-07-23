@@ -135,6 +135,11 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
     toast(`${member.name.split(" ")[0]} removed`);
     router.push(listHref);
   };
+  const settleAdvance = async () => {
+    if (!activeHostelId) return;
+    await repo.bills.applyAdvanceOnLeave(activeHostelId, member.id);
+    toast(`Advance rent credited to ${member.name.split(" ")[0]}'s latest bill`);
+  };
   const makeManager = async () => {
     if (!activeHostelId) return;
     try {
@@ -434,6 +439,29 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
                 <Icon icon={ShieldCheck} size={15} /> Make hostel manager
               </button>
             ))}
+          {member.role !== "manager" && (member.advanceHeld ?? 0) > 0 && (
+            <div className="rounded-btn bg-primary-soft px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-extrabold uppercase tracking-wide text-primary">
+                  Advance rent held
+                </div>
+                <div className="text-[13px] font-extrabold text-primary">
+                  {formatBDT(member.advanceHeld ?? 0)}
+                </div>
+              </div>
+              <div className="mt-0.5 mb-2 text-[9.5px] font-semibold text-primary/80">
+                Collected on their first bill. When they leave, credit it against their
+                final bill to cover the last month&rsquo;s rent.
+              </div>
+              <button
+                type="button"
+                onClick={settleAdvance}
+                className="min-h-10 w-full rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+              >
+                Apply advance to final bill (leaving)
+              </button>
+            </div>
+          )}
           {member.role !== "manager" &&
             (member.banned ? (
               <button

@@ -48,6 +48,9 @@ CREATE TABLE hostels (
   meal_stop_requires_approval BOOLEAN     NOT NULL DEFAULT TRUE,
   shopping_rotation_policy  ENUM('spin-wheel','manual') NOT NULL DEFAULT 'spin-wheel',
   service_charge_monthly    DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- When on, a joining member owes one month's advance rent on their first
+  -- bill; it's held (users.advance_held) and credited back when they leave.
+  advance_rent_required     BOOLEAN NOT NULL DEFAULT FALSE,
   -- Master meal on/off per slot (HostelSettings.mealsOffered). This is the
   -- CURRENT setting; what each past day actually offered is pinned on
   -- meal_days so history can't be rewritten by changing it.
@@ -93,6 +96,9 @@ CREATE TABLE users (
   manager_rating      TINYINT      NULL,
   manager_rating_note TEXT         NULL,
   joined_at           DATE         NULL,
+  -- Advance rent (৳) currently held for this member (User.advanceHeld) when
+  -- the hostel requires it — charged on the first bill, credited on leave.
+  advance_held        DECIMAL(10,2) NOT NULL DEFAULT 0,
   -- notificationPrefs: missing key = enabled, so these default TRUE.
   notify_announcements BOOLEAN NOT NULL DEFAULT TRUE,
   notify_bills         BOOLEAN NOT NULL DEFAULT TRUE,

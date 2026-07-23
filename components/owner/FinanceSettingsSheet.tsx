@@ -24,6 +24,7 @@ export function FinanceSettingsSheet({
 }) {
   const hostel = useHostel(hostelId ?? undefined);
   const [serviceCharge, setServiceCharge] = useState("");
+  const [advanceRent, setAdvanceRent] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Prefill once per open, but only after the live hostel record has actually
@@ -39,6 +40,7 @@ export function FinanceSettingsSheet({
     prefilled.current = true;
     queueMicrotask(() => {
       setServiceCharge(String(hostel.settings.serviceChargeMonthly ?? 0));
+      setAdvanceRent(hostel.settings.advanceRentRequired ?? false);
     });
   }, [open, hostel]);
 
@@ -47,7 +49,10 @@ export function FinanceSettingsSheet({
   const save = async () => {
     setSaving(true);
     const charge = Math.max(0, Number(serviceCharge) || 0);
-    await repo.hostels.updateSettings(hostel.id, { serviceChargeMonthly: charge });
+    await repo.hostels.updateSettings(hostel.id, {
+      serviceChargeMonthly: charge,
+      advanceRentRequired: advanceRent,
+    });
     setSaving(false);
     onSaved?.();
     onClose();
@@ -77,6 +82,31 @@ export function FinanceSettingsSheet({
           <> Currently {formatBDT(hostel.settings.serviceChargeMonthly)}/month.</>
         ) : null}
       </div>
+
+      <button
+        type="button"
+        onClick={() => setAdvanceRent((v) => !v)}
+        className="mb-4 flex w-full items-center gap-3 rounded-btn border border-border px-3 py-2.5 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="text-[11.5px] font-extrabold">Require 1 month advance rent</div>
+          <div className="text-[9.5px] font-semibold text-text-secondary">
+            A joining member&rsquo;s first bill charges an extra month of rent (2 months total),
+            held and credited back against their final bill when they leave.
+          </div>
+        </div>
+        <div
+          className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${
+            advanceRent ? "bg-primary" : "bg-border"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${
+              advanceRent ? "left-[18px]" : "left-0.5"
+            }`}
+          />
+        </div>
+      </button>
 
       <div className="mb-4 rounded-btn bg-bg px-3 py-2.5 text-[10px] font-semibold text-text-secondary">
         <span className="font-extrabold">Meal rate is automatic</span> — each month&rsquo;s

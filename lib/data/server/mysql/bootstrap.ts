@@ -145,6 +145,19 @@ async function ensureShoppingCostStatusColumn(): Promise<void> {
   await run("UPDATE shopping_costs SET status = 'approved'");
 }
 
+async function ensureAdvanceRentColumns(): Promise<void> {
+  if (!(await columnExists("hostels", "advance_rent_required"))) {
+    await run(
+      "ALTER TABLE hostels ADD COLUMN advance_rent_required BOOLEAN NOT NULL DEFAULT FALSE AFTER service_charge_monthly"
+    );
+  }
+  if (!(await columnExists("users", "advance_held"))) {
+    await run(
+      "ALTER TABLE users ADD COLUMN advance_held DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER joined_at"
+    );
+  }
+}
+
 async function applySchema(): Promise<void> {
   const file = path.join(process.cwd(), "db", "schema.mysql.sql");
   const sql = fs.readFileSync(file, "utf8");
@@ -230,6 +243,7 @@ export function ensureReady(): Promise<void> {
       if (!(await tablesExist())) await applySchema();
       await ensureUserCredentialColumns();
       await ensureShoppingCostStatusColumn();
+      await ensureAdvanceRentColumns();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

@@ -51,6 +51,11 @@ export interface User {
   managerRatingNote?: string;
   /** When this member joined the hostel (ISO date) — shown as "member since". */
   joinedAt?: string;
+  /** Advance rent (৳) currently held for this member — charged on their first
+   * bill when the hostel requires it (HostelSettings.advanceRentRequired), and
+   * credited back against their final bill when they leave. 0/undefined = none
+   * held. */
+  advanceHeld?: number;
   /** Per-user notification opt-outs; missing key/object = enabled. */
   notificationPrefs?: {
     announcements?: boolean;
@@ -166,6 +171,11 @@ export interface HostelSettings {
   /** Flat monthly service charge (৳) billed to EACH boarder, set by the OWNER
    * only — managers see it on bills but cannot change it. 0/undefined = none. */
   serviceChargeMonthly?: number;
+  /** When on, a joining member owes one month's advance rent on top of their
+   * first month (so their first bill is two months of rent). The advance is
+   * held (User.advanceHeld) and credited back against their final bill when
+   * they leave. Off/undefined = no advance. */
+  advanceRentRequired?: boolean;
   /** Which meal slots this hostel cooks at all — some hostels don't cook
    * three times a day. Missing key/object = offered. Closing a slot only
    * affects TODAY onward (past days keep their data so accounts stay

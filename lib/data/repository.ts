@@ -318,8 +318,15 @@ export interface BillRepository {
       includeSalaryExpenseIds?: string[];
       /** Last day to pay this batch of bills, e.g. "2026-07-15". */
       dueDate?: string;
+      /** Which month the room-rent line covers, e.g. "2026-08" — labels the
+       * rent line and defaults to the bill's own month. Lets a hostel that
+       * collects rent for a specific (often the next) month say so on the bill. */
+      rentMonth?: string;
     }
   ): Promise<Bill[]>;
+  /** Credits a leaving member's held advance rent (User.advanceHeld) against
+   * their latest bill and clears it — the "adjusted on leave" settlement. */
+  applyAdvanceOnLeave(hostelId: string, userId: string): Promise<void>;
   /** Settles some or all of a member's meal-cost credit — money the hostel
    * never keeps a share of. `destination: "refund"` records it as paid back
    * to the member in cash; any other `BillTarget` moves it to cover that

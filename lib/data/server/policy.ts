@@ -76,6 +76,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
     generateBills: HOSTEL_STAFF,
     decidePayment: HOSTEL_STAFF,
     settleMealCredit: HOSTEL_STAFF,
+    applyAdvanceOnLeave: HOSTEL_STAFF,
   },
   expenses: {
     add: HOSTEL_STAFF,

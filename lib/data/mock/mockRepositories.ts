@@ -37,7 +37,7 @@ import type {
   UserRepository,
 } from "../repository";
 import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
-import { addDays, currentMonth, formatShortDate, today } from "../../utils/date";
+import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
@@ -1421,6 +1421,33 @@ const bills: BillRepository = {
   async listAdjustments(billId) {
     return store.data.billAdjustments.filter((a) => a.billId === billId);
   },
+  async applyAdvanceOnLeave(hostelId, userId) {
+    const user = store.data.users.find((u) => u.id === userId && u.hostelId === hostelId);
+    const held = user?.advanceHeld ?? 0;
+    if (!user || held <= 0) return;
+    // Credit it against the member's latest bill's room rent (a negative line).
+    const bill = store.data.bills
+      .filter((b) => b.hostelId === hostelId && b.userId === userId)
+      .sort((a, b) => b.month.localeCompare(a.month))[0];
+    if (bill) {
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      const sections = bill.sections.map((s) =>
+        s.label === "roomRent"
+          ? {
+              ...s,
+              items: [...s.items, { label: "Advance rent applied (leaving)", amount: -held }],
+              total: round2(s.total - held),
+            }
+          : s
+      );
+      const grandTotal = round2(sections.reduce((sum, s) => sum + s.total, 0) + bill.previousBalance);
+      store.data.bills = store.data.bills.map((b) => (b.id === bill.id ? { ...b, sections, grandTotal } : b));
+      store.emit(`bills:${hostelId}`);
+      store.emit(`bill:${userId}`);
+    }
+    store.data.users = store.data.users.map((u) => (u.id === userId ? { ...u, advanceHeld: 0 } : u));
+    logActivity(hostelId, "Advance rent applied on leaving", `৳${held}`);
+  },
   async generateBills(hostelId, month, options) {
     const hostel = store.data.hostels.find((h) => h.id === hostelId);
     if (!hostel) return [];
@@ -1482,6 +1509,22 @@ const bills: BillRepository = {
     const { rate: mealRate } = actualMealRateFor(hostelId, month);
     const round2 = (n: number) => Math.round(n * 100) / 100;
 
+    // Which month the rent line covers (default: the bill's own month), and
+    // whether the hostel charges a month's advance rent on a member's first bill.
+    const rentMonthLabel = formatMonthLabel(options?.rentMonth ?? month);
+    const advanceRequired = hostel.settings.advanceRentRequired ?? false;
+    // Earliest existing bill month per member: the advance line stays on the
+    // first-month bill across regenerations, while everBilled gates the
+    // one-time hold so regenerating never re-collects it.
+    const earliestByUser = new Map<string, string>();
+    for (const bl of store.data.bills) {
+      if (bl.hostelId !== hostelId) continue;
+      const cur = earliestByUser.get(bl.userId);
+      if (!cur || bl.month < cur) earliestByUser.set(bl.userId, bl.month);
+    }
+    const everBilled = new Set(earliestByUser.keys());
+    const advanceCharged: { id: string; amount: number }[] = [];
+
     const slots: MealSlot[] = ["breakfast", "lunch", "dinner"];
     const bills: Bill[] = allBoarders.map((u) => {
       const room = rooms.find((r) => r.occupantIds.includes(u.id));
@@ -1539,12 +1582,29 @@ const bills: BillRepository = {
       const paidFor = (label: BillSection["label"]) =>
         existing?.sections.find((s) => s.label === label)?.paid ?? 0;
 
+      // Room rent, labelled with the month it covers. On a member's FIRST
+      // bill, if the hostel requires advance rent, add one month's advance so
+      // the first bill is two months — held until they leave.
+      const roomRentItems = [
+        { label: room ? `Room ${room.number} (seat) · ${rentMonthLabel}` : `Unassigned · ${rentMonthLabel}`, amount: seatRent },
+      ];
+      const earliest = earliestByUser.get(u.id);
+      const isFirstBillMonth = !earliest || month <= earliest;
+      if (advanceRequired && isFirstBillMonth && seatRent > 0) {
+        roomRentItems.push({ label: "Advance rent (1 month, held for your last month)", amount: seatRent });
+        // Collect the hold only on the member's very first generation.
+        if (!everBilled.has(u.id) && !(u.advanceHeld && u.advanceHeld > 0)) {
+          advanceCharged.push({ id: u.id, amount: seatRent });
+        }
+      }
+      const roomRentTotal = roomRentItems.reduce((sum, i) => sum + i.amount, 0);
+
       const sections: BillSection[] = [
         { label: "mealCost", items: mealCostItems, total: mealCostTotal, paid: paidFor("mealCost") },
         {
           label: "roomRent",
-          items: [{ label: room ? `Room ${room.number} (seat)` : "Unassigned", amount: seatRent }],
-          total: seatRent,
+          items: roomRentItems,
+          total: roomRentTotal,
           paid: paidFor("roomRent"),
         },
         { label: "serviceCharge", items: serviceItems, total: serviceTotal, paid: paidFor("serviceCharge") },
@@ -1579,6 +1639,14 @@ const bills: BillRepository = {
     store.data.bills = store.data.bills
       .filter((b) => !(b.hostelId === hostelId && b.month === month))
       .concat(bills);
+
+    // Record the advance now held for members it was charged to this run.
+    if (advanceCharged.length > 0) {
+      const byId = new Map(advanceCharged.map((a) => [a.id, a.amount]));
+      store.data.users = store.data.users.map((u) =>
+        byId.has(u.id) ? { ...u, advanceHeld: byId.get(u.id) } : u
+      );
+    }
 
     // Lock in every expense that actually fed this generation — the Utilities
     // and Salary expenses included this run — so they're no longer offered
