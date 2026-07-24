@@ -38,6 +38,32 @@ const serverOnly = (): never => {
 
 const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
+// ── sealDays fast-path cache ────────────────────────────────────────────────
+//
+// sealDays() runs on every getMealDay/listMealDays/getActualMealRate call —
+// getActualMealRate reseals the whole month every time — and every one of
+// those is polled every 2.5s by every active viewer (see
+// lib/data/remote/remoteRepositories.ts). Even the cheap DB-backed fast-path
+// check below is still 1-2 round trips per poll, per viewer, competing for
+// a connection pool sized for shared hosting (see MYSQL_POOL_SIZE in
+// connection.ts). An in-memory "nothing to do" cache cuts that to zero for
+// the overwhelming majority of polls, where literally nothing has changed
+// since the last check.
+//
+// Correctness: this only ever caches "already confirmed fully sealed, no
+// new joiner" — never any actual meal data — so a stale cache entry's worst
+// case is a newly-joined member's rows taking up to CACHE_TTL_MS longer to
+// materialize, which is already within the normal 2.5s poll latency this
+// whole app is built around. Per-process only (Passenger/LiteSpeed may run
+// more than one worker), which only ever means "less caching than ideal,"
+// never a correctness gap.
+const CACHE_TTL_MS = 30_000;
+const sealedRangeCache = new Map<string, number>(); // `${hostelId}:${from}:${last}` -> expires-at (ms)
+
+function sealedRangeCacheKey(hostelId: string, from: string, last: string): string {
+  return `${hostelId}:${from}:${last}`;
+}
+
 /** The hostel's CURRENT offer setting (the template for new days). */
 export async function offeredSlots(hostelId: string, on?: Queryable): Promise<Record<MealSlot, boolean>> {
   const row = await one<{ offers_breakfast: number; offers_lunch: number; offers_dinner: number }>(
@@ -122,15 +148,37 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
   const last = to < today() ? to : today();
   if (from > last) return;
 
-  // Fast path: this runs on every getMealDay/listMealDays/getActualMealRate
-  // call — and getActualMealRate reseals the WHOLE MONTH every time — so on
-  // an ordinary poll (every 2.5s, per active viewer) almost always nothing
-  // has changed since the last call. If every day in range is already
-  // sealed and no boarder has joined since the range started, there is
-  // nothing left to top up, so skip the loop below entirely. Without this,
-  // the same top-up work reran on every single poll all day even when
-  // nothing had changed — on its own enough to saturate the shared-hosting
-  // connection pool under normal traffic.
+  // Sealing only ever needs to reach as far back as a currently-active
+  // boarder could have joined — anything older is either already sealed
+  // (real historical data, left untouched — reading it doesn't need
+  // resealing) or predates every current boarder, so there's nothing to top
+  // up. Without this floor, a caller requesting a wide-open range (e.g.
+  // meals.subscribe's "0000-01-01" used purely as a change-notification
+  // trigger, see remoteRepositories.ts) makes `from` effectively unbounded,
+  // turning both the fast-path check and the loop below into a ~740,000-day
+  // walk — this is what pegged the process at 100% CPU for minutes at a
+  // time both locally and in production.
+  const HISTORY_FLOOR_DAYS = 366;
+  const floor = addDays(last, -HISTORY_FLOOR_DAYS);
+  if (from < floor) from = floor;
+
+  // In-memory fast path first: if we already confirmed this exact range
+  // needs no work within the last CACHE_TTL_MS, skip straight past — zero
+  // DB round trips. This is what actually keeps routine polling off the
+  // database; the DB-backed check below is the fallback that populates it.
+  const cacheKey = sealedRangeCacheKey(hostelId, from, last);
+  const cachedUntil = sealedRangeCache.get(cacheKey);
+  if (cachedUntil !== undefined && cachedUntil > Date.now()) return;
+
+  // DB-backed fast path: this runs on every getMealDay/listMealDays/
+  // getActualMealRate call — and getActualMealRate reseals the WHOLE MONTH
+  // every time — so on an ordinary poll (every 2.5s, per active viewer)
+  // almost always nothing has changed since the last call. If every day in
+  // range is already sealed and no boarder has joined since the range
+  // started, there is nothing left to top up, so skip the loop below
+  // entirely. Without this, the same top-up work reran on every single poll
+  // all day even when nothing had changed — on its own enough to saturate
+  // the shared-hosting connection pool under normal traffic.
   const expectedDays = Math.round((Date.parse(last) - Date.parse(from)) / 86_400_000) + 1;
   const sealedCount = await one<{ n: number }>(
     "SELECT COUNT(*) AS n FROM meal_days WHERE hostel_id = ? AND day BETWEEN ? AND ? AND sealed_at IS NOT NULL",
@@ -143,7 +191,10 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
          AND joined_at >= ? LIMIT 1`,
       [hostelId, from]
     );
-    if (!newJoiner) return;
+    if (!newJoiner) {
+      sealedRangeCache.set(cacheKey, Date.now() + CACHE_TTL_MS);
+      return;
+    }
   }
 
   await transaction(async (tx) => {
@@ -174,6 +225,9 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
       );
     }
   });
+  // Fully processed as of now — the next poll (within CACHE_TTL_MS) can skip
+  // straight past without touching the database at all.
+  sealedRangeCache.set(cacheKey, Date.now() + CACHE_TTL_MS);
 }
 
 interface EntryRow {

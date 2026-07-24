@@ -90,9 +90,39 @@ function ensureMealDay(hostelId: string, date: string): MealDay {
  * never overwritten), so a member who joins AFTER a day was first sealed is
  * still counted for every day since they joined — adding a member mid-day
  * still cooks for them today. */
+// This runs on every getMealDay/listMealDays/getActualMealRate call, and
+// getActualMealRate reseals the WHOLE MONTH every time — polled every 2.5s
+// by every active viewer (lib/data/remote/remoteRepositories.ts). Without a
+// cache, every single poll re-scans the ENTIRE mealDays array (a linear
+// findIndex, across every hostel this process has ever touched, once per
+// day in range) plus the full users array — synchronously, with no `await`
+// yield point, so it blocks Node's single-threaded event loop for its
+// whole duration. As mealDays only grows over a long-running dev server,
+// each call gets slower, and enough concurrent pollers can make the whole
+// process unresponsive. Mirrors the MySQL backend's sealDays cache
+// (lib/data/server/mysql/meals.ts) — same TTL approach, shorter here since
+// local dev expects fresher feedback and everything's in-process anyway.
+const MOCK_SEAL_CACHE_TTL_MS = 5_000;
+const sealedMockRangeCache = new Map<string, number>(); // `${hostelId}:${from}:${last}` -> expires-at (ms)
+
 function sealMockDays(hostelId: string, from: string, to: string) {
   const last = to < today() ? to : today();
   if (from > last) return;
+
+  // Same floor as the MySQL backend's sealDays (lib/data/server/mysql/
+  // meals.ts): a caller can request an effectively unbounded range (e.g.
+  // meals.subscribe's "0000-01-01", used purely as a change-notification
+  // trigger — see remoteRepositories.ts) which without this clamp turns
+  // every poll into a ~740,000-day walk over the whole mealDays array,
+  // synchronously, with no yield point — this is what hung the dev server
+  // at 100% CPU for minutes at a time.
+  const HISTORY_FLOOR_DAYS = 366;
+  const floor = addDays(last, -HISTORY_FLOOR_DAYS);
+  if (from < floor) from = floor;
+
+  const cacheKey = `${hostelId}:${from}:${last}`;
+  const cachedUntil = sealedMockRangeCache.get(cacheKey);
+  if (cachedUntil !== undefined && cachedUntil > Date.now()) return;
   const hostel = store.data.hostels.find((h) => h.id === hostelId);
   const offer = {
     breakfast: hostel?.settings.mealsOffered?.breakfast ?? true,
@@ -140,6 +170,9 @@ function sealMockDays(hostelId: string, from: string, to: string) {
     changed = true;
   }
   if (changed) store.emit(`mealDay:${hostelId}`);
+  // Fully processed as of now — the next call within MOCK_SEAL_CACHE_TTL_MS
+  // skips straight past without touching mealDays/users at all.
+  sealedMockRangeCache.set(cacheKey, Date.now() + MOCK_SEAL_CACHE_TTL_MS);
 }
 
 // ── Activity log ────────────────────────────────────────────────────────────
