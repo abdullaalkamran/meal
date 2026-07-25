@@ -201,6 +201,15 @@ export interface MealRepository {
     hostelId: string,
     range: { from: string; to: string }
   ): Promise<MealDay[]>;
+  /** One member's own meals for a month, so they can see them live without a
+   * generated bill: `mealsOn` = meals they have on (member + guest) from their
+   * join date; `billedMeals` = only those the manager has confirmed cooked
+   * (what the bill charges); `cost` = billedMeals × the actual rate. */
+  getMemberMealSummary(
+    hostelId: string,
+    userId: string,
+    month: string
+  ): Promise<{ mealsOn: number; billedMeals: number; cost: number }>;
   /** A member changing their OWN meal. Rejects dates past their cutoff —
    * today and any locked future date must go through an approved request
    * (see lib/utils/mealPolicy.ts for the rule). */
@@ -239,6 +248,12 @@ export interface MealRepository {
     to: string,
     on: boolean
   ): Promise<void>;
+  /** The member's own "turn my future meals off / on" switch (User.
+   * futureMealsOff). While off, every future day defaults their meals to OFF
+   * until they turn a specific day back on. Applies immediately to the days
+   * they can already freely change (day after tomorrow onward); today and
+   * tomorrow stay cutoff-gated and still need a request. */
+  setMemberFutureMeals(hostelId: string, userId: string, off: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (day: MealDay) => void): Unsubscribe;
 }
 

@@ -208,8 +208,11 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
       // day was sealed before they arrived.
       for (const slot of MEALS) {
         await run(
+          // A member with their own "future meals off" switch on defaults to
+          // OFF; everyone else to the day's offer. Still one query per slot
+          // (O(days)) — the flag is just read from the users row.
           `INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count)
-           SELECT ?, ?, u.id, ?, ?, 0
+           SELECT ?, ?, u.id, ?, IF(u.meals_default_off = 1, 0, ?), 0
              FROM users u
             WHERE u.hostel_id = ? AND u.banned = 0
               AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
@@ -323,6 +326,37 @@ export const meals: MealRepository = {
     return { rate: totalMeals > 0 ? totalShopping / totalMeals : 0, totalShopping, totalMeals };
   },
 
+  async getMemberMealSummary(hostelId, userId, month) {
+    await sealDays(hostelId, `${month}-01`, `${month}-31`);
+    // Everything this member has ON this month, from their join date — what
+    // they're eating, shown live without waiting for a bill.
+    const on = await one<{ own: number | null; guests: number | null }>(
+      `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
+         FROM meal_entries e JOIN users u ON u.id = e.user_id
+        WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+          AND (u.joined_at IS NULL OR u.joined_at <= e.day)`,
+      [hostelId, userId, month]
+    );
+    const mealsOn = Number(on?.own ?? 0) + Number(on?.guests ?? 0);
+    // Of those, only the (day, meal) slots a manager confirmed cooked get
+    // billed — the same gate generateBills uses, so this equals the bill.
+    const billed = await one<{ own: number | null; guests: number | null }>(
+      `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
+         FROM meal_entries e JOIN users u ON u.id = e.user_id
+        WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+          AND (u.joined_at IS NULL OR u.joined_at <= e.day)
+          AND EXISTS (
+            SELECT 1 FROM cook_attendance_reports r
+             WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
+               AND r.status = 'resolved_cooked'
+          )`,
+      [hostelId, userId, month]
+    );
+    const billedMeals = Number(billed?.own ?? 0) + Number(billed?.guests ?? 0);
+    const { rate } = await meals.getActualMealRate(hostelId, month);
+    return { mealsOn, billedMeals, cost: Math.round(billedMeals * rate * 100) / 100 };
+  },
+
   async getMealDay(hostelId, date) {
     await sealDays(hostelId, date, date);
     const dayRows = await all<DayRow>(
@@ -431,6 +465,37 @@ export const meals: MealRepository = {
           : "Your meals have been turned off by the manager because your bill is unpaid. Pay your bill to resume your meals.",
         tx
       );
+    });
+  },
+
+  async setMemberFutureMeals(hostelId, userId, off) {
+    await transaction(async (tx) => {
+      await run("UPDATE users SET meals_default_off = ? WHERE id = ?", [off ? 1 : 0, userId], tx);
+      // Apply now to the days they can already change freely (day after
+      // tomorrow onward). Today and tomorrow are cutoff-gated and unchanged;
+      // days not yet materialized inherit the new default when they seal.
+      const fromDay = addDays(today(), 2);
+      if (off) {
+        await run(
+          "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ?",
+          [hostelId, userId, fromDay],
+          tx
+        );
+      } else {
+        // Turning back on: restore each slot to what its day actually offered
+        // (a closed slot stays off).
+        await run(
+          `UPDATE meal_entries e
+             JOIN meal_days d ON d.hostel_id = e.hostel_id AND d.day = e.day
+              SET e.is_on = CASE e.meal
+                              WHEN 'breakfast' THEN d.offers_breakfast
+                              WHEN 'lunch' THEN d.offers_lunch
+                              ELSE d.offers_dinner END
+            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ?`,
+          [hostelId, userId, fromDay],
+          tx
+        );
+      }
     });
   },
 

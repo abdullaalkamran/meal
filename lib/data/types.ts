@@ -41,6 +41,10 @@ export interface User {
   /** Manager turned this boarder's meals off for an unpaid bill — they can't
    * re-enable their own toggles until the manager resumes them. */
   mealsSuspended?: boolean;
+  /** The member's own "turn my future meals off" switch: while on, every new
+   * day defaults their meals to OFF until they turn a specific day back on (or
+   * flip this off). Their own choice — unrelated to mealsSuspended. */
+  futureMealsOff?: boolean;
   /** Manager banned this member from THIS hostel — record is kept (so they can
    * still switch/transfer to another hostel) but they're evicted from their
    * room seat, meals are off, and they're excluded from active roster,

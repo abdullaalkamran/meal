@@ -63,7 +63,7 @@ interface UserRow {
   avatar_seed: string; hostel_id: string | null; room_id: string | null;
   student_id: string | null; department: string | null;
   division: string | null; district: string | null; thana: string | null;
-  meals_suspended: number; banned: number;
+  meals_suspended: number; meals_default_off: number; banned: number;
   manager_rating: number | null; manager_rating_note: string | null;
   joined_at: string | null; advance_held: number;
   notify_announcements: number; notify_bills: number; notify_monthly_report: number;
@@ -103,6 +103,7 @@ function toUser(r: UserRow): User {
       ? { division: r.division, district: r.district, thana: r.thana }
       : undefined,
     mealsSuspended: toBool(r.meals_suspended) || undefined,
+    futureMealsOff: toBool(r.meals_default_off) || undefined,
     banned: toBool(r.banned) || undefined,
     managerRating: (r.manager_rating as Stars | null) ?? undefined,
     managerRatingNote: r.manager_rating_note ?? undefined,
@@ -195,7 +196,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report";
+  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, meals_default_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
@@ -317,6 +318,7 @@ export const users: UserRepository = {
     if (patch.studentId !== undefined) put("student_id", patch.studentId ?? null);
     if (patch.department !== undefined) put("department", patch.department ?? null);
     if (patch.mealsSuspended !== undefined) put("meals_suspended", patch.mealsSuspended ? 1 : 0);
+    if (patch.futureMealsOff !== undefined) put("meals_default_off", patch.futureMealsOff ? 1 : 0);
     if (patch.banned !== undefined) put("banned", patch.banned ? 1 : 0);
     if (patch.managerRating !== undefined) put("manager_rating", patch.managerRating ?? null);
     if (patch.managerRatingNote !== undefined) put("manager_rating_note", patch.managerRatingNote ?? null);

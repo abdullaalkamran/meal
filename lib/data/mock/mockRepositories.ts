@@ -148,10 +148,12 @@ function sealMockDays(hostelId: string, from: string, to: string) {
       const joined = b.joinedAt?.slice(0, 10);
       if (joined && joined > day) continue; // not a boarder yet
       if (!entries[b.id]) {
+        // A member with their own "future meals off" switch defaults to off.
+        const on = (slot: boolean) => (b.futureMealsOff ? false : slot);
         entries[b.id] = {
-          breakfast: { on: mealsOffered.breakfast, guestCount: 0 },
-          lunch: { on: mealsOffered.lunch, guestCount: 0 },
-          dinner: { on: mealsOffered.dinner, guestCount: 0 },
+          breakfast: { on: on(mealsOffered.breakfast), guestCount: 0 },
+          lunch: { on: on(mealsOffered.lunch), guestCount: 0 },
+          dinner: { on: on(mealsOffered.dinner), guestCount: 0 },
         };
         added = true;
       }
@@ -1045,6 +1047,25 @@ const meals: MealRepository = {
     sealMockDays(hostelId, `${month}-01`, `${month}-31`);
     return actualMealRateFor(hostelId, month);
   },
+  async getMemberMealSummary(hostelId, userId, month) {
+    sealMockDays(hostelId, `${month}-01`, `${month}-31`);
+    const joinedDay = store.data.users.find((u) => u.id === userId)?.joinedAt?.slice(0, 10);
+    let mealsOn = 0;
+    let billedMeals = 0;
+    for (const day of store.data.mealDays) {
+      if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
+      if (joinedDay && joinedDay > day.date) continue; // before they joined
+      const entry = day.entries[userId];
+      if (!entry) continue;
+      for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+        const count = (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
+        mealsOn += count;
+        if (isMealConfirmedCooked(hostelId, day.date, slot)) billedMeals += count;
+      }
+    }
+    const { rate } = actualMealRateFor(hostelId, month);
+    return { mealsOn, billedMeals, cost: Math.round(billedMeals * rate * 100) / 100 };
+  },
   async getMealDay(hostelId, date) {
     sealMockDays(hostelId, date, date);
     return store.data.mealDays.find((d) => d.hostelId === hostelId && d.date === date) ?? emptyMealDay(hostelId, date);
@@ -1114,6 +1135,35 @@ const meals: MealRepository = {
       store.emit(`notifications:${userId}`);
       emitUser(userId);
     }
+    store.emit(`mealDay:${hostelId}`);
+  },
+  async setMemberFutureMeals(hostelId, userId, off) {
+    const idx = store.data.users.findIndex((u) => u.id === userId);
+    if (idx !== -1) {
+      store.data.users[idx] = { ...store.data.users[idx], futureMealsOff: off };
+      emitUser(userId);
+      store.emit(`users:${hostelId}`);
+    }
+    // Apply now to freely-editable future days (day after tomorrow onward);
+    // today/tomorrow are cutoff-gated and unchanged. Days not yet materialized
+    // inherit the new default when they seal.
+    const fromDay = addDays(today(), 2);
+    store.data.mealDays = store.data.mealDays.map((d) => {
+      if (d.hostelId !== hostelId || d.date < fromDay || !d.entries[userId]) return d;
+      const e = d.entries[userId];
+      const offered = (slot: MealSlot) => d.mealsOffered?.[slot] ?? isMealOffered(hostelId, slot);
+      return {
+        ...d,
+        entries: {
+          ...d.entries,
+          [userId]: {
+            breakfast: { ...e.breakfast, on: off ? false : offered("breakfast") },
+            lunch: { ...e.lunch, on: off ? false : offered("lunch") },
+            dinner: { ...e.dinner, on: off ? false : offered("dinner") },
+          },
+        },
+      };
+    });
     store.emit(`mealDay:${hostelId}`);
   },
   subscribe(hostelId, cb) {

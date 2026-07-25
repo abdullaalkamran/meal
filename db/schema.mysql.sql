@@ -94,6 +94,8 @@ CREATE TABLE users (
   district            VARCHAR(64)  NULL,
   thana               VARCHAR(64)  NULL,
   meals_suspended     BOOLEAN      NOT NULL DEFAULT FALSE,
+  -- The member's own "turn my future meals off by default" switch.
+  meals_default_off   BOOLEAN      NOT NULL DEFAULT FALSE,
   banned              BOOLEAN      NOT NULL DEFAULT FALSE,
   manager_rating      TINYINT      NULL,
   manager_rating_note TEXT         NULL,

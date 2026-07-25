@@ -42,6 +42,7 @@ export default function StudentMealsPage() {
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
+  const [summary, setSummary] = useState<{ mealsOn: number; billedMeals: number; cost: number } | null>(null);
 
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
@@ -56,6 +57,24 @@ export default function StudentMealsPage() {
   // value to show or toggle — never a default "on".
   const joinedDay = user?.joinedAt?.slice(0, 10);
   const notYetJoined = !!joinedDay && joinedDay > selectedDate;
+  // The member's own "future meals off" switch — mirrored optimistically so the
+  // UI flips immediately rather than waiting for the next session poll.
+  const [futureOff, setFutureOff] = useState(!!user?.futureMealsOff);
+  useEffect(() => {
+    queueMicrotask(() => setFutureOff(!!user?.futureMealsOff));
+  }, [user?.futureMealsOff]);
+  const toggleFutureMeals = async (next: boolean) => {
+    if (!activeHostelId || !user) return;
+    setFutureOff(next);
+    await repo.meals.setMemberFutureMeals(activeHostelId, user.id, next);
+    toast(
+      next
+        ? "Future meals turned off — turn any day back on before its cutoff"
+        : "Future meals turned back on"
+    );
+  };
+  // A day with no stored entry yet defaults OFF when the switch is on.
+  const defaultOn = !futureOff;
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
@@ -71,6 +90,18 @@ export default function StudentMealsPage() {
     load();
     return repo.meals.subscribe(activeHostelId, load);
   }, [activeHostelId, year, month]);
+
+  // The member's own meals this month, live — so they see them without waiting
+  // for a generated bill. Re-fetched on any meal change (incl. the manager
+  // confirming cooking, which moves meals from "on" into "billed").
+  useEffect(() => {
+    if (!activeHostelId || !user) return;
+    const load = () =>
+      repo.meals.getMemberMealSummary(activeHostelId, user.id, currentMonth()).then(setSummary);
+    load();
+    return repo.meals.subscribe(activeHostelId, load);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeHostelId, user?.id]);
 
   useEffect(() => {
     if (!hostel) return;
@@ -174,15 +205,19 @@ export default function StudentMealsPage() {
         </div>
       </div>
 
-      {/* My meals stat strip */}
+      {/* My meals stat strip — live from the member's own meals this month, so
+          it shows before any bill is generated. Meal cost counts only what the
+          manager has confirmed cooked (what will be billed). */}
       <div className="grid grid-cols-3 gap-2 rounded-card bg-primary-soft p-4">
         <div className="text-center">
-          <div className="text-[16.5px] font-extrabold text-primary">{bill?.mealsCount ?? 0}</div>
+          <div className="text-[16.5px] font-extrabold text-primary">
+            {summary?.mealsOn ?? bill?.mealsCount ?? 0}
+          </div>
           <div className="text-[9.5px] font-bold text-text-secondary">My meals</div>
         </div>
         <div className="text-center">
           <div className="text-[16.5px] font-extrabold text-primary">
-            {formatBDT(bill?.sections.find((s) => s.label === "mealCost")?.total ?? 0)}
+            {formatBDT(summary?.cost ?? bill?.sections.find((s) => s.label === "mealCost")?.total ?? 0)}
           </div>
           <div className="text-[9.5px] font-bold text-text-secondary">Meal cost</div>
         </div>
@@ -191,6 +226,29 @@ export default function StudentMealsPage() {
           <div className="text-[9.5px] font-bold text-text-secondary">Due</div>
         </div>
       </div>
+      {summary && summary.mealsOn > summary.billedMeals && (
+        <div className="-mt-3 text-center text-[9.5px] font-semibold text-text-secondary">
+          {summary.billedMeals} of {summary.mealsOn} meals confirmed cooked so far — meal cost is
+          billed only once the manager confirms cooking.
+        </div>
+      )}
+
+      {/* The member's own future-meals master switch. Off = every future day
+          defaults to off until they turn a specific day back on (cutoff still
+          applies to today/tomorrow). Hidden while the manager has force-off. */}
+      {!mealsSuspended && (
+        <Card className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-extrabold">My future meals</div>
+            <div className="text-[10px] font-semibold text-text-secondary">
+              {futureOff
+                ? "Off — future days default to off. Turn any day back on before its cutoff."
+                : "On by default. Turn this off to skip all future meals until you turn a day back on."}
+            </div>
+          </div>
+          <Switch checked={!futureOff} onChange={(v) => toggleFutureMeals(!v)} />
+        </Card>
+      )}
 
       {/* Manager has switched this member's meals off for an unpaid bill */}
       {mealsSuspended && (
@@ -240,7 +298,7 @@ export default function StudentMealsPage() {
             // when the day was sealed — not of the hostel's current setting,
             // so past days keep showing what actually happened.
             const closed = !((day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true);
-            const on = !closed && !notYetJoined && (entry?.on ?? true);
+            const on = !closed && !notYetJoined && (entry?.on ?? defaultOn);
             return (
               <div key={meal} className="flex items-center gap-3 py-2.5">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${closed ? "bg-bg" : c.bg}`}>
