@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, QrCode, ShieldCheck, Wrench } from "lucide-react";
+import { Banknote, PencilLine, QrCode, ShieldCheck, Wrench } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useHostelsByOwner } from "@/hooks/useHostel";
 import { useToast } from "@/components/ui/Toast";
@@ -13,6 +13,7 @@ import { ManagerPermissionsSheet } from "@/components/owner/ManagerPermissionsSh
 import { AddHostelSheet } from "@/components/owner/AddHostelSheet";
 import { HostelSetupSheet } from "@/components/owner/HostelSetupSheet";
 import { FinanceSettingsSheet } from "@/components/owner/FinanceSettingsSheet";
+import { EditHostelNameSheet } from "@/components/owner/EditHostelNameSheet";
 import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
 import { repo, type Hostel, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -33,6 +34,7 @@ export default function OwnerHostelsPage() {
   const [stats, setStats] = useState<Record<string, HostelStats>>({});
   const [permsHostelId, setPermsHostelId] = useState<string | null>(null);
   const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
+  const [editNameHostelId, setEditNameHostelId] = useState<string | null>(null);
   const [qrHostel, setQrHostel] = useState<Hostel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [setupHostel, setSetupHostel] = useState<Hostel | null>(null);
@@ -82,14 +84,14 @@ export default function OwnerHostelsPage() {
         const isActive = h.id === activeHostelId;
         return (
           <Card key={h.id}>
-            <button
-              type="button"
-              onClick={() => switchHostel(h.id)}
-              className="mb-3 flex w-full cursor-pointer items-center justify-between text-left"
-            >
-              <div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => switchHostel(h.id)}
+                className="min-w-0 flex-1 cursor-pointer text-left"
+              >
                 <div className="flex items-center gap-2 text-[14px] font-extrabold">
-                  {h.name}
+                  <span className="truncate">{h.name}</span>
                   {isActive && (
                     <Chip tone="primary" active>
                       Active
@@ -97,8 +99,16 @@ export default function OwnerHostelsPage() {
                   )}
                 </div>
                 <div className="text-[10.5px] font-semibold text-text-secondary">{h.area}</div>
-              </div>
-            </button>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditNameHostelId(h.id)}
+                aria-label="Edit hostel name"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg text-text-secondary"
+              >
+                <Icon icon={PencilLine} size={13} />
+              </button>
+            </div>
 
             <div className="mb-3 grid grid-cols-3 gap-2">
               <div>
@@ -189,6 +199,13 @@ export default function OwnerHostelsPage() {
         onClose={() => setFinanceHostelId(null)}
         hostelId={financeHostelId}
         onSaved={() => toast("Finance settings saved")}
+      />
+
+      <EditHostelNameSheet
+        open={!!editNameHostelId}
+        onClose={() => setEditNameHostelId(null)}
+        hostelId={editNameHostelId}
+        onSaved={() => toast("Hostel name updated")}
       />
 
       <JoinQrSheet
