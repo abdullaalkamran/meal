@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
 import { useServiceListings } from "@/hooks/useServiceListings";
-import { DIVISIONS, districtsOf } from "@/lib/geo/bangladesh";
+import { DIVISIONS, districtsOf, thanasOf } from "@/lib/geo/bangladesh";
 import { repo, type Hostel } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 
@@ -26,6 +26,7 @@ export default function HostelsPage() {
   const [query, setQuery] = useState("");
   const [division, setDivision] = useState("");
   const [district, setDistrict] = useState("");
+  const [thana, setThana] = useState("");
   const allListings = useServiceListings("hostel").filter((l) => l.active);
 
   useEffect(() => {
@@ -38,18 +39,19 @@ export default function HostelsPage() {
   const q = query.trim().toLowerCase();
   const matchesText = (name: string, area: string) =>
     !q || name.toLowerCase().includes(q) || area.toLowerCase().includes(q);
-  const matchesLoc = (area: string, addr?: { division?: string; district?: string }) => {
-    if (division && addr?.division !== division && !area.toLowerCase().includes(division.toLowerCase()))
-      return false;
-    if (district && addr?.district !== district && !area.toLowerCase().includes(district.toLowerCase()))
-      return false;
+  const matchesLoc = (area: string, addr?: { division?: string; district?: string; thana?: string }) => {
+    const a = area.toLowerCase();
+    if (division && addr?.division !== division && !a.includes(division.toLowerCase())) return false;
+    if (district && addr?.district !== district && !a.includes(district.toLowerCase())) return false;
+    if (thana && addr?.thana !== thana && !a.includes(thana.toLowerCase())) return false;
     return true;
   };
-  const filtersActive = !!q || !!division || !!district;
+  const filtersActive = !!q || !!division || !!district || !!thana;
   const clearFilters = () => {
     setQuery("");
     setDivision("");
     setDistrict("");
+    setThana("");
   };
 
   const shownHostels = hostels.filter(
@@ -88,12 +90,13 @@ export default function HostelsPage() {
             className="min-h-10 w-full bg-transparent text-[12px] font-bold outline-none"
           />
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <select
             value={division}
             onChange={(e) => {
               setDivision(e.target.value);
               setDistrict("");
+              setThana("");
             }}
             className={selectClass}
           >
@@ -104,13 +107,27 @@ export default function HostelsPage() {
           </select>
           <select
             value={district}
-            onChange={(e) => setDistrict(e.target.value)}
+            onChange={(e) => {
+              setDistrict(e.target.value);
+              setThana("");
+            }}
             disabled={!division}
             className={`${selectClass} disabled:opacity-50`}
           >
             <option value="">Any district</option>
             {(division ? districtsOf(division) : []).map((d) => (
               <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={thana}
+            onChange={(e) => setThana(e.target.value)}
+            disabled={!division || !district}
+            className={`${selectClass} disabled:opacity-50`}
+          >
+            <option value="">Any thana</option>
+            {(division && district ? thanasOf(division, district) : []).map((t) => (
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </div>
