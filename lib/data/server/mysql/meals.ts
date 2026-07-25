@@ -64,6 +64,15 @@ function sealedRangeCacheKey(hostelId: string, from: string, last: string): stri
   return `${hostelId}:${from}:${last}`;
 }
 
+/** Drops the "already sealed, nothing to do" cache for a hostel — call it when
+ * a member joins/leaves so their rows materialise on the very next read
+ * instead of after the cache's TTL. */
+export function invalidateSealCache(hostelId: string): void {
+  for (const key of sealedRangeCache.keys()) {
+    if (key.startsWith(`${hostelId}:`)) sealedRangeCache.delete(key);
+  }
+}
+
 /** The hostel's CURRENT offer setting (the template for new days). */
 export async function offeredSlots(hostelId: string, on?: Queryable): Promise<Record<MealSlot, boolean>> {
   const row = await one<{ offers_breakfast: number; offers_lunch: number; offers_dinner: number }>(
@@ -208,16 +217,18 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
       // day was sealed before they arrived.
       for (const slot of MEALS) {
         await run(
-          // A member with their own "future meals off" switch on defaults to
-          // OFF; everyone else to the day's offer. Still one query per slot
-          // (O(days)) — the flag is just read from the users row.
+          // Default OFF when: the member's own "future meals off" switch is on,
+          // OR this is their JOIN day — a member joining today has already
+          // missed today's cutoff (it was the evening before), so they can't
+          // be in today's already-planned meal. Otherwise the day's offer.
+          // Still one query per slot (O(days)) — flags read from the users row.
           `INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count)
-           SELECT ?, ?, u.id, ?, IF(u.meals_default_off = 1, 0, ?), 0
+           SELECT ?, ?, u.id, ?, IF(u.meals_default_off = 1 OR u.joined_at = ?, 0, ?), 0
              FROM users u
             WHERE u.hostel_id = ? AND u.banned = 0
               AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
               AND (u.joined_at IS NULL OR u.joined_at <= ?)`,
-          [hostelId, day, slot, offered[slot] ? 1 : 0, hostelId, day],
+          [hostelId, day, slot, day, offered[slot] ? 1 : 0, hostelId, day],
           tx
         );
       }

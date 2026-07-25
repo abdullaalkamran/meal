@@ -33,6 +33,7 @@ import {
   type Queryable,
 } from "./connection";
 import { currentActor, logActivity, notify } from "./context";
+import { invalidateSealCache } from "./meals";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -431,6 +432,9 @@ export const users: UserRepository = {
         tx
       );
     });
+    // A new boarder invalidates the "nothing to seal" cache so their meal rows
+    // (join day off, then on) materialise on the very next read.
+    invalidateSealCache(hostelId);
   },
 
   subscribe: serverOnly,

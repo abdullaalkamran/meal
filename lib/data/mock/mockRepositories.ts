@@ -148,8 +148,11 @@ function sealMockDays(hostelId: string, from: string, to: string) {
       const joined = b.joinedAt?.slice(0, 10);
       if (joined && joined > day) continue; // not a boarder yet
       if (!entries[b.id]) {
-        // A member with their own "future meals off" switch defaults to off.
-        const on = (slot: boolean) => (b.futureMealsOff ? false : slot);
+        // Default off when the member's "future meals off" switch is on, or on
+        // their JOIN day — joining today means today's cutoff (the evening
+        // before) already passed, so they're not in today's planned meal.
+        const joinedThisDay = b.joinedAt?.slice(0, 10) === day;
+        const on = (slot: boolean) => (b.futureMealsOff || joinedThisDay ? false : slot);
         entries[b.id] = {
           breakfast: { on: on(mealsOffered.breakfast), guestCount: 0 },
           lunch: { on: on(mealsOffered.lunch), guestCount: 0 },

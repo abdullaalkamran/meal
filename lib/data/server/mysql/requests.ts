@@ -29,7 +29,7 @@ import { normalizePhone } from "../../../utils/phone";
 import { addDays, today } from "../../../utils/date";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
 import { logActivity, notify, notifyHostelStaff } from "./context";
-import { ensureEntries, offeredOnDay } from "./meals";
+import { ensureEntries, invalidateSealCache, offeredOnDay } from "./meals";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -156,6 +156,7 @@ export const joinRequests: JoinRequestRepository = {
           [req.hostel_id, roomId, today(), linkedId],
           tx
         );
+        invalidateSealCache(req.hostel_id); // new boarder → re-seal on next read
         // A second hostel must not also be able to approve them.
         await run(
           "UPDATE join_requests SET status = 'denied' WHERE user_id = ? AND id <> ? AND status = 'pending'",
@@ -268,8 +269,16 @@ export const transfers: TransferRepository = {
       );
       if (nextStage === "approved") {
         // Final approval migrates the student: they move hostel and lose the
-        // old room; the new hostel's manager assigns a seat.
-        await run("UPDATE users SET hostel_id = ?, room_id = NULL WHERE id = ?", [t.toHostelId, t.userId], tx);
+        // old room; the new hostel's manager assigns a seat. joined_at resets
+        // to today so meals in the new hostel count from the move (and today,
+        // past its cutoff, defaults off there).
+        await run(
+          "UPDATE users SET hostel_id = ?, room_id = NULL, joined_at = ? WHERE id = ?",
+          [t.toHostelId, today(), t.userId],
+          tx
+        );
+        invalidateSealCache(t.fromHostelId);
+        invalidateSealCache(t.toHostelId);
       }
     });
   },
