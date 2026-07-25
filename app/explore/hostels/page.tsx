@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BadgeCheck, BedDouble, ChevronRight, MapPin, Phone, Star } from "lucide-react";
+import { BadgeCheck, BedDouble, ChevronRight, MapPin, Phone, Search, Star, X } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
@@ -10,8 +10,12 @@ import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
 import { useServiceListings } from "@/hooks/useServiceListings";
+import { DIVISIONS, districtsOf } from "@/lib/geo/bangladesh";
 import { repo, type Hostel } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
+
+const selectClass =
+  "min-h-9 w-full rounded-btn border border-border bg-card px-2.5 text-[11px] font-bold shadow-chip";
 
 export default function HostelsPage() {
   const { user } = useSession();
@@ -19,11 +23,39 @@ export default function HostelsPage() {
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [detailHostel, setDetailHostel] = useState<Hostel | null>(null);
-  const EXTRA_HOSTELS = useServiceListings("hostel").filter((l) => l.active);
+  const [query, setQuery] = useState("");
+  const [division, setDivision] = useState("");
+  const [district, setDistrict] = useState("");
+  const allListings = useServiceListings("hostel").filter((l) => l.active);
 
   useEffect(() => {
     repo.hostels.listAll().then(setHostels);
   }, []);
+
+  // Location + name/area search. A hostel matches a chosen division/district by
+  // its structured address when it has one, else by its display area text (so
+  // legacy hostels without a structured address still filter sensibly).
+  const q = query.trim().toLowerCase();
+  const matchesText = (name: string, area: string) =>
+    !q || name.toLowerCase().includes(q) || area.toLowerCase().includes(q);
+  const matchesLoc = (area: string, addr?: { division?: string; district?: string }) => {
+    if (division && addr?.division !== division && !area.toLowerCase().includes(division.toLowerCase()))
+      return false;
+    if (district && addr?.district !== district && !area.toLowerCase().includes(district.toLowerCase()))
+      return false;
+    return true;
+  };
+  const filtersActive = !!q || !!division || !!district;
+  const clearFilters = () => {
+    setQuery("");
+    setDivision("");
+    setDistrict("");
+  };
+
+  const shownHostels = hostels.filter(
+    (h) => matchesText(h.name, h.area) && matchesLoc(h.area, h.address)
+  );
+  const shownListings = allListings.filter((l) => matchesText(l.name, l.area) && matchesLoc(l.area));
 
   const requestJoin = async (hostelId: string, name: string) => {
     if (!user) return;
@@ -45,12 +77,65 @@ export default function HostelsPage() {
     <div className="flex flex-col gap-5 pb-4">
       <ExploreHeader title="Find Hostel" subtitle="Browse & request to join" />
 
+      {/* Search + location filter */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 rounded-btn border border-border bg-card px-3 shadow-chip">
+          <Icon icon={Search} size={14} className="shrink-0 text-text-secondary" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by hostel name or area…"
+            className="min-h-10 w-full bg-transparent text-[12px] font-bold outline-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            value={division}
+            onChange={(e) => {
+              setDivision(e.target.value);
+              setDistrict("");
+            }}
+            className={selectClass}
+          >
+            <option value="">Any division</option>
+            {DIVISIONS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select
+            value={district}
+            onChange={(e) => setDistrict(e.target.value)}
+            disabled={!division}
+            className={`${selectClass} disabled:opacity-50`}
+          >
+            <option value="">Any district</option>
+            {(division ? districtsOf(division) : []).map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="flex items-center gap-1 self-start text-[10.5px] font-extrabold text-primary"
+          >
+            <Icon icon={X} size={12} /> Clear filters
+          </button>
+        )}
+      </div>
+
       <div>
         <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
           On MyDorm
         </div>
         <div className="flex flex-col gap-2.5">
-          {hostels.map((h) => {
+          {shownHostels.length === 0 && (
+            <Card className="text-center text-[11px] font-semibold text-text-secondary">
+              No hostels match your search.
+            </Card>
+          )}
+          {shownHostels.map((h) => {
             const isMine = h.id === user?.hostelId;
             const isRequested = requested.has(h.id);
             return (
@@ -105,7 +190,7 @@ export default function HostelsPage() {
           Nearby listings
         </div>
         <div className="flex flex-col gap-2.5">
-          {EXTRA_HOSTELS.map((h) => (
+          {shownListings.map((h) => (
             <Card key={h.id} className="flex flex-col gap-2.5">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn bg-blue-soft text-blue">
