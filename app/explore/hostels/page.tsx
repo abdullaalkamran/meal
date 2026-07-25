@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BedDouble, MapPin, Phone, Star } from "lucide-react";
+import { BadgeCheck, BedDouble, ChevronRight, MapPin, Phone, Star } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ExploreHeader } from "@/components/explore/ExploreHeader";
+import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
 import { useServiceListings } from "@/hooks/useServiceListings";
 import { repo, type Hostel } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -17,6 +18,7 @@ export default function HostelsPage() {
   const { toast } = useToast();
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [requested, setRequested] = useState<Set<string>>(new Set());
+  const [detailHostel, setDetailHostel] = useState<Hostel | null>(null);
   const EXTRA_HOSTELS = useServiceListings("hostel").filter((l) => l.active);
 
   useEffect(() => {
@@ -53,24 +55,40 @@ export default function HostelsPage() {
             const isRequested = requested.has(h.id);
             return (
               <Card key={h.id} className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn bg-primary-soft text-primary">
-                  <Icon icon={BedDouble} size={18} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12px] font-extrabold">{h.name}</div>
-                  <div className="flex items-center gap-1 text-[10px] font-semibold text-text-secondary">
-                    <Icon icon={MapPin} size={11} /> {h.area}
+                <button
+                  type="button"
+                  onClick={() => setDetailHostel(h)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-btn ${
+                      h.verified ? "bg-primary-soft text-primary" : "bg-primary-soft text-primary"
+                    }`}
+                  >
+                    <Icon icon={h.verified ? BadgeCheck : BedDouble} size={18} />
                   </div>
-                  <div className="text-[9.5px] font-semibold text-text-secondary">
-                    Meals billed at actual monthly cost
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[12px] font-extrabold">{h.name}</span>
+                      {h.verified && (
+                        <span className="flex shrink-0 items-center gap-0.5 rounded-pill bg-primary-soft px-1.5 py-0.5 text-[8px] font-extrabold text-primary">
+                          <Icon icon={BadgeCheck} size={9} /> Verified
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] font-semibold text-text-secondary">
+                      <Icon icon={MapPin} size={11} /> {h.area}
+                    </div>
+                    <div className="text-[9.5px] font-semibold text-primary">Tap for rooms, rent &amp; contacts</div>
                   </div>
-                </div>
+                  <Icon icon={ChevronRight} size={16} className="shrink-0 text-text-secondary" />
+                </button>
                 {isMine ? (
-                  <span className="rounded-pill bg-bg px-2.5 py-1 text-[9.5px] font-extrabold text-text-secondary">
+                  <span className="shrink-0 rounded-pill bg-bg px-2.5 py-1 text-[9.5px] font-extrabold text-text-secondary">
                     Your hostel
                   </span>
                 ) : (
-                  <button type="button" onClick={() => requestJoin(h.id, h.name)} disabled={isRequested}>
+                  <button type="button" onClick={() => requestJoin(h.id, h.name)} disabled={isRequested} className="shrink-0">
                     <Chip tone="primary" active={isRequested}>
                       {isRequested ? "Requested ✓" : "Request to join"}
                     </Chip>
@@ -127,6 +145,18 @@ export default function HostelsPage() {
           ))}
         </div>
       </div>
+
+      <HostelDetailSheet
+        open={!!detailHostel}
+        onClose={() => setDetailHostel(null)}
+        hostel={detailHostel}
+        pending={!!(detailHostel && requested.has(detailHostel.id))}
+        ownHostel={!!detailHostel && detailHostel.id === user?.hostelId}
+        onSendRequest={(h) => {
+          void requestJoin(h.id, h.name);
+          setDetailHostel(null);
+        }}
+      />
     </div>
   );
 }

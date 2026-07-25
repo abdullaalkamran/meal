@@ -30,12 +30,15 @@ export function HostelDetailSheet({
   onClose,
   hostel,
   pending,
+  ownHostel,
   onSendRequest,
 }: {
   open: boolean;
   onClose: () => void;
   hostel: Hostel | null;
   pending: boolean;
+  /** The viewer is already a member of this hostel — show that instead of a join button. */
+  ownHostel?: boolean;
   onSendRequest: (h: Hostel) => void;
 }) {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -165,7 +168,11 @@ export function HostelDetailSheet({
         </a>
       </div>
 
-      {pending ? (
+      {ownHostel ? (
+        <div className="rounded-btn bg-primary-soft px-3 py-2.5 text-center text-[11px] font-extrabold text-primary">
+          You&rsquo;re a member of this hostel
+        </div>
+      ) : pending ? (
         <div className="rounded-btn bg-bg px-3 py-2.5 text-center text-[11px] font-extrabold text-text-secondary">
           Join request pending…
         </div>
