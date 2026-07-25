@@ -2176,8 +2176,10 @@ const transfers: TransferRepository = {
   async advance(id, decidedBy, approve) {
     const t = store.data.transferRequests.find((x) => x.id === id);
     if (!t) return;
+    // requested = the member's current hostel (manager) reviews; approving
+    // passes it to the owner (owner_review), whose approval finalises the move.
     const next: Record<string, string> = {
-      requested: approve ? "manager_review" : "denied",
+      requested: approve ? "owner_review" : "denied",
       manager_review: approve ? "owner_review" : "denied",
       owner_review: approve ? "approved" : "denied",
     };

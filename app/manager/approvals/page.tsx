@@ -8,6 +8,8 @@ import { useMealStops } from "@/hooks/useMealStops";
 import { useGuestMeals } from "@/hooks/useGuestMeals";
 import { useCookLeaveRequests } from "@/hooks/useCookLeaveRequests";
 import { useTransfers } from "@/hooks/useTransfers";
+import { useJoinRequests } from "@/hooks/useJoinRequests";
+import { useRooms } from "@/hooks/useRooms";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
@@ -34,9 +36,15 @@ function ManagerApprovalsPage() {
   const mealStops = useMealStops(activeHostelId).filter((r) => r.status === "pending");
   const guestMeals = useGuestMeals(activeHostelId).filter((r) => r.status === "pending");
   const cookLeave = useCookLeaveRequests(activeHostelId).filter((r) => r.status === "pending");
+  // A member requesting to leave THIS hostel lands here first (stage
+  // "requested"); approving passes it to the owner (stage "owner_review").
   const transfersOut = useTransfers(activeHostelId).filter(
-    (t) => t.fromHostelId === activeHostelId && t.stage === "manager_review"
+    (t) => t.fromHostelId === activeHostelId && t.stage === "requested"
   );
+  const joinRequests = useJoinRequests(activeHostelId).filter((r) => r.status === "pending");
+  const rooms = useRooms(activeHostelId);
+  const emptyRooms = rooms.filter((r) => r.occupantIds.length < r.capacity);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
@@ -62,7 +70,14 @@ function ManagerApprovalsPage() {
     const bill = bills.find((b) => b.id === billId);
     return bill ? nameOf(bill.userId) : "Member";
   };
+  const approveJoin = async (requestId: string, roomId: string) => {
+    await repo.joinRequests.decide(requestId, "approved", roomId);
+    toast("Member approved and assigned");
+    setApprovingId(null);
+  };
+
   const total =
+    joinRequests.length +
     mealStops.length +
     guestMeals.length +
     cookLeave.length +
@@ -99,6 +114,69 @@ function ManagerApprovalsPage() {
           </div>
         </div>
       </Card>
+
+      {joinRequests.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-primary">
+              <Icon icon={UserPlus} size={13} />
+            </div>
+            <div className="text-[13.5px] font-extrabold">New member requests</div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {joinRequests.map((r) => (
+              <Card key={r.id}>
+                <div className="mb-2 flex items-center gap-2.5">
+                  <Avatar name={r.name} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-extrabold">{r.name}</div>
+                    <div className="text-[10px] font-semibold text-text-secondary">{r.phone}</div>
+                  </div>
+                  <Chip tone="orange" active>
+                    Pending
+                  </Chip>
+                </div>
+                {approvingId === r.id ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {emptyRooms.length === 0 && (
+                      <div className="text-[10.5px] font-semibold text-text-secondary">
+                        No free rooms — add or free a seat first.
+                      </div>
+                    )}
+                    {emptyRooms.map((room) => (
+                      <button
+                        key={room.id}
+                        type="button"
+                        onClick={() => approveJoin(r.id, room.id)}
+                        className="rounded-pill bg-primary-soft px-3 py-1.5 text-[10.5px] font-extrabold text-primary"
+                      >
+                        Room {room.number}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setApprovingId(r.id)}
+                      className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    >
+                      Approve &amp; assign room
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => repo.joinRequests.decide(r.id, "denied")}
+                      className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {mealStops.length > 0 && (
         <div>

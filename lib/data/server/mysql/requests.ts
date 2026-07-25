@@ -251,8 +251,11 @@ export const transfers: TransferRepository = {
     await transaction(async (tx) => {
       const [t] = await loadTransfers("id = ?", [id], tx);
       if (!t) return;
+      // requested = the member's CURRENT hostel (manager) reviews the leave;
+      // approving passes it to the destination's OWNER (owner_review), whose
+      // approval finalises the move. (manager_review is a legacy no-op stage.)
       const next: Record<string, string> = {
-        requested: approve ? "manager_review" : "denied",
+        requested: approve ? "owner_review" : "denied",
         manager_review: approve ? "owner_review" : "denied",
         owner_review: approve ? "approved" : "denied",
       };
