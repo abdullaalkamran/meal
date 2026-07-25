@@ -48,6 +48,8 @@ CREATE TABLE hostels (
   meal_stop_requires_approval BOOLEAN     NOT NULL DEFAULT TRUE,
   shopping_rotation_policy  ENUM('spin-wheel','manual') NOT NULL DEFAULT 'spin-wheel',
   service_charge_monthly    DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- Detailed street address (house/holding, road, block, level/apartment).
+  street                    VARCHAR(255) NULL,
   -- When on, a joining member owes one month's advance rent on their first
   -- bill; it's held (users.advance_held) and credited back when they leave.
   advance_rent_required     BOOLEAN NOT NULL DEFAULT FALSE,

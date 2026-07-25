@@ -199,6 +199,9 @@ export interface Hostel {
   area: string;
   /** Structured location (division/district/thana dropdowns). */
   address?: GeoAddress;
+  /** Detailed street address — house/holding, road, block, level/apartment —
+   * built from the owner's inputs, e.g. "House 12, Road 5, Block C, Level 3". */
+  street?: string;
   ownerId: string;
   managerId: string;
   cookId?: string;

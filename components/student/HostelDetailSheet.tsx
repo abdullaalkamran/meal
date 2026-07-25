@@ -77,7 +77,7 @@ export function HostelDetailSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title={hostel.name}>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-1 flex items-center gap-2">
         <div className="text-[11px] font-semibold text-text-secondary">{hostel.area}</div>
         {hostel.verified ? (
           <span className="flex items-center gap-1 rounded-pill bg-primary-soft px-2 py-0.5 text-[9px] font-extrabold text-primary">
@@ -89,6 +89,9 @@ export function HostelDetailSheet({
           </span>
         )}
       </div>
+      {hostel.street && (
+        <div className="mb-3 text-[10.5px] font-semibold text-text">{hostel.street}</div>
+      )}
 
       {/* Money at a glance */}
       <div className="mb-4 flex flex-col gap-2">

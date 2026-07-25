@@ -44,9 +44,23 @@ export function AddHostelSheet({
 }) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState<Partial<GeoAddress>>({});
+  const [house, setHouse] = useState("");
+  const [road, setRoad] = useState("");
+  const [block, setBlock] = useState("");
+  const [level, setLevel] = useState("");
   const [kitchenLocation, setKitchenLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const buildStreet = () =>
+    [
+      house.trim() && `House ${house.trim()}`,
+      road.trim() && `Road ${road.trim()}`,
+      block.trim() && `Block ${block.trim()}`,
+      level.trim() && `Level/Apt ${level.trim()}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
 
   const valid = name.trim() && isCompleteAddress(address);
 
@@ -61,6 +75,7 @@ export function AddHostelSheet({
         // Short display form ("Mirpur, Dhaka") derived from the dropdowns.
         area: formatAddress(address),
         address,
+        street: buildStreet() || undefined,
         ownerId: owner.id,
         managerId: "", // manager-less; assigned as the next step
         // DEPRECATED nominal value — the real per-meal cost is computed every
@@ -92,6 +107,10 @@ export function AddHostelSheet({
       onClose();
       setName("");
       setAddress({});
+      setHouse("");
+      setRoad("");
+      setBlock("");
+      setLevel("");
       setKitchenLocation("");
     } catch (err) {
       setSaving(false);
@@ -103,6 +122,37 @@ export function AddHostelSheet({
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
       <GeoSelect label="Hostel address" value={address} onChange={setAddress} />
+
+      <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+        Street address <span className="font-semibold normal-case"> · optional</span>
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <input
+          value={house}
+          onChange={(e) => setHouse(e.target.value)}
+          placeholder="House / Holding no."
+          className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+        />
+        <input
+          value={road}
+          onChange={(e) => setRoad(e.target.value)}
+          placeholder="Road no. / name"
+          className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+        />
+        <input
+          value={block}
+          onChange={(e) => setBlock(e.target.value)}
+          placeholder="Block / sector"
+          className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+        />
+        <input
+          value={level}
+          onChange={(e) => setLevel(e.target.value)}
+          placeholder="Level / apartment"
+          className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
+        />
+      </div>
+
       <Field label="Kitchen location" optional value={kitchenLocation} onChange={(e) => setKitchenLocation(e.target.value)} placeholder="e.g. Room 101 · GF" />
 
       <div className="mb-4 rounded-btn bg-bg px-3 py-2.5 text-[10px] font-semibold text-text-secondary">
