@@ -17,6 +17,7 @@ import { SCHEMA_VERSION } from "../schema";
 import { normalizePhone } from "../../utils/phone";
 import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
+import { buildSeed } from "../mock/seed";
 import {
   mockRepositories,
   setActingUser,
@@ -104,9 +105,19 @@ function ensureFresh() {
     if (parsed.version === SCHEMA_VERSION) {
       store.replaceData(parsed.data, parsed.rev);
       pristine = false;
+    } else if (parsed.data && typeof parsed.data === "object") {
+      // A new app release bumped SCHEMA_VERSION. MIGRATE the saved data rather
+      // than discard it: merge it over the current seed, so any brand-new
+      // tables get their default (empty) value while every existing record is
+      // kept. Our schema changes are additive (new optional fields), so old
+      // records stay valid. Persist immediately in the new version so this
+      // one-time upgrade doesn't rerun. This is what stops a deploy from
+      // wiping the JSON-backed database.
+      store.replaceData({ ...buildSeed(), ...parsed.data }, parsed.rev ?? 0);
+      pristine = false;
+      persist();
+      return;
     }
-    // A version-mismatched file is ignored (seed state stays) and will be
-    // overwritten in the new format on the next write.
   } catch {
     // Corrupt file — keep current state; next write repairs it.
   }
