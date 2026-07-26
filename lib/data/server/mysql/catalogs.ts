@@ -62,9 +62,9 @@ function omitKeys(obj: Record<string, unknown>, keys: readonly string[]): Record
 
 // ── Availability areas (shared by listings and products) ───────────────────
 
-type AreaEntity = "service_listing" | "product";
+export type AreaEntity = "service_listing" | "product" | "user";
 
-async function writeAreas(entity: AreaEntity, entityId: string, areas: GeoArea[] | undefined, tx: Queryable) {
+export async function writeAreas(entity: AreaEntity, entityId: string, areas: GeoArea[] | undefined, tx: Queryable) {
   await run("DELETE FROM availability_areas WHERE entity_type = ? AND entity_id = ?", [entity, entityId], tx);
   for (const a of areas ?? []) {
     await run(
@@ -75,7 +75,7 @@ async function writeAreas(entity: AreaEntity, entityId: string, areas: GeoArea[]
   }
 }
 
-async function loadAreas(entity: AreaEntity, ids: string[], on?: Queryable): Promise<Map<string, GeoArea[]>> {
+export async function loadAreas(entity: AreaEntity, ids: string[], on?: Queryable): Promise<Map<string, GeoArea[]>> {
   const map = new Map<string, GeoArea[]>();
   if (!ids.length) return map;
   const rows = await all<{ entity_id: string; division: string; district: string | null; thana: string | null }>(

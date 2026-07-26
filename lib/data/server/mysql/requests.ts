@@ -12,6 +12,7 @@ import type {
   GuestMealRequest,
   HostelTransferRequest,
   JoinRequest,
+  LeaveRequest,
   MealSlot,
   MealStopRequest,
   Notification,
@@ -21,6 +22,7 @@ import type {
   AnnouncementRepository,
   GuestMealRepository,
   JoinRequestRepository,
+  LeaveRequestRepository,
   MealStopRepository,
   NotificationRepository,
   TransferRepository,
@@ -31,6 +33,7 @@ import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryab
 import { logActivity, notify, notifyHostelStaff } from "./context";
 import { ensureEntries, invalidateSealCache, offeredOnDay } from "./meals";
 import { newId } from "./ids";
+import { users } from "./core";
 
 const serverOnly = (): never => {
   throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
@@ -285,6 +288,100 @@ export const transfers: TransferRepository = {
 
   async cancel(id) {
     await run("DELETE FROM transfer_requests WHERE id = ?", [id]);
+  },
+
+  subscribe: serverOnly,
+};
+
+// ── Leave requests ──────────────────────────────────────────────────────────
+
+const MIN_LEAVE_NOTICE_DAYS = 30;
+
+interface LeaveRow {
+  id: string; hostel_id: string; user_id: string; requested_at: string;
+  leave_date: string; reason: string | null; status: LeaveRequest["status"];
+  decided_by: string | null; decided_at: string | null;
+}
+
+const LEAVE_COLS = "id, hostel_id, user_id, requested_at, leave_date, reason, status, decided_by, decided_at";
+
+const toLeave = (r: LeaveRow): LeaveRequest => ({
+  id: r.id,
+  hostelId: r.hostel_id,
+  userId: r.user_id,
+  requestedAt: toIso(r.requested_at),
+  leaveDate: toDay(r.leave_date),
+  reason: r.reason ?? undefined,
+  status: r.status,
+  ...(r.decided_by ? { decidedBy: r.decided_by } : {}),
+  ...(r.decided_at ? { decidedAt: toIso(r.decided_at) } : {}),
+});
+
+/** Auto-bans anyone whose approved leave date has arrived. Lazy, like meal
+ * sealing: runs on every read rather than needing a background job — cheap,
+ * since a hostel only ever has a handful of leave requests. */
+async function processDueLeaveRequests(hostelId: string): Promise<void> {
+  const due = await all<{ user_id: string }>(
+    "SELECT user_id FROM leave_requests WHERE hostel_id = ? AND status = 'approved' AND leave_date <= ?",
+    [hostelId, today()]
+  );
+  for (const { user_id } of due) {
+    const user = await one<{ banned: number }>("SELECT banned FROM users WHERE id = ?", [user_id]);
+    if (!user || toBool(user.banned)) continue;
+    await users.setBanned(user_id, true);
+    await logActivity(hostelId, "Member auto-banned (leave date reached)", undefined);
+  }
+}
+
+export const leaveRequests: LeaveRequestRepository = {
+  async listByHostel(hostelId) {
+    await processDueLeaveRequests(hostelId);
+    return (await all<LeaveRow>(`SELECT ${LEAVE_COLS} FROM leave_requests WHERE hostel_id = ?`, [hostelId])).map(toLeave);
+  },
+
+  async listByUser(userId) {
+    const u = await one<{ hostel_id: string | null }>("SELECT hostel_id FROM users WHERE id = ?", [userId]);
+    if (u?.hostel_id) await processDueLeaveRequests(u.hostel_id);
+    return (await all<LeaveRow>(`SELECT ${LEAVE_COLS} FROM leave_requests WHERE user_id = ?`, [userId])).map(toLeave);
+  },
+
+  async request(req) {
+    if (req.leaveDate < addDays(today(), MIN_LEAVE_NOTICE_DAYS)) {
+      throw new Error(`Leave requests need at least ${MIN_LEAVE_NOTICE_DAYS} days' notice.`);
+    }
+    await run(
+      "INSERT INTO leave_requests (id, hostel_id, user_id, requested_at, leave_date, reason, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+      [newId("leave"), req.hostelId, req.userId, now(), req.leaveDate, req.reason ?? null]
+    );
+    await notifyHostelStaff(
+      req.hostelId,
+      "Leave request",
+      `A member has given notice to leave on ${req.leaveDate}. Review it in Approvals.`
+    );
+  },
+
+  async decide(id, status, decidedBy) {
+    await transaction(async (tx) => {
+      const req = await one<LeaveRow>(`SELECT ${LEAVE_COLS} FROM leave_requests WHERE id = ?`, [id], tx);
+      if (!req) return;
+      await run(
+        "UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?",
+        [status, decidedBy, now(), id],
+        tx
+      );
+      await notify(
+        req.user_id,
+        status === "approved" ? "Leave request approved" : "Leave request declined",
+        status === "approved"
+          ? `Your leave on ${toDay(req.leave_date)} was approved. Your advance rent will be credited to your final bill.`
+          : "Your leave request was declined — talk to your manager if you still need to leave.",
+        tx
+      );
+    });
+  },
+
+  async cancel(id) {
+    await run("DELETE FROM leave_requests WHERE id = ? AND status = 'pending'", [id]);
   },
 
   subscribe: serverOnly,

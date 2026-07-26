@@ -165,6 +165,12 @@ async function ensureHostelStreetColumn(): Promise<void> {
   await run("ALTER TABLE hostels ADD COLUMN street VARCHAR(255) NULL AFTER service_charge_monthly");
 }
 
+/** Service Manager permission assignment (Super Admin → Users). */
+async function ensureServicePermissionColumn(): Promise<void> {
+  if (await columnExists("users", "service_kinds")) return;
+  await run("ALTER TABLE users ADD COLUMN service_kinds VARCHAR(191) NULL AFTER notify_monthly_report");
+}
+
 async function ensureAdvanceRentColumns(): Promise<void> {
   if (!(await columnExists("hostels", "advance_rent_required"))) {
     await run(
@@ -245,6 +251,28 @@ async function seedPlatformTeam(): Promise<void> {
   }
 }
 
+/** Creates leave_requests on databases that predate it. */
+async function ensureLeaveRequestsTable(): Promise<void> {
+  if (await tableExists("leave_requests")) return;
+  await run(
+    `CREATE TABLE leave_requests (
+       id           VARCHAR(64) NOT NULL PRIMARY KEY,
+       hostel_id    VARCHAR(64) NOT NULL,
+       user_id      VARCHAR(64) NOT NULL,
+       requested_at DATETIME(3) NOT NULL,
+       leave_date   DATE        NOT NULL,
+       reason       TEXT        NULL,
+       status       ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
+       decided_by   VARCHAR(64) NULL,
+       decided_at   DATETIME(3) NULL,
+       INDEX idx_leave_requests_hostel (hostel_id),
+       INDEX idx_leave_requests_user (user_id),
+       CONSTRAINT fk_leave_requests_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
+       CONSTRAINT fk_leave_requests_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 async function ensurePromoSettings(): Promise<void> {
   const rows = await all<{ id: number }>("SELECT id FROM hero_promo_settings LIMIT 1");
   if (rows.length === 0) await run("INSERT INTO hero_promo_settings (id) VALUES (1)");
@@ -268,6 +296,8 @@ export function ensureReady(): Promise<void> {
       await ensureHostelVerifiedColumn();
       await ensureMealsDefaultOffColumn();
       await ensureHostelStreetColumn();
+      await ensureServicePermissionColumn();
+      await ensureLeaveRequestsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

@@ -15,6 +15,7 @@ import type {
   NewHostel,
   Role,
   Room,
+  ServiceKind,
   Stars,
   User,
 } from "../../types";
@@ -35,6 +36,7 @@ import {
 import { currentActor, logActivity, notify } from "./context";
 import { invalidateSealCache } from "./meals";
 import { newId } from "./ids";
+import { loadAreas, writeAreas } from "./catalogs";
 
 const serverOnly = (): never => {
   throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
@@ -68,6 +70,7 @@ interface UserRow {
   manager_rating: number | null; manager_rating_note: string | null;
   joined_at: string | null; advance_held: number;
   notify_announcements: number; notify_bills: number; notify_monthly_report: number;
+  service_kinds: string | null;
 }
 
 interface HostelRow {
@@ -115,6 +118,9 @@ function toUser(r: UserRow): User {
       bills: toBool(r.notify_bills),
       monthlyReport: toBool(r.notify_monthly_report),
     },
+    serviceKinds: r.service_kinds
+      ? (r.service_kinds.split(",").filter(Boolean) as ServiceKind[])
+      : undefined,
   }) as User;
 }
 
@@ -123,6 +129,15 @@ async function withOwnedHostels(user: User, on?: Queryable): Promise<User> {
   if (user.role !== "owner") return user;
   const rows = await all<{ id: string }>("SELECT id FROM hostels WHERE owner_id = ?", [user.id], on);
   return { ...user, ownedHostelIds: rows.map((r) => r.id) };
+}
+
+/** Service Managers carry their assigned regions as an array — everyone else
+ * skips the extra query entirely. */
+async function withServiceAreas(user: User, on?: Queryable): Promise<User> {
+  if (user.role !== "service") return user;
+  const areas = await loadAreas("user", [user.id], on);
+  const list = areas.get(user.id);
+  return list && list.length ? { ...user, serviceAreas: list } : user;
 }
 
 async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
@@ -198,11 +213,12 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, meals_default_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report";
+  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, meals_default_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
-  return row ? withOwnedHostels(toUser(row), on) : undefined;
+  if (!row) return undefined;
+  return withServiceAreas(await withOwnedHostels(toUser(row), on), on);
 }
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -222,7 +238,7 @@ export const users: UserRepository = {
 
   async listAll() {
     const rows = await all<UserRow>(`SELECT ${USER_COLS} FROM users ORDER BY name`);
-    return Promise.all(rows.map((r) => withOwnedHostels(toUser(r))));
+    return Promise.all(rows.map(async (r) => withServiceAreas(await withOwnedHostels(toUser(r)))));
   },
 
   async phoneAvailable(phone) {
@@ -297,6 +313,16 @@ export const users: UserRepository = {
   },
 
   async updateUser(userId, patch) {
+    // Self-service profile edit ONLY — never another account's, and never a
+    // sensitive field (role, banned, hostelId, roomId, advanceHeld,
+    // managerRating, …). Those go through their own dedicated, properly-
+    // authorized methods (setBanned, remove, rate, setServicePermissions,
+    // hostels.assignManager, …). Reachable by ANY signed-in user (no
+    // policy.ts entry needed) precisely because it's this narrow — every
+    // role legitimately edits its own profile.
+    if (currentActor()?.id !== userId) {
+      throw new Error("You can only edit your own account.");
+    }
     const sets: string[] = [];
     const params: unknown[] = [];
     const put = (col: string, val: unknown) => { sets.push(`${col} = ?`); params.push(val); };
@@ -313,19 +339,9 @@ export const users: UserRepository = {
       put("phone_normalized", normalized);
     }
     if (patch.email !== undefined) put("email", patch.email ?? null);
-    if (patch.role !== undefined) put("role", patch.role);
     if (patch.avatarSeed !== undefined) put("avatar_seed", patch.avatarSeed);
-    if (patch.hostelId !== undefined) put("hostel_id", patch.hostelId || null);
-    if (patch.roomId !== undefined) put("room_id", patch.roomId ?? null);
     if (patch.studentId !== undefined) put("student_id", patch.studentId ?? null);
     if (patch.department !== undefined) put("department", patch.department ?? null);
-    if (patch.mealsSuspended !== undefined) put("meals_suspended", patch.mealsSuspended ? 1 : 0);
-    if (patch.futureMealsOff !== undefined) put("meals_default_off", patch.futureMealsOff ? 1 : 0);
-    if (patch.banned !== undefined) put("banned", patch.banned ? 1 : 0);
-    if (patch.managerRating !== undefined) put("manager_rating", patch.managerRating ?? null);
-    if (patch.managerRatingNote !== undefined) put("manager_rating_note", patch.managerRatingNote ?? null);
-    if (patch.joinedAt !== undefined) put("joined_at", patch.joinedAt ?? null);
-    if (patch.advanceHeld !== undefined) put("advance_held", patch.advanceHeld ?? 0);
     if ("address" in patch) {
       put("division", patch.address?.division ?? null);
       put("district", patch.address?.district ?? null);
@@ -435,6 +451,17 @@ export const users: UserRepository = {
     // A new boarder invalidates the "nothing to seal" cache so their meal rows
     // (join day off, then on) materialise on the very next read.
     invalidateSealCache(hostelId);
+  },
+
+  async setServicePermissions(userId, permissions) {
+    await transaction(async (tx) => {
+      await run(
+        "UPDATE users SET service_kinds = ? WHERE id = ?",
+        [permissions.kinds.length ? permissions.kinds.join(",") : null, userId],
+        tx
+      );
+      await writeAreas("user", userId, permissions.areas, tx);
+    });
   },
 
   subscribe: serverOnly,

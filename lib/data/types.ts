@@ -69,6 +69,14 @@ export interface User {
   /** Member's home address (division/district/thana dropdowns at signup) —
    * also what area-restricted platform services filter against. */
   address?: GeoAddress;
+  /** Set only for role "service" — which of the platform's service-catalog
+   * kinds (see ServiceKind) and which regions (see GeoArea) this Service
+   * Manager is responsible for. Assigned by Super Admin (users.setServicePermissions);
+   * empty/undefined means unassigned. Informational only for now — not yet
+   * enforced anywhere in app/service/*, which still shows every kind/region
+   * to any Service Manager regardless of this. */
+  serviceKinds?: ServiceKind[];
+  serviceAreas?: GeoArea[];
 }
 
 /** What public sign-up is allowed to submit. Deliberately narrow: the role is
@@ -556,6 +564,28 @@ export interface HostelTransferRequest {
   reason: string;
   stage: "requested" | "manager_review" | "owner_review" | "approved" | "denied";
   timeline: { stage: string; at: string; by?: string }[];
+}
+
+/** A member's formal notice that they intend to leave the hostel for good —
+ * distinct from a hostel-to-hostel Transfer. Must be submitted at least 30
+ * days before `leaveDate` (enforced server-side). Approving it does NOT
+ * remove the member immediately: they're auto-banned once `leaveDate`
+ * actually arrives (checked lazily whenever leave requests are read, the
+ * same lazy-materialization pattern meal sealing uses), giving the manager
+ * the full notice period to plan a replacement. Their advance rent
+ * (User.advanceHeld) can only be credited via bills.applyAdvanceOnLeave once
+ * a request for them reaches "approved" — this is what "adjust advance rent
+ * only once they've left" is enforced by. */
+export interface LeaveRequest {
+  id: string;
+  hostelId: string;
+  userId: string;
+  requestedAt: string;
+  leaveDate: string;
+  reason?: string;
+  status: "pending" | "approved" | "denied";
+  decidedBy?: string;
+  decidedAt?: string;
 }
 
 export interface JoinRequest {

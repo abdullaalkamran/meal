@@ -6,8 +6,11 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { repo, type Expense } from "@/lib/data";
 import { useHostel } from "@/hooks/useHostel";
+import { useUsers } from "@/hooks/useUsers";
+import { useLeaveRequests } from "@/hooks/useLeaveRequests";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, lastDayOfMonth } from "@/lib/utils/date";
 import { isServiceChargeCategory } from "@/lib/utils/expenseCategories";
@@ -153,6 +156,31 @@ export function GenerateBillsSheet({
   onGenerated: (count: number) => void;
 }) {
   const hostel = useHostel(hostelId);
+  const { toast } = useToast();
+  const members = useUsers(hostelId);
+  const leaveRequests = useLeaveRequests(hostelId);
+  // Eligible for the advance-rent settlement: an approved leave request AND
+  // rent still held — matches the same gate bills.applyAdvanceOnLeave
+  // enforces server-side (see MemberDetailScreen for the other place this
+  // same action lives).
+  const leavingWithAdvance = members.filter(
+    (m) =>
+      (m.advanceHeld ?? 0) > 0 &&
+      leaveRequests.some((r) => r.userId === m.id && r.status === "approved")
+  );
+  const [applyingAdvanceId, setApplyingAdvanceId] = useState<string | null>(null);
+  const applyAdvance = async (userId: string) => {
+    if (!hostelId || applyingAdvanceId) return;
+    setApplyingAdvanceId(userId);
+    try {
+      await repo.bills.applyAdvanceOnLeave(hostelId, userId);
+      toast("Advance rent credited to their latest bill");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not apply the advance rent.");
+    } finally {
+      setApplyingAdvanceId(null);
+    }
+  };
   const ownerServiceCharge = hostel?.settings.serviceChargeMonthly ?? 0;
   const [newUtilities, setNewUtilities] = useState<Expense[]>([]);
   const [billedUtilities, setBilledUtilities] = useState<Expense[]>([]);
@@ -226,6 +254,34 @@ export function GenerateBillsSheet({
         (members + guests) = the actual per-meal rate, charged for each member&rsquo;s own
         and guest meals.
       </div>
+
+      {leavingWithAdvance.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Members leaving — advance rent held
+          </div>
+          <div className="flex flex-col gap-2">
+            {leavingWithAdvance.map((m) => (
+              <div key={m.id} className="flex items-center justify-between rounded-btn bg-primary-soft px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-[11.5px] font-bold">{m.name}</div>
+                  <div className="text-[9.5px] font-semibold text-primary/80">
+                    {formatBDT(m.advanceHeld ?? 0)} held — credit it to their final bill
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => applyAdvance(m.id)}
+                  disabled={applyingAdvanceId === m.id}
+                  className="min-h-9 shrink-0 rounded-btn bg-primary px-3 text-[10.5px] font-extrabold text-white disabled:opacity-50"
+                >
+                  {applyingAdvanceId === m.id ? "Applying…" : "Apply advance"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {ownerServiceCharge > 0 && (
         <div className="mb-4 flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">

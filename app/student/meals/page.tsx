@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Ban, ChevronDown, ChevronUp, Phone, Receipt, ShoppingBag, Trophy, Wallet } from "lucide-react";
+import { Ban, ChevronDown, ChevronUp, Phone, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
@@ -21,7 +21,7 @@ import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { addDays, currentMonth, today } from "@/lib/utils/date";
+import { addDays, currentMonth, formatMonthLabel, today } from "@/lib/utils/date";
 import { canToggleMeal, cutoffLabel } from "@/lib/utils/mealPolicy";
 import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
@@ -166,6 +166,19 @@ export default function StudentMealsPage() {
   const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
   const monthCosts = allCosts.filter((c) => c.dates.some(inSelectedMonth));
   const totalShopping = monthCosts.reduce((sum, c) => sum + c.amount, 0);
+  // Only days that have actually happened — future days members have toggled
+  // on aren't cooked yet, so they don't count.
+  const monthMealCount = monthDays.reduce(
+    (sum, d) =>
+      d.date > today()
+        ? sum
+        : sum +
+          Object.values(d.entries).reduce(
+            (s, e) => s + (e.breakfast.on ? 1 : 0) + (e.lunch.on ? 1 : 0) + (e.dinner.on ? 1 : 0),
+            0
+          ),
+    0
+  );
   const blocksInMonth = shoppingPlan?.blocks.filter((b) => b.dates.some(inSelectedMonth)) ?? [];
 
   // Per-person cost/rate/quality for the selected month, used by both the
@@ -488,48 +501,29 @@ export default function StudentMealsPage() {
         </div>
       </Card>
 
-      {/* Hostel stats for the month */}
-      <div className="grid grid-cols-3 gap-2">
-        <Card className="text-center" padded>
-          <div className="mb-1 flex justify-center text-text-secondary">
-            <Icon icon={Receipt} size={14} />
+      {/* Shopping cost for the month — same layout as the manager's meals page */}
+      <Card>
+        <div className="mb-3 text-[13.5px] font-extrabold">
+          Shopping cost &middot; {formatMonthLabel(monthPrefix)}
+        </div>
+        <div className="mb-3 rounded-btn bg-primary-soft p-3">
+          <div className="text-[9px] font-bold text-text-secondary">TOTAL SHOPPING COST</div>
+          <div className="text-[20px] font-extrabold text-primary">{formatBDT(totalShopping)}</div>
+          <div className="text-[10px] font-semibold text-text-secondary">
+            Actual grocery spend recorded this month
           </div>
-          <div className="text-[13.5px] font-extrabold">
-            {monthDays.reduce(
-              (sum, d) =>
-                // Only days that have actually happened — future days members
-                // have toggled on aren't cooked yet, so they don't count.
-                d.date > today()
-                  ? sum
-                  : sum +
-                    Object.values(d.entries).reduce(
-                      (s, e) =>
-                        s +
-                        (e.breakfast.on ? 1 : 0) +
-                        (e.lunch.on ? 1 : 0) +
-                        (e.dinner.on ? 1 : 0),
-                      0
-                    ),
-              0
-            )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-btn bg-bg p-2.5 text-center">
+            <div className="text-[15px] font-extrabold">{monthMealCount}</div>
+            <div className="text-[9px] font-bold text-text-secondary">Total meals</div>
           </div>
-          <div className="text-[9px] font-bold text-text-secondary">Total meals</div>
-        </Card>
-        <Card className="text-center" padded>
-          <div className="mb-1 flex justify-center text-text-secondary">
-            <Icon icon={ShoppingBag} size={14} />
+          <div className="rounded-btn bg-bg p-2.5 text-center">
+            <div className="text-[15px] font-extrabold text-orange">{formatBDT(actualRate.rate)}</div>
+            <div className="text-[9px] font-bold text-text-secondary">Avg cost / meal</div>
           </div>
-          <div className="text-[13.5px] font-extrabold">{formatBDT(totalShopping)}</div>
-          <div className="text-[9px] font-bold text-text-secondary">Total shopping</div>
-        </Card>
-        <Card className="text-center" padded>
-          <div className="mb-1 flex justify-center text-text-secondary">
-            <Icon icon={Wallet} size={14} />
-          </div>
-          <div className="text-[13.5px] font-extrabold">{formatBDT(actualRate.rate)}</div>
-          <div className="text-[9px] font-bold text-text-secondary">Actual rate/meal</div>
-        </Card>
-      </div>
+        </div>
+      </Card>
 
       {/* Boarder meals for selected date */}
       <Card>

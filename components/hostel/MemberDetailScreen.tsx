@@ -21,6 +21,7 @@ import { hasManagerPermission } from "@/lib/auth/permissions";
 import { useUsers } from "@/hooks/useUsers";
 import { useRooms } from "@/hooks/useRooms";
 import { useMealStops } from "@/hooks/useMealStops";
+import { useLeaveRequests } from "@/hooks/useLeaveRequests";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
@@ -53,11 +54,15 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   const members = useUsers(activeHostelId);
   const rooms = useRooms(activeHostelId);
   const mealStops = useMealStops(activeHostelId);
+  const leaveRequests = useLeaveRequests(activeHostelId);
   const dutyPlans = useDutyPlans(activeHostelId);
   const { toast } = useToast();
 
   const member = members.find((u) => u.id === id);
   const room = rooms.find((r) => r.id === member?.roomId);
+  // Advance rent can only be settled once the member has actually left —
+  // enforced server-side too (bills.applyAdvanceOnLeave throws otherwise).
+  const hasApprovedLeave = leaveRequests.some((r) => r.userId === id && r.status === "approved");
 
   const [bill, setBill] = useState<Bill | undefined>();
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -137,8 +142,12 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   };
   const settleAdvance = async () => {
     if (!activeHostelId) return;
-    await repo.bills.applyAdvanceOnLeave(activeHostelId, member.id);
-    toast(`Advance rent credited to ${member.name.split(" ")[0]}'s latest bill`);
+    try {
+      await repo.bills.applyAdvanceOnLeave(activeHostelId, member.id);
+      toast(`Advance rent credited to ${member.name.split(" ")[0]}'s latest bill`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not apply the advance rent.");
+    }
   };
   const makeManager = async () => {
     if (!activeHostelId) return;
@@ -453,13 +462,19 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
                 Collected on their first bill. When they leave, credit it against their
                 final bill to cover the last month&rsquo;s rent.
               </div>
-              <button
-                type="button"
-                onClick={settleAdvance}
-                className="min-h-10 w-full rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
-              >
-                Apply advance to final bill (leaving)
-              </button>
+              {hasApprovedLeave ? (
+                <button
+                  type="button"
+                  onClick={settleAdvance}
+                  className="min-h-10 w-full rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                >
+                  Apply advance to final bill (leaving)
+                </button>
+              ) : (
+                <div className="rounded-btn bg-primary/10 px-2.5 py-2 text-[9.5px] font-bold text-primary">
+                  Needs an approved leave request first — see Approvals, or Generate Bills.
+                </div>
+              )}
             </div>
           )}
           {member.role !== "manager" &&

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Ban, CreditCard, ShoppingBag, UserPlus } from "lucide-react";
+import { ArrowLeftRight, Ban, CreditCard, DoorOpen, ShoppingBag, UserPlus } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealStops } from "@/hooks/useMealStops";
@@ -9,6 +9,7 @@ import { useGuestMeals } from "@/hooks/useGuestMeals";
 import { useCookLeaveRequests } from "@/hooks/useCookLeaveRequests";
 import { useTransfers } from "@/hooks/useTransfers";
 import { useJoinRequests } from "@/hooks/useJoinRequests";
+import { useLeaveRequests } from "@/hooks/useLeaveRequests";
 import { useRooms } from "@/hooks/useRooms";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
@@ -42,6 +43,7 @@ function ManagerApprovalsPage() {
     (t) => t.fromHostelId === activeHostelId && t.stage === "requested"
   );
   const joinRequests = useJoinRequests(activeHostelId).filter((r) => r.status === "pending");
+  const leaveRequests = useLeaveRequests(activeHostelId).filter((r) => r.status === "pending");
   const rooms = useRooms(activeHostelId);
   const emptyRooms = rooms.filter((r) => r.occupantIds.length < r.capacity);
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -83,7 +85,8 @@ function ManagerApprovalsPage() {
     cookLeave.length +
     payments.length +
     transfersOut.length +
-    pendingShoppingCosts.length;
+    pendingShoppingCosts.length +
+    leaveRequests.length;
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -339,6 +342,56 @@ function ManagerApprovalsPage() {
                     className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
                   >
                     Reject
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {leaveRequests.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-soft text-orange">
+              <Icon icon={DoorOpen} size={13} />
+            </div>
+            <div className="text-[13.5px] font-extrabold">Leave requests</div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {leaveRequests.map((r) => (
+              <Card key={r.id}>
+                <div className="mb-2 flex items-center gap-2.5">
+                  <Avatar name={nameOf(r.userId)} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-extrabold">{nameOf(r.userId)}</div>
+                    <div className="text-[10px] font-semibold text-text-secondary">
+                      Leaving on {r.leaveDate}
+                    </div>
+                  </div>
+                  <Chip tone="orange" active>
+                    Pending
+                  </Chip>
+                </div>
+                {r.reason && (
+                  <div className="mb-2 rounded-btn bg-bg px-3 py-2 text-[11px] font-semibold italic text-text-secondary">
+                    &ldquo;{r.reason}&rdquo;
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => user && repo.leaveRequests.decide(r.id, "approved", user.id)}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => user && repo.leaveRequests.decide(r.id, "denied", user.id)}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                  >
+                    Decline
                   </button>
                 </div>
               </Card>

@@ -109,6 +109,11 @@ CREATE TABLE users (
   notify_announcements BOOLEAN NOT NULL DEFAULT TRUE,
   notify_bills         BOOLEAN NOT NULL DEFAULT TRUE,
   notify_monthly_report BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Service Manager only: comma-separated ServiceKind values (cook/job/course/
+  -- offer/hostel) this account is responsible for. Regions live in
+  -- availability_areas (entity_type='user'). Assigned by Super Admin;
+  -- NULL/empty = unassigned. Informational only, not yet enforced.
+  service_kinds       VARCHAR(191) NULL,
   created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_users_phone (phone),
   UNIQUE KEY uq_users_phone_normalized (phone_normalized),
@@ -621,6 +626,22 @@ CREATE TABLE transfer_timeline (
   by_user_id  VARCHAR(64) NULL,
   UNIQUE KEY uq_timeline_pos (transfer_id, position),
   CONSTRAINT fk_timeline_transfer FOREIGN KEY (transfer_id) REFERENCES transfer_requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE leave_requests (
+  id           VARCHAR(64) NOT NULL PRIMARY KEY,
+  hostel_id    VARCHAR(64) NOT NULL,
+  user_id      VARCHAR(64) NOT NULL,
+  requested_at DATETIME(3) NOT NULL,
+  leave_date   DATE        NOT NULL,
+  reason       TEXT        NULL,
+  status       ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
+  decided_by   VARCHAR(64) NULL,
+  decided_at   DATETIME(3) NULL,
+  INDEX idx_leave_requests_hostel (hostel_id),
+  INDEX idx_leave_requests_user (user_id),
+  CONSTRAINT fk_leave_requests_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
+  CONSTRAINT fk_leave_requests_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE meal_stop_requests (

@@ -511,6 +511,14 @@ export const bills: BillRepository = {
    * their last month's rent, and any excess reduces the rest of the bill. */
   async applyAdvanceOnLeave(hostelId, userId) {
     await transaction(async (tx) => {
+      const approvedLeave = await one<{ id: string }>(
+        "SELECT id FROM leave_requests WHERE hostel_id = ? AND user_id = ? AND status = 'approved' LIMIT 1",
+        [hostelId, userId],
+        tx
+      );
+      if (!approvedLeave) {
+        throw new Error("This member doesn't have an approved leave request yet — approve one first.");
+      }
       const u = await one<{ advance_held: number }>(
         "SELECT advance_held FROM users WHERE id = ? AND hostel_id = ?",
         [userId, hostelId],

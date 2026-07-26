@@ -5,7 +5,10 @@ import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
 import { ResetPasswordSheet } from "@/components/hostel/ResetPasswordSheet";
+import { CreatePlatformAccountSheet } from "@/components/admin/CreatePlatformAccountSheet";
+import { ServicePermissionsSheet } from "@/components/admin/ServicePermissionsSheet";
 import { repo, type Hostel, type Role, type User } from "@/lib/data";
+import { formatArea } from "@/lib/geo/bangladesh";
 
 const ROLE_LABEL: Record<Role, string> = {
   superadmin: "Super Admin",
@@ -34,6 +37,8 @@ export default function AdminUsersPage() {
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [resetUser, setResetUser] = useState<User | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [permsUser, setPermsUser] = useState<User | null>(null);
   const { toast } = useToast();
 
   const load = () => {
@@ -49,6 +54,11 @@ export default function AdminUsersPage() {
   const referencedBy = (userId: string) =>
     hostels.find((h) => h.ownerId === userId || h.managerId === userId || h.cookId === userId);
 
+  const ban = async (u: User) => {
+    await repo.users.setBanned(u.id, true);
+    toast(`${u.name.split(" ")[0]} banned`);
+    load();
+  };
   const unban = async (u: User) => {
     await repo.users.setBanned(u.id, false);
     toast(`${u.name.split(" ")[0]} un-banned`);
@@ -63,9 +73,18 @@ export default function AdminUsersPage() {
 
   return (
     <div className="flex flex-col gap-5 pt-2">
-      <div>
-        <div className="text-[17.5px] font-extrabold tracking-tight">All users</div>
-        <div className="text-[10.5px] font-semibold text-text-secondary">{users.length} accounts</div>
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[17.5px] font-extrabold tracking-tight">All users</div>
+          <div className="text-[10.5px] font-semibold text-text-secondary">{users.length} accounts</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="text-[11.5px] font-extrabold text-primary"
+        >
+          + Add
+        </button>
       </div>
 
       {ROLE_ORDER.map((role) => {
@@ -110,47 +129,94 @@ export default function AdminUsersPage() {
                       Reset password
                     </button>
                   </div>
-                  {/* Platform accounts are provisioned, not managed here. */}
-                  {u.role !== "superadmin" && u.role !== "marketing" && u.role !== "service" && (
+                  {/* Which service-catalog kinds/regions this Service Manager
+                      is responsible for — Super Admin assigns it here. */}
+                  {u.role === "service" && (
+                    <div className="mt-2.5 border-t border-border pt-2.5">
+                      <div className="mb-2 text-[9.5px] font-semibold text-text-secondary">
+                        {u.serviceKinds?.length
+                          ? `${u.serviceKinds.length} service type${u.serviceKinds.length === 1 ? "" : "s"}`
+                          : "All service types"}
+                        {" · "}
+                        {u.serviceAreas?.length
+                          ? u.serviceAreas.map((a) => formatArea(a)).join(", ")
+                          : "All regions"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPermsUser(u)}
+                        className="w-full rounded-pill bg-bg py-1.5 text-[10px] font-extrabold text-text-secondary"
+                      >
+                        Edit permissions
+                      </button>
+                    </div>
+                  )}
+                  {/* Super Admin itself has no ban/remove controls here — too
+                      easy to lock everyone out by accident. */}
+                  {u.role !== "superadmin" && (
                     <div className="mt-2.5 flex gap-2 border-t border-border pt-2.5">
-                      {u.banned && (
-                        <button
-                          type="button"
-                          onClick={() => unban(u)}
-                          className="flex-1 rounded-pill bg-primary-soft py-1.5 text-[10px] font-extrabold text-primary"
-                        >
-                          Un-ban
-                        </button>
-                      )}
-                      {referencedBy(u.id) ? (
-                        <div className="flex-1 rounded-pill bg-bg py-1.5 text-center text-[9.5px] font-bold text-text-secondary">
-                          Runs {referencedBy(u.id)!.name} — reassign before removing
-                        </div>
-                      ) : confirmRemoveId === u.id ? (
-                        <>
+                      {u.role === "marketing" || u.role === "service" ? (
+                        // Platform-team roles: ban/un-ban only, no hostel to
+                        // reassign so there's nothing to remove here.
+                        u.banned ? (
                           <button
                             type="button"
-                            onClick={() => remove(u)}
-                            className="flex-1 rounded-pill bg-danger py-1.5 text-[10px] font-extrabold text-white"
+                            onClick={() => unban(u)}
+                            className="flex-1 rounded-pill bg-primary-soft py-1.5 text-[10px] font-extrabold text-primary"
                           >
-                            Confirm remove
+                            Un-ban
                           </button>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => setConfirmRemoveId(null)}
-                            className="flex-1 rounded-pill border border-border py-1.5 text-[10px] font-extrabold"
+                            onClick={() => ban(u)}
+                            className="flex-1 rounded-pill bg-danger-soft py-1.5 text-[10px] font-extrabold text-danger"
                           >
-                            Cancel
+                            Ban account
                           </button>
-                        </>
+                        )
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmRemoveId(u.id)}
-                          className="flex-1 rounded-pill bg-danger-soft py-1.5 text-[10px] font-extrabold text-danger"
-                        >
-                          Remove account
-                        </button>
+                        <>
+                          {u.banned && (
+                            <button
+                              type="button"
+                              onClick={() => unban(u)}
+                              className="flex-1 rounded-pill bg-primary-soft py-1.5 text-[10px] font-extrabold text-primary"
+                            >
+                              Un-ban
+                            </button>
+                          )}
+                          {referencedBy(u.id) ? (
+                            <div className="flex-1 rounded-pill bg-bg py-1.5 text-center text-[9.5px] font-bold text-text-secondary">
+                              Runs {referencedBy(u.id)!.name} — reassign before removing
+                            </div>
+                          ) : confirmRemoveId === u.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => remove(u)}
+                                className="flex-1 rounded-pill bg-danger py-1.5 text-[10px] font-extrabold text-white"
+                              >
+                                Confirm remove
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmRemoveId(null)}
+                                className="flex-1 rounded-pill border border-border py-1.5 text-[10px] font-extrabold"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRemoveId(u.id)}
+                              className="flex-1 rounded-pill bg-danger-soft py-1.5 text-[10px] font-extrabold text-danger"
+                            >
+                              Remove account
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -165,6 +231,23 @@ export default function AdminUsersPage() {
         onClose={() => setResetUser(null)}
         userId={resetUser?.id}
         name={resetUser?.name ?? ""}
+      />
+      <CreatePlatformAccountSheet
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(name) => {
+          toast(`${name}'s account created`);
+          load();
+        }}
+      />
+      <ServicePermissionsSheet
+        open={!!permsUser}
+        onClose={() => setPermsUser(null)}
+        user={permsUser}
+        onSaved={() => {
+          toast("Permissions saved");
+          load();
+        }}
       />
     </div>
   );

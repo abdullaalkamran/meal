@@ -45,6 +45,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
     remove: [...HOSTEL_STAFF, "superadmin"],
     rate: HOSTEL_STAFF,
     attachToHostel: HOSTEL_STAFF,
+    setServicePermissions: PLATFORM_ADMIN,
   },
   hostels: {
     create: ["owner", "superadmin"],
@@ -86,6 +87,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   joinRequests: {
     decide: HOSTEL_STAFF,
   },
+  leaveRequests: { decide: HOSTEL_STAFF },
   mealStops: { decide: HOSTEL_STAFF },
   guestMeals: { decide: HOSTEL_STAFF },
   shoppingCosts: { decide: HOSTEL_STAFF },

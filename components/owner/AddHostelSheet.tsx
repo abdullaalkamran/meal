@@ -98,10 +98,9 @@ export function AddHostelSheet({
         },
       });
 
-      await repo.users.updateUser(owner.id, {
-        ownedHostelIds: [...(owner.ownedHostelIds ?? []), hostel.id],
-      });
-
+      // hostels.create attaches the new hostel to the owner's ownedHostelIds
+      // itself now (mirrors MySQL, where it's always derived) — no separate
+      // client call needed.
       setSaving(false);
       onCreated(hostel);
       onClose();

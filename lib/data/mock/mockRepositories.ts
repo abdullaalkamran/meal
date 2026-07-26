@@ -13,6 +13,7 @@ import type {
   GuestMealRepository,
   HostelRepository,
   JoinRequestRepository,
+  LeaveRequestRepository,
   MarketingRepository,
   MealEditRepository,
   MealRepository,
@@ -364,8 +365,26 @@ const users: UserRepository = {
     return created;
   },
   async updateUser(userId, patch) {
-    if (patch.phone !== undefined) {
-      const target = normalizePhone(patch.phone);
+    // Self-service profile edit ONLY — never another account's, and never a
+    // sensitive field (role, banned, hostelId, ownedHostelIds, advanceHeld,
+    // …). Those go through their own dedicated, properly-authorized methods
+    // (setBanned, remove, rate, setServicePermissions, hostels.assignManager,
+    // hostels.create's automatic ownedHostelIds update, …). Reachable by ANY
+    // signed-in user (no policy.ts entry needed) precisely because it's
+    // this narrow — every role legitimately edits its own profile.
+    if (actingUser?.id !== userId) {
+      throw new Error("You can only edit your own account.");
+    }
+    const ALLOWED_KEYS = [
+      "name", "phone", "email", "address", "studentId", "department",
+      "notificationPrefs", "avatarSeed",
+    ] as const;
+    const safePatch: Partial<User> = {};
+    for (const key of ALLOWED_KEYS) {
+      if (key in patch) (safePatch as Record<string, unknown>)[key] = patch[key];
+    }
+    if (safePatch.phone !== undefined) {
+      const target = normalizePhone(safePatch.phone);
       if (store.data.users.some((u) => u.id !== userId && normalizePhone(u.phone) === target)) {
         throw new Error("Another account already uses this phone number.");
       }
@@ -375,9 +394,19 @@ const users: UserRepository = {
     // Replace with a new object (not Object.assign-in-place) so subscribers
     // keyed on reference equality — e.g. SessionProvider mirroring the
     // logged-in user's own record — actually see the change.
-    const updated = { ...store.data.users[idx], ...patch };
+    const updated = { ...store.data.users[idx], ...safePatch };
     store.data.users[idx] = updated;
     store.emit(`users:${updated.hostelId}`);
+    emitUser(userId);
+  },
+  async setServicePermissions(userId, permissions) {
+    const idx = store.data.users.findIndex((u) => u.id === userId);
+    if (idx === -1) return;
+    store.data.users[idx] = {
+      ...store.data.users[idx],
+      serviceKinds: permissions.kinds,
+      serviceAreas: permissions.areas,
+    };
     emitUser(userId);
   },
   async setBanned(userId, banned) {
@@ -646,6 +675,21 @@ const hostels: HostelRepository = {
   async create(hostel) {
     const created = { ...hostel, id: nextId("hostel") };
     store.data.hostels.push(created);
+    // Mirrors the MySQL backend, where ownedHostelIds is always DERIVED from
+    // hostels.owner_id — the owner sees their new hostel immediately, with no
+    // separate client-side users.updateUser call needed (that method is now
+    // self-service-fields-only and wouldn't accept ownedHostelIds anyway).
+    const ownerIdx = store.data.users.findIndex((u) => u.id === hostel.ownerId);
+    if (ownerIdx !== -1) {
+      const owner = store.data.users[ownerIdx];
+      if (!(owner.ownedHostelIds ?? []).includes(created.id)) {
+        store.data.users[ownerIdx] = {
+          ...owner,
+          ownedHostelIds: [...(owner.ownedHostelIds ?? []), created.id],
+        };
+        emitUser(owner.id);
+      }
+    }
     store.emit("hostels");
     return created;
   },
@@ -1574,6 +1618,12 @@ const bills: BillRepository = {
     return store.data.billAdjustments.filter((a) => a.billId === billId);
   },
   async applyAdvanceOnLeave(hostelId, userId) {
+    const hasApprovedLeave = store.data.leaveRequests.some(
+      (r) => r.hostelId === hostelId && r.userId === userId && r.status === "approved"
+    );
+    if (!hasApprovedLeave) {
+      throw new Error("This member doesn't have an approved leave request yet — approve one first.");
+    }
     const user = store.data.users.find((u) => u.id === userId && u.hostelId === hostelId);
     const held = user?.advanceHeld ?? 0;
     if (!user || held <= 0) return;
@@ -2368,6 +2418,89 @@ const joinRequests: JoinRequestRepository = {
   },
 };
 
+// ── Leave requests ──────────────────────────────────────────────────────────
+const MIN_LEAVE_NOTICE_DAYS = 30;
+
+/** Auto-bans anyone whose approved leave date has arrived. Lazy, like meal
+ * sealing: runs on every read rather than needing a background job, and is
+ * cheap since a hostel only ever has a handful of leave requests (not an
+ * unbounded date range). */
+function processDueLeaveRequests(hostelId: string): void {
+  const due = store.data.leaveRequests.filter(
+    (r) => r.hostelId === hostelId && r.status === "approved" && r.leaveDate <= today()
+  );
+  for (const r of due) {
+    const idx = store.data.users.findIndex((u) => u.id === r.userId);
+    if (idx === -1 || store.data.users[idx].banned) continue;
+    const user = store.data.users[idx];
+    store.data.rooms.forEach((room) => {
+      if (room.occupantIds.includes(user.id)) {
+        room.occupantIds = room.occupantIds.filter((id) => id !== user.id);
+      }
+    });
+    store.data.users[idx] = { ...user, banned: true, mealsSuspended: true, roomId: undefined };
+    logActivity(hostelId, "Member auto-banned (leave date reached)", user.name);
+    store.emit(`users:${hostelId}`);
+    store.emit(`rooms:${hostelId}`);
+    emitUser(user.id);
+  }
+}
+
+const leaveRequests: LeaveRequestRepository = {
+  async listByHostel(hostelId) {
+    processDueLeaveRequests(hostelId);
+    return store.data.leaveRequests.filter((r) => r.hostelId === hostelId);
+  },
+  async listByUser(userId) {
+    const user = store.data.users.find((u) => u.id === userId);
+    if (user?.hostelId) processDueLeaveRequests(user.hostelId);
+    return store.data.leaveRequests.filter((r) => r.userId === userId);
+  },
+  async request(req) {
+    if (req.leaveDate < addDays(today(), MIN_LEAVE_NOTICE_DAYS)) {
+      throw new Error(`Leave requests need at least ${MIN_LEAVE_NOTICE_DAYS} days' notice.`);
+    }
+    store.data.leaveRequests.push({
+      ...req,
+      id: nextId("leave"),
+      requestedAt: new Date().toISOString(),
+      status: "pending",
+    });
+    notifyHostelStaff(
+      req.hostelId,
+      "Leave request",
+      `A member has given notice to leave on ${req.leaveDate}. Review it in Approvals.`
+    );
+    store.emit(`leaveRequests:${req.hostelId}`);
+  },
+  async decide(id, status, decidedBy) {
+    const req = store.data.leaveRequests.find((r) => r.id === id);
+    if (!req) return;
+    req.status = status;
+    req.decidedBy = decidedBy;
+    req.decidedAt = new Date().toISOString();
+    notifyUser(
+      req.userId,
+      status === "approved" ? "Leave request approved" : "Leave request declined",
+      status === "approved"
+        ? `Your leave on ${req.leaveDate} was approved. Your advance rent will be credited to your final bill.`
+        : "Your leave request was declined — talk to your manager if you still need to leave."
+    );
+    store.emit(`leaveRequests:${req.hostelId}`);
+  },
+  async cancel(id) {
+    const req = store.data.leaveRequests.find((r) => r.id === id);
+    if (!req || req.status !== "pending") return;
+    store.data.leaveRequests = store.data.leaveRequests.filter((r) => r.id !== id);
+    store.emit(`leaveRequests:${req.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () => cb(store.data.leaveRequests.filter((r) => r.hostelId === hostelId));
+    fire();
+    return store.on(`leaveRequests:${hostelId}`, fire);
+  },
+};
+
 const mealStops: MealStopRepository = {
   async listByHostel(hostelId) {
     return store.data.mealStopRequests.filter((r) => r.hostelId === hostelId);
@@ -2904,6 +3037,7 @@ export const mockRepositories: Repositories = {
   expenses,
   transfers,
   joinRequests,
+  leaveRequests,
   mealStops,
   guestMeals,
   exploreInteractions,

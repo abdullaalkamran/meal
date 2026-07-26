@@ -41,6 +41,7 @@ export function buildSeed(): Tables {
     expenses: [],
     transferRequests: [],
     joinRequests: [],
+    leaveRequests: [],
     mealStopRequests: [],
     guestMealRequests: [],
     exploreInteractions: [],

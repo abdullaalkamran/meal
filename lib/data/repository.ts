@@ -21,11 +21,13 @@ import type {
   DutyPlan,
   Expense,
   ExploreInteraction,
+  GeoArea,
   GuestMealRequest,
   HeroPromoSettings,
   Hostel,
   HostelTransferRequest,
   JoinRequest,
+  LeaveRequest,
   MarketingTarget,
   MealDay,
   MealEditRequest,
@@ -96,6 +98,14 @@ export interface UserRepository {
    * (throws) if they already belong to a DIFFERENT hostel: a member can only
    * ever be one hostel's member (moving hostels goes through transfers). */
   attachToHostel(userId: string, hostelId: string, roomId: string): Promise<void>;
+  /** Super Admin assigns which service-catalog kinds and regions a Service
+   * Manager account is responsible for. Informational only for now — not
+   * yet enforced in app/service/*, which still shows everything to any
+   * Service Manager regardless. Superadmin-only (see policy.ts). */
+  setServicePermissions(
+    userId: string,
+    permissions: { kinds: ServiceKind[]; areas: GeoArea[] }
+  ): Promise<void>;
   subscribe(hostelId: string, cb: (users: User[]) => void): Unsubscribe;
   /** Live mirror of ONE user's record — fires on any change to that user
    * (profile edits, join approval, ban, room moves), regardless of which
@@ -417,6 +427,17 @@ export interface TransferRepository {
   subscribe(hostelId: string, cb: (list: HostelTransferRequest[]) => void): Unsubscribe;
 }
 
+export interface LeaveRequestRepository {
+  listByHostel(hostelId: string): Promise<LeaveRequest[]>;
+  listByUser(userId: string): Promise<LeaveRequest[]>;
+  /** Rejects (throws) a leaveDate under 30 days from today. */
+  request(req: { hostelId: string; userId: string; leaveDate: string; reason?: string }): Promise<void>;
+  decide(id: string, status: "approved" | "denied", decidedBy: string): Promise<void>;
+  /** Withdraws a still-pending request; no-ops on an already-decided one. */
+  cancel(id: string): Promise<void>;
+  subscribe(hostelId: string, cb: (list: LeaveRequest[]) => void): Unsubscribe;
+}
+
 export interface JoinRequestRepository {
   listByHostel(hostelId: string): Promise<JoinRequest[]>;
   /** All requests made by one signed-up account (the find-hostel flow). */
@@ -581,6 +602,7 @@ export interface Repositories {
   expenses: ExpenseRepository;
   transfers: TransferRepository;
   joinRequests: JoinRequestRepository;
+  leaveRequests: LeaveRequestRepository;
   mealStops: MealStopRepository;
   guestMeals: GuestMealRepository;
   exploreInteractions: ExploreInteractionRepository;

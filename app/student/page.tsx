@@ -11,6 +11,7 @@ import {
   ChefHat,
   ChevronRight,
   CreditCard,
+  DoorOpen,
   GraduationCap,
   Megaphone,
   MessagesSquare,
@@ -34,6 +35,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
+import { LeaveRequestSheet } from "@/components/student/LeaveRequestSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
 import { NotificationItem } from "@/components/student/NotificationItem";
 import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSheet";
@@ -46,6 +48,7 @@ import { useActualMealRate } from "@/hooks/useActualMealRate";
 const QUICK_ACTIONS = [
   { key: "stop", label: "Meal request", icon: Ban, tone: "danger" as const },
   { key: "guest", label: "Guest meal", icon: UserPlus, tone: "orange" as const },
+  { key: "leave", label: "Leave hostel", icon: DoorOpen, tone: "orange" as const },
   { key: "pay", label: "Pay bill", icon: CreditCard, tone: "primary" as const, href: "/student/bill" },
   { key: "shopping", label: "Shopping", icon: ShoppingCart, tone: "blue" as const, href: "/student/shopping" },
   { key: "grocery", label: "Grocery", icon: ShoppingBasket, tone: "primary" as const, href: "/explore/grocery" },
@@ -92,7 +95,7 @@ export default function StudentHomePage() {
   const menu = useMenu(activeHostelId, today());
   const rooms = useRooms(activeHostelId);
   const notifications = useNotifications(user?.id);
-  const [sheet, setSheet] = useState<"stop" | "guest" | null>(null);
+  const [sheet, setSheet] = useState<"stop" | "guest" | "leave" | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
 
   const myEntry = user && day?.entries[user.id];
@@ -193,14 +196,26 @@ export default function StudentHomePage() {
             const on = myEntry?.[meal].on ?? true;
             const c = MEAL_COLORS[meal];
             return (
-              <div key={meal} className="flex flex-col items-center gap-1.5 rounded-btn bg-bg py-3">
-                <Icon icon={c.icon} size={18} className={c.text} />
+              <div
+                key={meal}
+                className={`flex flex-col items-center gap-2 rounded-btn py-3.5 ${
+                  on ? "bg-bg" : "bg-bg/50"
+                }`}
+              >
+                <div
+                  className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                    on ? "bg-text" : "border border-border bg-card"
+                  }`}
+                >
+                  <Icon icon={c.icon} size={18} className={on ? "text-card" : "text-text-secondary"} />
+                </div>
                 <div className="text-[10.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
-                <div className="flex items-center gap-1">
-                  <span className={`h-1.5 w-1.5 rounded-full ${on ? c.dot : "bg-border"}`} />
-                  <span className="text-[9.5px] font-bold text-text-secondary">
-                    {on ? "On" : "Off"}
-                  </span>
+                <div
+                  className={`text-[9px] font-extrabold uppercase tracking-wide ${
+                    on ? "text-text" : "text-text-secondary"
+                  }`}
+                >
+                  {on ? "On" : "Off"}
                 </div>
               </div>
             );
@@ -278,6 +293,7 @@ export default function StudentHomePage() {
 
       <MealRequestSheet open={sheet === "stop"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <GuestMealSheet open={sheet === "guest"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
+      <LeaveRequestSheet open={sheet === "leave"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <NotificationPrefsSheet open={prefsOpen} onClose={() => setPrefsOpen(false)} user={user} />
     </div>
   );

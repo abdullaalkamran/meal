@@ -26,6 +26,7 @@ import type {
   Hostel,
   HostelTransferRequest,
   JoinRequest,
+  LeaveRequest,
   MarketingTarget,
   MealDay,
   MealEditRequest,
@@ -79,6 +80,7 @@ export interface Tables {
   expenses: Expense[];
   transferRequests: HostelTransferRequest[];
   joinRequests: JoinRequest[];
+  leaveRequests: LeaveRequest[];
   mealStopRequests: MealStopRequest[];
   guestMealRequests: GuestMealRequest[];
   exploreInteractions: ExploreInteraction[];
