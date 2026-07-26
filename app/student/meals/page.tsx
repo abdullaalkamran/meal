@@ -556,14 +556,35 @@ export default function StudentMealsPage() {
             </div>
             {users.map((m) => {
               const entry = day?.entries[m.id];
+              // Same accuracy as the manager roster: only members boarding on
+              // this date count; a sealed day's stored rows are the truth, and
+              // a missing row falls back to the day's offer — never a phantom
+              // default "On".
+              const joinedDay = m.joinedAt?.slice(0, 10);
+              const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
+              const counted = boarderThatDay && (!!entry || !day?.sealed);
               return (
                 <div
                   key={m.id}
                   className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-btn bg-bg px-2 py-2"
                 >
-                  <div className="min-w-0 text-[11px] font-bold">{m.name}</div>
+                  <div className="min-w-0 text-[11px] font-bold">
+                    {m.name}
+                    {!boarderThatDay && (
+                      <span className="ml-1 text-[8.5px] font-semibold text-text-secondary">not joined yet</span>
+                    )}
+                  </div>
                   {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-                    const on = entry?.[meal]?.on ?? true;
+                    if (!counted) {
+                      return (
+                        <div key={meal} className="w-6 text-center text-[9.5px] font-extrabold text-text-secondary">
+                          —
+                        </div>
+                      );
+                    }
+                    const offeredThatDay =
+                      day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+                    const on = entry?.[meal]?.on ?? offeredThatDay;
                     return (
                       <div
                         key={meal}
