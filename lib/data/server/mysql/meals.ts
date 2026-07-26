@@ -482,10 +482,18 @@ export const meals: MealRepository = {
   async setMemberFutureMeals(hostelId, userId, off) {
     await transaction(async (tx) => {
       await run("UPDATE users SET meals_default_off = ? WHERE id = ?", [off ? 1 : 0, userId], tx);
-      // Apply now to the days they can already change freely (day after
-      // tomorrow onward). Today and tomorrow are cutoff-gated and unchanged;
-      // days not yet materialized inherit the new default when they seal.
-      const fromDay = addDays(today(), 2);
+      // Apply now to every future day the member can still change: tomorrow if
+      // it's still before tonight's cutoff, otherwise the day after (tomorrow
+      // locks once its cutoff passes). Today is never touched; days not yet
+      // materialised inherit the new default when they seal.
+      const cutoffRow = await one<{ meal_toggle_cutoff: string }>(
+        "SELECT meal_toggle_cutoff FROM hostels WHERE id = ?",
+        [hostelId],
+        tx
+      );
+      const cutoff = cutoffRow?.meal_toggle_cutoff?.slice(0, 5);
+      const tomorrow = addDays(today(), 1);
+      const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
       if (off) {
         await run(
           "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ?",

@@ -1147,10 +1147,12 @@ const meals: MealRepository = {
       emitUser(userId);
       store.emit(`users:${hostelId}`);
     }
-    // Apply now to freely-editable future days (day after tomorrow onward);
-    // today/tomorrow are cutoff-gated and unchanged. Days not yet materialized
-    // inherit the new default when they seal.
-    const fromDay = addDays(today(), 2);
+    // Apply now to every future day the member can still change: tomorrow if
+    // it's still before tonight's cutoff, otherwise the day after. Today is
+    // never touched; unmaterialised days inherit the new default when sealed.
+    const cutoff = store.data.hostels.find((h) => h.id === hostelId)?.settings.mealToggleCutoff;
+    const tomorrow = addDays(today(), 1);
+    const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
     store.data.mealDays = store.data.mealDays.map((d) => {
       if (d.hostelId !== hostelId || d.date < fromDay || !d.entries[userId]) return d;
       const e = d.entries[userId];
