@@ -34,7 +34,17 @@ const GRADIENTS = [
 /** How long the bill peek stays before sliding back to the carousel. */
 const BILL_PEEK_MS = 8000;
 
-export function HomeHero({ bill, mealRate }: { bill: Bill | undefined; mealRate: number }) {
+export function HomeHero({
+  bill,
+  mealRate,
+  mealsOn,
+}: {
+  bill: Bill | undefined;
+  mealRate: number;
+  /** This month's live meal count (from the member's own meals), shown before
+   * a bill exists. Falls back to the bill's count. */
+  mealsOn?: number | null;
+}) {
   const [mode, setMode] = useState<"promos" | "bill">("promos");
   const trackRef = useRef<HTMLDivElement>(null);
   const pausedUntil = useRef(0);
@@ -235,7 +245,7 @@ export function HomeHero({ bill, mealRate }: { bill: Bill | undefined; mealRate:
             <div className="flex gap-6 border-t border-white/20 pt-3">
               <div>
                 <div className="text-[9.5px] font-bold text-white/60">Meals</div>
-                <div className="text-[12.5px] font-extrabold">{bill?.mealsCount ?? "—"}</div>
+                <div className="text-[12.5px] font-extrabold">{mealsOn ?? bill?.mealsCount ?? 0}</div>
               </div>
               <div>
                 <div className="text-[9.5px] font-bold text-white/60">Actual rate/meal</div>

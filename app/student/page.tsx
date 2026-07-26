@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Ban,
   BedDouble,
@@ -40,7 +40,7 @@ import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSh
 import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
-import type { MealSlot } from "@/lib/data";
+import { repo, type MealSlot } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 const QUICK_ACTIONS = [
@@ -78,6 +78,17 @@ export default function StudentHomePage() {
   const announcements = useActionableAnnouncements(activeHostelId, user?.id);
   const plans = useDutyPlans(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
+  // This month's own meal count, live — so the hero shows it before any bill
+  // is generated (the bill's mealsCount is 0 until then).
+  const [mealsOn, setMealsOn] = useState<number | null>(null);
+  useEffect(() => {
+    if (!activeHostelId || !user) return;
+    const load = () =>
+      repo.meals.getMemberMealSummary(activeHostelId, user.id, currentMonth()).then((s) => setMealsOn(s.mealsOn));
+    load();
+    return repo.meals.subscribe(activeHostelId, load);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeHostelId, user?.id]);
   const menu = useMenu(activeHostelId, today());
   const rooms = useRooms(activeHostelId);
   const notifications = useNotifications(user?.id);
@@ -117,7 +128,7 @@ export default function StudentHomePage() {
       </div>
 
       {/* Hero: promo slider ⇄ current bill & credit (toggle in the header) */}
-      <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} />
+      <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} mealsOn={mealsOn} />
 
       {/* Announcements + unread personal notifications (pinned until clicked) */}
       {(announcements.length > 0 || unreadNotifications.length > 0) && (
