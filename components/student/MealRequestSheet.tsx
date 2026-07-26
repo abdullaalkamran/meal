@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useToast } from "@/components/ui/Toast";
 import { repo, type MealSlot } from "@/lib/data";
-import { today, addDays } from "@/lib/utils/date";
+import { formatShortDate, today } from "@/lib/utils/date";
 
 const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 const MEAL_LABEL: Record<MealSlot, string> = {
@@ -16,15 +16,17 @@ const MEAL_LABEL: Record<MealSlot, string> = {
   dinner: "Dinner",
 };
 
-/** A member's request to the manager to turn their meals ON or OFF for a date
- * range whose cutoff has already passed (today, or a locked future day) — the
- * only way to change a locked date. `defaultOn` and `defaultMeals` let the
- * caller pre-set it (e.g. "request to turn on" straight from a locked slot). */
+/** A member's request to the manager to turn their meals ON or OFF for a
+ * single day whose cutoff has already passed — the only way to change a
+ * locked date. It's always for the day the member is viewing (`date`); once
+ * a day is still editable they toggle it themselves instead. `defaultOn` and
+ * `defaultMeals` let a locked slot pre-set it (e.g. "request to turn on"). */
 export function MealRequestSheet({
   open,
   onClose,
   hostelId,
   userId,
+  date,
   defaultOn = false,
   defaultMeals,
 }: {
@@ -32,14 +34,14 @@ export function MealRequestSheet({
   onClose: () => void;
   hostelId: string | undefined;
   userId: string | undefined;
+  date?: string;
   defaultOn?: boolean;
   defaultMeals?: MealSlot[];
 }) {
   const { toast } = useToast();
+  const forDay = date ?? today();
   const [desiredOn, setDesiredOn] = useState(defaultOn);
   const [meals, setMeals] = useState<MealSlot[]>(defaultMeals ?? ["lunch", "dinner"]);
-  const [dateFrom, setDateFrom] = useState(addDays(today(), 1));
-  const [dateTo, setDateTo] = useState(addDays(today(), 2));
   const [reason, setReason] = useState("");
 
   // Re-seed from the caller's presets each time the sheet opens.
@@ -48,8 +50,6 @@ export function MealRequestSheet({
     queueMicrotask(() => {
       setDesiredOn(defaultOn);
       setMeals(defaultMeals ?? ["lunch", "dinner"]);
-      setDateFrom(addDays(today(), 1));
-      setDateTo(addDays(today(), 2));
       setReason("");
     });
   }, [open, defaultOn, defaultMeals]);
@@ -60,7 +60,7 @@ export function MealRequestSheet({
 
   const submit = async () => {
     if (!hostelId || !userId || meals.length === 0) return;
-    await repo.mealStops.request({ hostelId, userId, meals, dateFrom, dateTo, reason, desiredOn });
+    await repo.mealStops.request({ hostelId, userId, meals, dateFrom: forDay, dateTo: forDay, reason, desiredOn });
     toast(desiredOn ? "Request to turn meals on sent for approval" : "Request to turn meals off sent for approval");
     onClose();
   };
@@ -94,25 +94,12 @@ export function MealRequestSheet({
         ))}
       </div>
 
-      <div className="mb-4 flex gap-3">
-        <label className="min-w-0 flex-1">
-          <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">FROM</div>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-          />
-        </label>
-        <label className="min-w-0 flex-1">
-          <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">TO</div>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-          />
-        </label>
+      <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+        For
+      </div>
+      <div className="mb-4 rounded-btn bg-bg px-3 py-2.5 text-[12px] font-extrabold">
+        {formatShortDate(forDay)}
+        {forDay === today() ? " · today" : ""}
       </div>
 
       <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">REASON (OPTIONAL)</div>

@@ -2384,16 +2384,33 @@ const mealStops: MealStopRepository = {
     if (!req) return;
     req.status = status;
     if (status === "approved") {
+      // Apply the requested direction (on OR off) — a closed slot can't be
+      // switched on.
+      const wantOn = !!req.desiredOn;
       let d = req.dateFrom;
       while (d <= req.dateTo) {
         const day = ensureMealDay(req.hostelId, d);
         const entry = ensureMealEntry(day, req.userId);
-        req.meals.forEach((m) => (entry[m].on = false));
+        req.meals.forEach((m) => {
+          if (wantOn && !isMealOffered(req.hostelId, m)) return;
+          entry[m].on = wantOn;
+        });
         store.emit(`mealDay:${req.hostelId}`);
         const next = new Date(`${d}T00:00:00Z`);
         next.setUTCDate(next.getUTCDate() + 1);
         d = next.toISOString().slice(0, 10);
       }
+    }
+    // Tell the member the outcome.
+    const range = `${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}`;
+    if (status === "approved") {
+      notifyUser(
+        req.userId,
+        req.desiredOn ? "Meal request approved" : "Meal stop approved",
+        `Your request to turn meals ${req.desiredOn ? "on" : "off"} for ${range} was approved.`
+      );
+    } else if (status === "denied") {
+      notifyUser(req.userId, "Meal request declined", `Your meal request for ${range} was declined.`);
     }
     store.emit(`mealStops:${req.hostelId}`);
   },

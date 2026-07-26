@@ -360,7 +360,19 @@ export const mealStops: MealStopRepository = {
       );
       if (!req) return;
       await run("UPDATE meal_stop_requests SET status = ? WHERE id = ?", [status, id], tx);
-      if (status !== "approved") return;
+      if (status !== "approved") {
+        if (status === "denied") {
+          const from = toDay(req.date_from);
+          const to = toDay(req.date_to);
+          await notify(
+            req.user_id,
+            "Meal request declined",
+            `Your meal request for ${from}${to !== from ? ` – ${to}` : ""} was declined.`,
+            tx
+          );
+        }
+        return;
+      }
 
       const wantOn = toBool(req.desired_on);
       const slots = (

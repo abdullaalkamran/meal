@@ -419,7 +419,11 @@ export default function StudentMealsPage() {
               <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
                 <div>
                   <div className="text-[11.5px] font-bold">
-                    {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom} - {r.dateTo}
+                    <span className={r.desiredOn ? "text-primary" : "text-danger"}>
+                      Turn {r.desiredOn ? "on" : "off"}
+                    </span>{" "}
+                    {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom}
+                    {r.dateTo !== r.dateFrom ? ` – ${r.dateTo}` : ""}
                   </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
                     {r.reason || "No reason given"}
@@ -753,6 +757,7 @@ export default function StudentMealsPage() {
         onClose={() => setReqSheet(null)}
         hostelId={activeHostelId}
         userId={user?.id}
+        date={selectedDate}
         defaultOn={reqSheet?.on ?? false}
         defaultMeals={reqSheet?.meals}
       />
