@@ -32,7 +32,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
-import { StopMealSheet } from "@/components/student/StopMealSheet";
+import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
 import { NotificationItem } from "@/components/student/NotificationItem";
@@ -44,7 +44,7 @@ import type { MealSlot } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 
 const QUICK_ACTIONS = [
-  { key: "stop", label: "Stop meal", icon: Ban, tone: "danger" as const },
+  { key: "stop", label: "Meal request", icon: Ban, tone: "danger" as const },
   { key: "guest", label: "Guest meal", icon: UserPlus, tone: "orange" as const },
   { key: "pay", label: "Pay bill", icon: CreditCard, tone: "primary" as const, href: "/student/bill" },
   { key: "shopping", label: "Shopping", icon: ShoppingCart, tone: "blue" as const, href: "/student/shopping" },
@@ -265,7 +265,7 @@ export default function StudentHomePage() {
         </Link>
       )}
 
-      <StopMealSheet open={sheet === "stop"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
+      <MealRequestSheet open={sheet === "stop"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <GuestMealSheet open={sheet === "guest"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <NotificationPrefsSheet open={prefsOpen} onClose={() => setPrefsOpen(false)} user={user} />
     </div>

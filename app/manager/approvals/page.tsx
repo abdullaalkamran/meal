@@ -102,7 +102,7 @@ function ManagerApprovalsPage() {
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-btn bg-blue-soft p-2.5 text-center">
             <div className="text-[14px] font-extrabold text-blue">{mealStops.length}</div>
-            <div className="text-[9px] font-bold text-text-secondary">Meal stops</div>
+            <div className="text-[9px] font-bold text-text-secondary">Meal requests</div>
           </div>
           <div className="rounded-btn bg-orange-soft p-2.5 text-center">
             <div className="text-[14px] font-extrabold text-orange">{guestMeals.length}</div>
@@ -184,7 +184,7 @@ function ManagerApprovalsPage() {
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-soft text-blue">
               <Icon icon={Ban} size={13} />
             </div>
-            <div className="text-[13.5px] font-extrabold">Meal stops</div>
+            <div className="text-[13.5px] font-extrabold">Meal requests</div>
           </div>
           <div className="flex flex-col gap-2">
             {mealStops.map((r) => (
@@ -195,10 +195,11 @@ function ManagerApprovalsPage() {
                     <div className="text-[12px] font-extrabold">{nameOf(r.userId)}</div>
                     <div className="text-[10px] font-semibold text-text-secondary">
                       {r.meals.join(" + ")} · {r.dateFrom}
+                      {r.dateTo !== r.dateFrom ? ` – ${r.dateTo}` : ""}
                     </div>
                   </div>
-                  <Chip tone="orange" active>
-                    Pending
+                  <Chip tone={r.desiredOn ? "primary" : "orange"} active>
+                    {r.desiredOn ? "Turn on" : "Turn off"}
                   </Chip>
                 </div>
                 {r.reason && (

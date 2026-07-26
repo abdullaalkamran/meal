@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Calendar } from "@/components/ui/Calendar";
 import { StarRating } from "@/components/ui/StarRating";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
-import { StopMealSheet } from "@/components/student/StopMealSheet";
+import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -38,7 +38,7 @@ export default function StudentMealsPage() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(true);
   const [guestSheetOpen, setGuestSheetOpen] = useState(false);
-  const [stopSheetOpen, setStopSheetOpen] = useState(false);
+  const [reqSheet, setReqSheet] = useState<{ on: boolean; meals?: MealSlot[] } | null>(null);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
@@ -342,22 +342,31 @@ export default function StudentMealsPage() {
                     {!!entry?.guestCount && (
                       <Chip tone="blue">+{entry.guestCount} guest</Chip>
                     )}
-                    <Switch
-                      checked={on}
-                      disabled={mealsSuspended || !lock.allowed}
-                      onChange={(v) => {
-                        if (!user) return;
-                        // Locked dates (today, or past the cutoff) can only be
-                        // changed by an approved request.
-                        if (!lock.allowed) {
-                          setStopSheetOpen(true);
-                          return;
-                        }
-                        void Promise.resolve(setToggle(user.id, meal, v)).catch((err) =>
-                          toast(err instanceof Error ? err.message : "Could not change this meal")
-                        );
-                      }}
-                    />
+                    {lock.allowed ? (
+                      <Switch
+                        checked={on}
+                        disabled={mealsSuspended}
+                        onChange={(v) => {
+                          if (!user) return;
+                          void Promise.resolve(setToggle(user.id, meal, v)).catch((err) =>
+                            toast(err instanceof Error ? err.message : "Could not change this meal")
+                          );
+                        }}
+                      />
+                    ) : mealsSuspended ? (
+                      <Switch checked={on} disabled onChange={() => {}} />
+                    ) : (
+                      // Cutoff has passed — turning this meal on or off now needs
+                      // the manager's approval, so offer the request directly
+                      // (turn it on if it's off, off if it's on).
+                      <button
+                        type="button"
+                        onClick={() => setReqSheet({ on: !on, meals: [meal] })}
+                        className="shrink-0 rounded-pill bg-primary-soft px-2.5 py-1 text-[10px] font-extrabold text-primary"
+                      >
+                        {on ? "Request off" : "Request on"}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -372,7 +381,7 @@ export default function StudentMealsPage() {
         {!lock.allowed && !mealsSuspended && (
           <button
             type="button"
-            onClick={() => setStopSheetOpen(true)}
+            onClick={() => setReqSheet({ on: false })}
             className="mt-2 min-h-10 w-full rounded-btn bg-primary-soft text-[11.5px] font-extrabold text-primary"
           >
             Request a change from the manager
@@ -392,11 +401,11 @@ export default function StudentMealsPage() {
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                setStopSheetOpen(true);
+                setReqSheet({ on: false });
               }}
               className="text-[11px] font-extrabold text-primary"
             >
-              + Stop meal
+              + Meal request
             </span>
             <Icon icon={requestsOpen ? ChevronUp : ChevronDown} size={16} />
           </div>
@@ -739,11 +748,13 @@ export default function StudentMealsPage() {
         userId={user?.id}
         defaultDate={selectedDate}
       />
-      <StopMealSheet
-        open={stopSheetOpen}
-        onClose={() => setStopSheetOpen(false)}
+      <MealRequestSheet
+        open={!!reqSheet}
+        onClose={() => setReqSheet(null)}
         hostelId={activeHostelId}
         userId={user?.id}
+        defaultOn={reqSheet?.on ?? false}
+        defaultMeals={reqSheet?.meals}
       />
     </div>
   );
