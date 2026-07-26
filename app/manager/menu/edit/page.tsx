@@ -21,25 +21,38 @@ function ManagerEditMenuPage() {
   const date = today();
   const menu = useMenu(activeHostelId, date);
   const { toast } = useToast();
-  const [dishes, setDishes] = useState<Menu["dishes"]>({
-    breakfast: [],
-    lunch: [],
-    dinner: [],
+  // Hold the raw text the manager is typing, one string per meal. Parsing into
+  // the dishes array only at save time keeps spaces (and multi-word Bangla dish
+  // names) intact — deriving the value from a trimmed array on every keystroke
+  // would strip a trailing space the moment it's typed, blocking spaces.
+  const [text, setText] = useState<Record<MealSlot, string>>({
+    breakfast: "",
+    lunch: "",
+    dinner: "",
   });
 
   useEffect(() => {
-    if (menu) queueMicrotask(() => setDishes(menu.dishes));
+    if (menu)
+      queueMicrotask(() =>
+        setText({
+          breakfast: menu.dishes.breakfast.join(", "),
+          lunch: menu.dishes.lunch.join(", "),
+          dinner: menu.dishes.dinner.join(", "),
+        })
+      );
   }, [menu]);
 
-  const setMealText = (meal: MealSlot, text: string) => {
-    setDishes((prev) => ({
-      ...prev,
-      [meal]: text.split(",").map((d) => d.trim()).filter(Boolean),
-    }));
+  const setMealText = (meal: MealSlot, value: string) => {
+    setText((prev) => ({ ...prev, [meal]: value }));
   };
 
   const save = async () => {
     if (!activeHostelId) return;
+    const dishes: Menu["dishes"] = {
+      breakfast: text.breakfast.split(",").map((d) => d.trim()).filter(Boolean),
+      lunch: text.lunch.split(",").map((d) => d.trim()).filter(Boolean),
+      dinner: text.dinner.split(",").map((d) => d.trim()).filter(Boolean),
+    };
     await repo.menus.saveMenu(activeHostelId, date, dishes);
     toast("Menu updated for today");
   };
@@ -54,7 +67,7 @@ function ManagerEditMenuPage() {
             {MEAL_LABEL[meal]}
           </div>
           <textarea
-            value={dishes[meal].join(", ")}
+            value={text[meal]}
             onChange={(e) => setMealText(meal, e.target.value)}
             placeholder="Rice, Fish curry, Lentil soup"
             className="h-16 w-full resize-none rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-semibold"

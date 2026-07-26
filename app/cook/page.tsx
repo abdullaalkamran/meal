@@ -73,14 +73,23 @@ export default function CookDashboardPage() {
     setVoiceHelpOpen(true);
   };
 
-  const speakMealCount = (meal: MealSlot) => {
+  // Spoken line for one meal: how many to cook for, and what's on the menu so
+  // the cook can hear the dishes — not just the head count.
+  const mealSpeech = (meal: MealSlot) => {
     const stats = mealCounts.find((c) => c.meal === meal)!;
-    speakBangla(`${MEAL_LABEL_BN[meal]}-এ আজকে ${stats.count} জনের জন্য রান্না করতে হবে।`, onNoVoice);
+    const dishes = menu?.dishes[meal] ?? [];
+    const dishPart =
+      dishes.length > 0 ? ` — রান্না হবে ${dishes.join(", ")}।` : " — আজকের মেনু এখনো দেওয়া হয়নি।";
+    return `${MEAL_LABEL_BN[meal]}-এ আজকে ${stats.count} জনের জন্য রান্না করতে হবে।${dishPart}`;
+  };
+
+  const speakMealCount = (meal: MealSlot) => {
+    speakBangla(mealSpeech(meal), onNoVoice);
   };
 
   const speakAllCounts = () => {
-    const parts = mealCounts.map((c) => `${MEAL_LABEL_BN[c.meal]}-এ ${c.count} জন`);
-    speakBangla(`আজকের রান্নার হিসাব। ${parts.join("। ")}।`, onNoVoice);
+    const parts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map(mealSpeech);
+    speakBangla(`আজকের রান্নার হিসাব ও মেনু। ${parts.join(" ")}`, onNoVoice);
   };
 
   const myShortages = shortages.filter((s) => s.cookId === user?.id);
