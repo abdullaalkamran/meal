@@ -497,15 +497,19 @@ export default function StudentMealsPage() {
           <div className="text-[13.5px] font-extrabold">
             {monthDays.reduce(
               (sum, d) =>
-                sum +
-                Object.values(d.entries).reduce(
-                  (s, e) =>
-                    s +
-                    (e.breakfast.on ? 1 : 0) +
-                    (e.lunch.on ? 1 : 0) +
-                    (e.dinner.on ? 1 : 0),
-                  0
-                ),
+                // Only days that have actually happened — future days members
+                // have toggled on aren't cooked yet, so they don't count.
+                d.date > today()
+                  ? sum
+                  : sum +
+                    Object.values(d.entries).reduce(
+                      (s, e) =>
+                        s +
+                        (e.breakfast.on ? 1 : 0) +
+                        (e.lunch.on ? 1 : 0) +
+                        (e.dinner.on ? 1 : 0),
+                      0
+                    ),
               0
             )}
           </div>
