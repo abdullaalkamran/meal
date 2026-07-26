@@ -199,9 +199,20 @@ export function MealsScreen({
   }, [day?.shoppingUserId]);
 
   const shoppingPlan = plans.find((p) => p.type === "shopping");
+  // The day's meal counts, computed the SAME way as the "All members" roster
+  // below (each member's effective value: their stored row, or the day's offer
+  // / their future-off default) so the totals always match what the list shows
+  // — not just materialised rows, which were 0 on a not-yet-sealed day.
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-    const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
+    const count = users.reduce((sum, m) => {
+      const entry = day?.entries[m.id];
+      const joinedDay = m.joinedAt?.slice(0, 10);
+      const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
+      if (!boarderThatDay || (day?.sealed && !entry)) return sum;
+      const offeredThatDay = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+      const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
+      return sum + (on ? 1 : 0) + (entry?.[meal]?.guestCount ?? 0);
+    }, 0);
     return { meal, count };
   });
   const dayTotal = mealCounts.reduce((sum, c) => sum + c.count, 0);

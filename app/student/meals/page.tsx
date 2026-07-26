@@ -140,21 +140,27 @@ export default function StudentMealsPage() {
   const due = bill ? bill.grandTotal - bill.paid : 0;
   const mealsSuspended = user?.mealsSuspended ?? false;
 
-  const dayTotal = day
-    ? Object.values(day.entries).reduce(
-        (sum, e) =>
-          sum +
-          ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
-          ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
-          ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
-        0
-      )
-    : 0;
-  const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-    const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
-    return { meal, count };
-  });
+  // One member's effective meal for a slot on the selected day, matching the
+  // "All members" roster exactly (their stored row, or the day's offer /
+  // future-off default) — so the counts always equal what the list shows,
+  // even on a day whose rows aren't sealed yet.
+  const memberOn = (m: User, meal: MealSlot): { on: boolean; guests: number } | null => {
+    const entry = day?.entries[m.id];
+    const jd = m.joinedAt?.slice(0, 10);
+    const boarder = !jd || jd <= selectedDate;
+    if (!boarder || (day?.sealed && !entry)) return null;
+    const offered = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offered);
+    return { on, guests: entry?.[meal]?.guestCount ?? 0 };
+  };
+  const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => ({
+    meal,
+    count: users.reduce((sum, m) => {
+      const r = memberOn(m, meal);
+      return r ? sum + (r.on ? 1 : 0) + r.guests : sum;
+    }, 0),
+  }));
+  const dayTotal = mealCounts.reduce((sum, c) => sum + c.count, 0);
 
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
   const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
