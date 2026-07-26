@@ -1053,11 +1053,13 @@ const meals: MealRepository = {
   async getMemberMealSummary(hostelId, userId, month) {
     sealMockDays(hostelId, `${month}-01`, `${month}-31`);
     const joinedDay = store.data.users.find((u) => u.id === userId)?.joinedAt?.slice(0, 10);
+    const to = today();
     let mealsOn = 0;
     let billedMeals = 0;
     for (const day of store.data.mealDays) {
       if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
       if (joinedDay && joinedDay > day.date) continue; // before they joined
+      if (day.date > to) continue; // future days haven't happened / been cooked
       const entry = day.entries[userId];
       if (!entry) continue;
       for (const slot of ["breakfast", "lunch", "dinner"] as const) {
@@ -1147,10 +1149,12 @@ const meals: MealRepository = {
       emitUser(userId);
       store.emit(`users:${hostelId}`);
     }
-    // Apply now to freely-editable future days (day after tomorrow onward);
-    // today/tomorrow are cutoff-gated and unchanged. Days not yet materialized
-    // inherit the new default when they seal.
-    const fromDay = addDays(today(), 2);
+    // Apply now to every future day the member can still change: tomorrow if
+    // it's still before tonight's cutoff, otherwise the day after. Today is
+    // never touched; unmaterialised days inherit the new default when sealed.
+    const cutoff = store.data.hostels.find((h) => h.id === hostelId)?.settings.mealToggleCutoff;
+    const tomorrow = addDays(today(), 1);
+    const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
     store.data.mealDays = store.data.mealDays.map((d) => {
       if (d.hostelId !== hostelId || d.date < fromDay || !d.entries[userId]) return d;
       const e = d.entries[userId];
@@ -2382,16 +2386,33 @@ const mealStops: MealStopRepository = {
     if (!req) return;
     req.status = status;
     if (status === "approved") {
+      // Apply the requested direction (on OR off) — a closed slot can't be
+      // switched on.
+      const wantOn = !!req.desiredOn;
       let d = req.dateFrom;
       while (d <= req.dateTo) {
         const day = ensureMealDay(req.hostelId, d);
         const entry = ensureMealEntry(day, req.userId);
-        req.meals.forEach((m) => (entry[m].on = false));
+        req.meals.forEach((m) => {
+          if (wantOn && !isMealOffered(req.hostelId, m)) return;
+          entry[m].on = wantOn;
+        });
         store.emit(`mealDay:${req.hostelId}`);
         const next = new Date(`${d}T00:00:00Z`);
         next.setUTCDate(next.getUTCDate() + 1);
         d = next.toISOString().slice(0, 10);
       }
+    }
+    // Tell the member the outcome.
+    const range = `${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}`;
+    if (status === "approved") {
+      notifyUser(
+        req.userId,
+        req.desiredOn ? "Meal request approved" : "Meal stop approved",
+        `Your request to turn meals ${req.desiredOn ? "on" : "off"} for ${range} was approved.`
+      );
+    } else if (status === "denied") {
+      notifyUser(req.userId, "Meal request declined", `Your meal request for ${range} was declined.`);
     }
     store.emit(`mealStops:${req.hostelId}`);
   },

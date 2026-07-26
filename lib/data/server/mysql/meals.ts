@@ -339,14 +339,16 @@ export const meals: MealRepository = {
 
   async getMemberMealSummary(hostelId, userId, month) {
     await sealDays(hostelId, `${month}-01`, `${month}-31`);
-    // Everything this member has ON this month, from their join date — what
-    // they're eating, shown live without waiting for a bill.
+    // Everything this member has ON so far this month, from their join date up
+    // to TODAY — meals that have actually happened. Future days they've toggled
+    // on aren't counted (they haven't been cooked yet).
     const on = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e JOIN users u ON u.id = e.user_id
         WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+          AND e.day <= ?
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)`,
-      [hostelId, userId, month]
+      [hostelId, userId, month, today()]
     );
     const mealsOn = Number(on?.own ?? 0) + Number(on?.guests ?? 0);
     // Of those, only the (day, meal) slots a manager confirmed cooked get
@@ -482,10 +484,18 @@ export const meals: MealRepository = {
   async setMemberFutureMeals(hostelId, userId, off) {
     await transaction(async (tx) => {
       await run("UPDATE users SET meals_default_off = ? WHERE id = ?", [off ? 1 : 0, userId], tx);
-      // Apply now to the days they can already change freely (day after
-      // tomorrow onward). Today and tomorrow are cutoff-gated and unchanged;
-      // days not yet materialized inherit the new default when they seal.
-      const fromDay = addDays(today(), 2);
+      // Apply now to every future day the member can still change: tomorrow if
+      // it's still before tonight's cutoff, otherwise the day after (tomorrow
+      // locks once its cutoff passes). Today is never touched; days not yet
+      // materialised inherit the new default when they seal.
+      const cutoffRow = await one<{ meal_toggle_cutoff: string }>(
+        "SELECT meal_toggle_cutoff FROM hostels WHERE id = ?",
+        [hostelId],
+        tx
+      );
+      const cutoff = cutoffRow?.meal_toggle_cutoff?.slice(0, 5);
+      const tomorrow = addDays(today(), 1);
+      const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
       if (off) {
         await run(
           "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ?",

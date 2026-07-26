@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Calendar } from "@/components/ui/Calendar";
 import { StarRating } from "@/components/ui/StarRating";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
-import { StopMealSheet } from "@/components/student/StopMealSheet";
+import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -38,7 +38,7 @@ export default function StudentMealsPage() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(true);
   const [guestSheetOpen, setGuestSheetOpen] = useState(false);
-  const [stopSheetOpen, setStopSheetOpen] = useState(false);
+  const [reqSheet, setReqSheet] = useState<{ on: boolean; meals?: MealSlot[] } | null>(null);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
@@ -75,6 +75,19 @@ export default function StudentMealsPage() {
   };
   // A day with no stored entry yet defaults OFF when the switch is on.
   const defaultOn = !futureOff;
+
+  // Is THIS member's whole day off? Used to colour-fill the calendar so they
+  // can see which days their meals are stopped (and from when). A sealed/
+  // stored day reads its rows; an unsealed future day is off only if their
+  // future-meals switch is on. Days before they joined aren't marked.
+  const myDayOff = (date: string): boolean => {
+    if (!user) return false;
+    const jd = user.joinedAt?.slice(0, 10);
+    if (jd && jd > date) return false;
+    const e = monthDays.find((x) => x.date === date)?.entries[user.id];
+    if (e) return !e.breakfast.on && !e.lunch.on && !e.dinner.on;
+    return futureOff;
+  };
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
@@ -127,21 +140,27 @@ export default function StudentMealsPage() {
   const due = bill ? bill.grandTotal - bill.paid : 0;
   const mealsSuspended = user?.mealsSuspended ?? false;
 
-  const dayTotal = day
-    ? Object.values(day.entries).reduce(
-        (sum, e) =>
-          sum +
-          ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
-          ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
-          ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
-        0
-      )
-    : 0;
-  const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-    const entries = day ? Object.values(day.entries) : [];
-    const count = entries.reduce((sum, e) => sum + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
-    return { meal, count };
-  });
+  // One member's effective meal for a slot on the selected day, matching the
+  // "All members" roster exactly (their stored row, or the day's offer /
+  // future-off default) — so the counts always equal what the list shows,
+  // even on a day whose rows aren't sealed yet.
+  const memberOn = (m: User, meal: MealSlot): { on: boolean; guests: number } | null => {
+    const entry = day?.entries[m.id];
+    const jd = m.joinedAt?.slice(0, 10);
+    const boarder = !jd || jd <= selectedDate;
+    if (!boarder || (day?.sealed && !entry)) return null;
+    const offered = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offered);
+    return { on, guests: entry?.[meal]?.guestCount ?? 0 };
+  };
+  const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => ({
+    meal,
+    count: users.reduce((sum, m) => {
+      const r = memberOn(m, meal);
+      return r ? sum + (r.on ? 1 : 0) + r.guests : sum;
+    }, 0),
+  }));
+  const dayTotal = mealCounts.reduce((sum, c) => sum + c.count, 0);
 
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
   const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
@@ -323,22 +342,31 @@ export default function StudentMealsPage() {
                     {!!entry?.guestCount && (
                       <Chip tone="blue">+{entry.guestCount} guest</Chip>
                     )}
-                    <Switch
-                      checked={on}
-                      disabled={mealsSuspended || !lock.allowed}
-                      onChange={(v) => {
-                        if (!user) return;
-                        // Locked dates (today, or past the cutoff) can only be
-                        // changed by an approved request.
-                        if (!lock.allowed) {
-                          setStopSheetOpen(true);
-                          return;
-                        }
-                        void Promise.resolve(setToggle(user.id, meal, v)).catch((err) =>
-                          toast(err instanceof Error ? err.message : "Could not change this meal")
-                        );
-                      }}
-                    />
+                    {lock.allowed ? (
+                      <Switch
+                        checked={on}
+                        disabled={mealsSuspended}
+                        onChange={(v) => {
+                          if (!user) return;
+                          void Promise.resolve(setToggle(user.id, meal, v)).catch((err) =>
+                            toast(err instanceof Error ? err.message : "Could not change this meal")
+                          );
+                        }}
+                      />
+                    ) : mealsSuspended ? (
+                      <Switch checked={on} disabled onChange={() => {}} />
+                    ) : (
+                      // Cutoff has passed — turning this meal on or off now needs
+                      // the manager's approval, so offer the request directly
+                      // (turn it on if it's off, off if it's on).
+                      <button
+                        type="button"
+                        onClick={() => setReqSheet({ on: !on, meals: [meal] })}
+                        className="shrink-0 rounded-pill bg-primary-soft px-2.5 py-1 text-[10px] font-extrabold text-primary"
+                      >
+                        {on ? "Request off" : "Request on"}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -353,7 +381,7 @@ export default function StudentMealsPage() {
         {!lock.allowed && !mealsSuspended && (
           <button
             type="button"
-            onClick={() => setStopSheetOpen(true)}
+            onClick={() => setReqSheet({ on: false })}
             className="mt-2 min-h-10 w-full rounded-btn bg-primary-soft text-[11.5px] font-extrabold text-primary"
           >
             Request a change from the manager
@@ -373,11 +401,11 @@ export default function StudentMealsPage() {
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                setStopSheetOpen(true);
+                setReqSheet({ on: false });
               }}
               className="text-[11px] font-extrabold text-primary"
             >
-              + Stop meal
+              + Meal request
             </span>
             <Icon icon={requestsOpen ? ChevronUp : ChevronDown} size={16} />
           </div>
@@ -391,7 +419,11 @@ export default function StudentMealsPage() {
               <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
                 <div>
                   <div className="text-[11.5px] font-bold">
-                    {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom} - {r.dateTo}
+                    <span className={r.desiredOn ? "text-primary" : "text-danger"}>
+                      Turn {r.desiredOn ? "on" : "off"}
+                    </span>{" "}
+                    {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom}
+                    {r.dateTo !== r.dateFrom ? ` – ${r.dateTo}` : ""}
                   </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
                     {r.reason || "No reason given"}
@@ -425,6 +457,7 @@ export default function StudentMealsPage() {
           }}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
+          dayClass={(date) => (myDayOff(date) ? "bg-danger-soft text-danger" : undefined)}
           renderDots={(date) => {
             const d = monthDays.find((x) => x.date === date);
             const mine = user && d?.entries[user.id];
@@ -441,12 +474,15 @@ export default function StudentMealsPage() {
             );
           }}
         />
-        <div className="mt-2 flex items-center justify-center gap-3 text-[9.5px] font-semibold text-text-secondary">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] font-semibold text-text-secondary">
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Meal on
           </span>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-border" /> Meal off
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded-sm bg-danger-soft" /> No meals that day
           </span>
           <span>B &middot; L &middot; D</span>
         </div>
@@ -461,15 +497,19 @@ export default function StudentMealsPage() {
           <div className="text-[13.5px] font-extrabold">
             {monthDays.reduce(
               (sum, d) =>
-                sum +
-                Object.values(d.entries).reduce(
-                  (s, e) =>
-                    s +
-                    (e.breakfast.on ? 1 : 0) +
-                    (e.lunch.on ? 1 : 0) +
-                    (e.dinner.on ? 1 : 0),
-                  0
-                ),
+                // Only days that have actually happened — future days members
+                // have toggled on aren't cooked yet, so they don't count.
+                d.date > today()
+                  ? sum
+                  : sum +
+                    Object.values(d.entries).reduce(
+                      (s, e) =>
+                        s +
+                        (e.breakfast.on ? 1 : 0) +
+                        (e.lunch.on ? 1 : 0) +
+                        (e.dinner.on ? 1 : 0),
+                      0
+                    ),
               0
             )}
           </div>
@@ -556,14 +596,37 @@ export default function StudentMealsPage() {
             </div>
             {users.map((m) => {
               const entry = day?.entries[m.id];
+              // Same accuracy as the manager roster: only members boarding on
+              // this date count; a sealed day's stored rows are the truth, and
+              // a missing row falls back to the day's offer — never a phantom
+              // default "On".
+              const joinedDay = m.joinedAt?.slice(0, 10);
+              const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
+              const counted = boarderThatDay && (!!entry || !day?.sealed);
               return (
                 <div
                   key={m.id}
                   className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-btn bg-bg px-2 py-2"
                 >
-                  <div className="min-w-0 text-[11px] font-bold">{m.name}</div>
+                  <div className="min-w-0 text-[11px] font-bold">
+                    {m.name}
+                    {!boarderThatDay && (
+                      <span className="ml-1 text-[8.5px] font-semibold text-text-secondary">not joined yet</span>
+                    )}
+                  </div>
                   {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-                    const on = entry?.[meal]?.on ?? true;
+                    if (!counted) {
+                      return (
+                        <div key={meal} className="w-6 text-center text-[9.5px] font-extrabold text-text-secondary">
+                          —
+                        </div>
+                      );
+                    }
+                    const offeredThatDay =
+                      day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+                    // A member who turned their future meals off shows off on
+                    // days not yet materialised, not the offered default.
+                    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
                     return (
                       <div
                         key={meal}
@@ -693,11 +756,14 @@ export default function StudentMealsPage() {
         userId={user?.id}
         defaultDate={selectedDate}
       />
-      <StopMealSheet
-        open={stopSheetOpen}
-        onClose={() => setStopSheetOpen(false)}
+      <MealRequestSheet
+        open={!!reqSheet}
+        onClose={() => setReqSheet(null)}
         hostelId={activeHostelId}
         userId={user?.id}
+        date={selectedDate}
+        defaultOn={reqSheet?.on ?? false}
+        defaultMeals={reqSheet?.meals}
       />
     </div>
   );

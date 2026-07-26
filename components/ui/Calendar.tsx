@@ -38,6 +38,10 @@ interface CalendarProps {
   rangeEnd?: string;
   onSelectDate: (date: string) => void;
   renderDots?: (date: string) => React.ReactNode;
+  /** Extra classes for a specific date's cell (e.g. a fill colour for days a
+   * member's meals are off) — applied only when the cell isn't selected/in a
+   * range, so those states still win. */
+  dayClass?: (date: string) => string | undefined;
 }
 
 export function Calendar({
@@ -49,6 +53,7 @@ export function Calendar({
   rangeEnd,
   onSelectDate,
   renderDots,
+  dayClass,
 }: CalendarProps) {
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstWeekday = new Date(year, month - 1, 1).getDay();
@@ -115,6 +120,7 @@ export function Calendar({
           const inRange =
             rangeStart && rangeEnd && dateStr >= rangeStart && dateStr <= rangeEnd;
           const isRangeEdge = dateStr === rangeStart || dateStr === rangeEnd;
+          const tone = dayClass?.(dateStr);
 
           return (
             <button
@@ -127,9 +133,11 @@ export function Calendar({
                   ? "bg-primary text-white"
                   : inRange
                     ? "bg-primary-soft text-primary"
-                    : isToday
-                      ? "border border-primary text-primary"
-                      : "text-text"
+                    : tone
+                      ? clsx(tone, isToday && "border border-primary")
+                      : isToday
+                        ? "border border-primary text-primary"
+                        : "text-text"
               )}
             >
               {day}
