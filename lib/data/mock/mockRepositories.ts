@@ -1053,11 +1053,13 @@ const meals: MealRepository = {
   async getMemberMealSummary(hostelId, userId, month) {
     sealMockDays(hostelId, `${month}-01`, `${month}-31`);
     const joinedDay = store.data.users.find((u) => u.id === userId)?.joinedAt?.slice(0, 10);
+    const to = today();
     let mealsOn = 0;
     let billedMeals = 0;
     for (const day of store.data.mealDays) {
       if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
       if (joinedDay && joinedDay > day.date) continue; // before they joined
+      if (day.date > to) continue; // future days haven't happened / been cooked
       const entry = day.entries[userId];
       if (!entry) continue;
       for (const slot of ["breakfast", "lunch", "dinner"] as const) {

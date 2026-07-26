@@ -339,14 +339,16 @@ export const meals: MealRepository = {
 
   async getMemberMealSummary(hostelId, userId, month) {
     await sealDays(hostelId, `${month}-01`, `${month}-31`);
-    // Everything this member has ON this month, from their join date — what
-    // they're eating, shown live without waiting for a bill.
+    // Everything this member has ON so far this month, from their join date up
+    // to TODAY — meals that have actually happened. Future days they've toggled
+    // on aren't counted (they haven't been cooked yet).
     const on = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e JOIN users u ON u.id = e.user_id
         WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+          AND e.day <= ?
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)`,
-      [hostelId, userId, month]
+      [hostelId, userId, month, today()]
     );
     const mealsOn = Number(on?.own ?? 0) + Number(on?.guests ?? 0);
     // Of those, only the (day, meal) slots a manager confirmed cooked get
