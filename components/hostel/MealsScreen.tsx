@@ -421,10 +421,11 @@ export function MealsScreen({
                       );
                     }
                     // Boarding that day but no explicit row yet (e.g. a future
-                    // day not sealed): fall back to what the day offers.
+                    // day not sealed): fall back to what the day offers — unless
+                    // the member turned their own future meals off.
                     const offeredThatDay =
                       day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
-                    const on = entry?.[meal]?.on ?? offeredThatDay;
+                    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
                     const guests = entry?.[meal]?.guestCount ?? 0;
                     return (
                       <div

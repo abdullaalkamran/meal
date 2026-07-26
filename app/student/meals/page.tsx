@@ -75,6 +75,19 @@ export default function StudentMealsPage() {
   };
   // A day with no stored entry yet defaults OFF when the switch is on.
   const defaultOn = !futureOff;
+
+  // Is THIS member's whole day off? Used to colour-fill the calendar so they
+  // can see which days their meals are stopped (and from when). A sealed/
+  // stored day reads its rows; an unsealed future day is off only if their
+  // future-meals switch is on. Days before they joined aren't marked.
+  const myDayOff = (date: string): boolean => {
+    if (!user) return false;
+    const jd = user.joinedAt?.slice(0, 10);
+    if (jd && jd > date) return false;
+    const e = monthDays.find((x) => x.date === date)?.entries[user.id];
+    if (e) return !e.breakfast.on && !e.lunch.on && !e.dinner.on;
+    return futureOff;
+  };
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
@@ -425,6 +438,7 @@ export default function StudentMealsPage() {
           }}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
+          dayClass={(date) => (myDayOff(date) ? "bg-danger-soft text-danger" : undefined)}
           renderDots={(date) => {
             const d = monthDays.find((x) => x.date === date);
             const mine = user && d?.entries[user.id];
@@ -441,12 +455,15 @@ export default function StudentMealsPage() {
             );
           }}
         />
-        <div className="mt-2 flex items-center justify-center gap-3 text-[9.5px] font-semibold text-text-secondary">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[9.5px] font-semibold text-text-secondary">
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Meal on
           </span>
           <span className="flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-border" /> Meal off
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded-sm bg-danger-soft" /> No meals that day
           </span>
           <span>B &middot; L &middot; D</span>
         </div>
@@ -584,7 +601,9 @@ export default function StudentMealsPage() {
                     }
                     const offeredThatDay =
                       day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
-                    const on = entry?.[meal]?.on ?? offeredThatDay;
+                    // A member who turned their future meals off shows off on
+                    // days not yet materialised, not the offered default.
+                    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
                     return (
                       <div
                         key={meal}
