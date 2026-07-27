@@ -47,7 +47,10 @@ export default function StudentMealsPage() {
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
   const users = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
-  const actualRate = useActualMealRate(activeHostelId);
+  // The SAME approved-shopping / confirmed-cooked gate the actual bill uses
+  // (see billing's mealRateFor) — matches what the manager's Meals page
+  // shows, and tracks whichever month is selected, not just the current one.
+  const actualRate = useActualMealRate(activeHostelId, `${year}-${String(month).padStart(2, "0")}`);
   const { day, setToggle } = useMealDay(activeHostelId, selectedDate);
   const { toast } = useToast();
   // Whether the member may still change this date themselves — the same rule
@@ -165,20 +168,6 @@ export default function StudentMealsPage() {
   const monthPrefix = `${year}-${String(month).padStart(2, "0")}`;
   const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
   const monthCosts = allCosts.filter((c) => c.dates.some(inSelectedMonth));
-  const totalShopping = monthCosts.reduce((sum, c) => sum + c.amount, 0);
-  // Only days that have actually happened — future days members have toggled
-  // on aren't cooked yet, so they don't count.
-  const monthMealCount = monthDays.reduce(
-    (sum, d) =>
-      d.date > today()
-        ? sum
-        : sum +
-          Object.values(d.entries).reduce(
-            (s, e) => s + (e.breakfast.on ? 1 : 0) + (e.lunch.on ? 1 : 0) + (e.dinner.on ? 1 : 0),
-            0
-          ),
-    0
-  );
   const blocksInMonth = shoppingPlan?.blocks.filter((b) => b.dates.some(inSelectedMonth)) ?? [];
 
   // Per-person cost/rate/quality for the selected month, used by both the
@@ -508,14 +497,14 @@ export default function StudentMealsPage() {
         </div>
         <div className="mb-3 rounded-btn bg-primary-soft p-3">
           <div className="text-[9px] font-bold text-text-secondary">TOTAL SHOPPING COST</div>
-          <div className="text-[20px] font-extrabold text-primary">{formatBDT(totalShopping)}</div>
+          <div className="text-[20px] font-extrabold text-primary">{formatBDT(actualRate.totalShopping)}</div>
           <div className="text-[10px] font-semibold text-text-secondary">
-            Actual grocery spend recorded this month
+            Approved grocery spend recorded this month
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-btn bg-bg p-2.5 text-center">
-            <div className="text-[15px] font-extrabold">{monthMealCount}</div>
+            <div className="text-[15px] font-extrabold">{actualRate.totalMeals}</div>
             <div className="text-[9px] font-bold text-text-secondary">Total meals</div>
           </div>
           <div className="rounded-btn bg-bg p-2.5 text-center">
@@ -523,6 +512,12 @@ export default function StudentMealsPage() {
             <div className="text-[9px] font-bold text-text-secondary">Avg cost / meal</div>
           </div>
         </div>
+        {actualRate.totalShopping === 0 && monthCosts.length > 0 && (
+          <div className="mt-2.5 rounded-btn bg-orange-soft px-3 py-2 text-[9.5px] font-bold text-orange">
+            Shopping was recorded this month but isn&rsquo;t approved yet — ask your manager to approve it so it
+            counts toward the meal rate and your bill.
+          </div>
+        )}
       </Card>
 
       {/* Boarder meals for selected date */}

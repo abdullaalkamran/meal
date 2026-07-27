@@ -8,6 +8,7 @@ import { useUsers } from "@/hooks/useUsers";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useMealEditRequests } from "@/hooks/useMealEditRequests";
+import { useActualMealRate } from "@/hooks/useActualMealRate";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -228,16 +229,18 @@ export function MealsScreen({
         ),
       0
     );
-  const monthMealCount = monthDays.reduce((sum, d) => sum + mealsOnDay(d), 0);
 
-  // Actual shopping-based economics for the selected month: what was really
-  // spent on groceries, versus how many meals it served — a truer "meal cost"
-  // than the billed rate. Powers the summary card and the leaderboard below.
+  // The SAME approved-shopping / confirmed-cooked gate the actual bill uses
+  // (see billing's mealRateFor) — this is what members' Meals page shows
+  // too, so the two never disagree the way an ungated client-side sum would.
+  const actualRate = useActualMealRate(activeHostelId, monthKey);
+
+  // Per-member economics for the leaderboard below — a separate, more
+  // granular breakdown than the summary card above, still off the raw
+  // (not approval-gated) shopping records members submitted.
   const monthPrefix = monthKey;
   const inSelectedMonth = (date: string) => date.startsWith(monthPrefix);
   const monthCosts = allCosts.filter((c) => c.dates.some(inSelectedMonth));
-  const totalShopping = monthCosts.reduce((sum, c) => sum + c.amount, 0);
-  const avgCostPerMeal = monthMealCount > 0 ? totalShopping / monthMealCount : 0;
   const blocksInMonth = shoppingPlan?.blocks.filter((b) => b.dates.some(inSelectedMonth)) ?? [];
 
   const mealsServedOn = (date: string) => {
@@ -326,21 +329,27 @@ export function MealsScreen({
         <div className="mb-3 text-[13.5px] font-extrabold">Shopping cost &middot; {formatMonthLabel(monthKey)}</div>
         <div className="mb-3 rounded-btn bg-primary-soft p-3">
           <div className="text-[9px] font-bold text-text-secondary">TOTAL SHOPPING COST</div>
-          <div className="text-[20px] font-extrabold text-primary">{formatBDT(totalShopping)}</div>
+          <div className="text-[20px] font-extrabold text-primary">{formatBDT(actualRate.totalShopping)}</div>
           <div className="text-[10px] font-semibold text-text-secondary">
-            Actual grocery spend recorded this month
+            Approved grocery spend recorded this month
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-btn bg-bg p-2.5 text-center">
-            <div className="text-[15px] font-extrabold">{monthMealCount}</div>
+            <div className="text-[15px] font-extrabold">{actualRate.totalMeals}</div>
             <div className="text-[9px] font-bold text-text-secondary">Total meals</div>
           </div>
           <div className="rounded-btn bg-bg p-2.5 text-center">
-            <div className="text-[15px] font-extrabold text-orange">{formatBDT(avgCostPerMeal)}</div>
+            <div className="text-[15px] font-extrabold text-orange">{formatBDT(actualRate.rate)}</div>
             <div className="text-[9px] font-bold text-text-secondary">Avg cost / meal</div>
           </div>
         </div>
+        {actualRate.totalShopping === 0 && monthCosts.length > 0 && (
+          <div className="mt-2.5 rounded-btn bg-orange-soft px-3 py-2 text-[9.5px] font-bold text-orange">
+            {monthCosts.length} shopping record{monthCosts.length === 1 ? "" : "s"} logged this month, but none
+            approved yet — approve them for this to count toward the meal rate and bills.
+          </div>
+        )}
       </Card>
 
       <Card>
