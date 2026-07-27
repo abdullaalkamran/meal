@@ -19,6 +19,7 @@ import type {
   OrderItem,
   Product,
   ProductKind,
+  Promotion,
   ServiceListing,
   StudyAbroadItem,
   StudyLead,
@@ -33,6 +34,7 @@ import type {
   OrderRepository,
   ProductRepository,
   PromoSettingsRepository,
+  PromotionRepository,
   ServiceCatalogRepository,
   StudyAbroadRepository,
   StudyLeadRepository,
@@ -607,6 +609,66 @@ export const usedBooks: UsedBookRepository = {
     await run("DELETE FROM used_book_listings WHERE id = ?", [id]);
   },
 
+  subscribe: serverOnly,
+};
+
+// ── Home-page promotions (hero banners + login popups) ──────────────────────
+
+interface PromoRow {
+  id: string; placement: Promotion["placement"]; image: string; title: string | null;
+  tagline: string | null; link_url: string | null; active: number; created_at: string;
+}
+const toPromotion = (r: PromoRow): Promotion => ({
+  id: r.id,
+  placement: r.placement,
+  image: r.image,
+  title: r.title ?? undefined,
+  tagline: r.tagline ?? undefined,
+  linkUrl: r.link_url ?? undefined,
+  active: toBool(r.active),
+  createdAt: toIso(r.created_at),
+});
+
+export const promotions: PromotionRepository = {
+  async listAll() {
+    const rows = await all<PromoRow>(
+      "SELECT id, placement, image, title, tagline, link_url, active, created_at FROM promotions ORDER BY created_at DESC"
+    );
+    return rows.map(toPromotion);
+  },
+  async listActive(placement) {
+    const rows = await all<PromoRow>(
+      "SELECT id, placement, image, title, tagline, link_url, active, created_at FROM promotions WHERE placement = ? AND active = 1 ORDER BY created_at DESC",
+      [placement]
+    );
+    return rows.map(toPromotion);
+  },
+  async add(promo) {
+    await run(
+      `INSERT INTO promotions (id, placement, image, title, tagline, link_url, active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+      [newId("promo"), promo.placement, promo.image, promo.title ?? null, promo.tagline ?? null, promo.linkUrl ?? null, now()]
+    );
+  },
+  async update(id, patch) {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (patch.placement !== undefined) { sets.push("placement = ?"); vals.push(patch.placement); }
+    if (patch.image !== undefined) { sets.push("image = ?"); vals.push(patch.image); }
+    if (patch.title !== undefined) { sets.push("title = ?"); vals.push(patch.title ?? null); }
+    if (patch.tagline !== undefined) { sets.push("tagline = ?"); vals.push(patch.tagline ?? null); }
+    if (patch.linkUrl !== undefined) { sets.push("link_url = ?"); vals.push(patch.linkUrl ?? null); }
+    if (patch.active !== undefined) { sets.push("active = ?"); vals.push(patch.active ? 1 : 0); }
+    if (sets.length === 0) return;
+    vals.push(id);
+    await run(`UPDATE promotions SET ${sets.join(", ")} WHERE id = ?`, vals);
+  },
+  async toggleActive(id, active) {
+    await run("UPDATE promotions SET active = ? WHERE id = ?", [active ? 1 : 0, id]);
+  },
+  async remove(id) {
+    await run("DELETE FROM promotions WHERE id = ?", [id]);
+  },
   subscribe: serverOnly,
 };
 

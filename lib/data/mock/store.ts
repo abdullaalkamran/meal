@@ -38,6 +38,7 @@ import type {
   CartItem,
   Payment,
   Product,
+  Promotion,
   Rating,
   Reaction,
   Room,
@@ -82,6 +83,7 @@ export interface Tables {
   announcements: Announcement[];
   notifications: Notification[];
   pushSubscriptions: { id: string; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }[];
+  promotions: Promotion[];
   expenses: Expense[];
   transferRequests: HostelTransferRequest[];
   joinRequests: JoinRequest[];

@@ -312,6 +312,24 @@ async function seedPlatformTeam(): Promise<void> {
   }
 }
 
+/** Creates promotions (home banners + login popups) on databases that predate it. */
+async function ensurePromotionsTable(): Promise<void> {
+  if (await tableExists("promotions")) return;
+  await run(
+    `CREATE TABLE promotions (
+       id         VARCHAR(64) NOT NULL PRIMARY KEY,
+       placement  ENUM('hero','popup') NOT NULL,
+       image      MEDIUMTEXT  NOT NULL,
+       title      VARCHAR(191) NULL,
+       tagline    VARCHAR(255) NULL,
+       link_url   VARCHAR(512) NULL,
+       active     BOOLEAN     NOT NULL DEFAULT TRUE,
+       created_at DATETIME(3) NOT NULL,
+       INDEX idx_promotions_placement (placement, active)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 /** Creates push_subscriptions on databases that predate browser push. */
 async function ensurePushSubscriptionsTable(): Promise<void> {
   if (await tableExists("push_subscriptions")) return;
@@ -381,6 +399,7 @@ export function ensureReady(): Promise<void> {
       await ensureServicePermissionColumn();
       await ensureLeaveRequestsTable();
       await ensurePushSubscriptionsTable();
+      await ensurePromotionsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

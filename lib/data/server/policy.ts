@@ -113,6 +113,14 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   studyAbroad: { add: SERVICE_TEAM, update: SERVICE_TEAM, toggleActive: SERVICE_TEAM, remove: SERVICE_TEAM },
   studyLeads: { setContacted: SERVICE_TEAM, remove: SERVICE_TEAM },
   promoSettings: { update: SERVICE_TEAM },
+  // Home-page banners + login popups: only the service team / super admin
+  // may create or change them; listing is open to signed-in members.
+  promotions: {
+    add: SERVICE_TEAM,
+    update: SERVICE_TEAM,
+    toggleActive: SERVICE_TEAM,
+    remove: SERVICE_TEAM,
+  },
   orders: { updateStatus: SERVICE_TEAM },
   community: { remove: SERVICE_TEAM },
   campaigns: { create: MARKETING_TEAM, updateStatus: MARKETING_TEAM, remove: MARKETING_TEAM },

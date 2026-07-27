@@ -37,6 +37,7 @@ import type {
   SwapRepository,
   TransferRepository,
   UsedBookRepository,
+  PromotionRepository,
   UserRepository,
 } from "../repository";
 import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
@@ -3209,6 +3210,48 @@ const usedBooks: UsedBookRepository = {
   },
 };
 
+const promotions: PromotionRepository = {
+  async listAll() {
+    return [...store.data.promotions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async listActive(placement) {
+    return store.data.promotions
+      .filter((p) => p.placement === placement && p.active)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async add(promo) {
+    store.data.promotions.push({
+      ...promo,
+      id: nextId("promo"),
+      active: true,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit("promotions");
+  },
+  async update(id, patch) {
+    const p = store.data.promotions.find((x) => x.id === id);
+    if (!p) return;
+    Object.assign(p, patch);
+    store.emit("promotions");
+  },
+  async toggleActive(id, active) {
+    const p = store.data.promotions.find((x) => x.id === id);
+    if (!p) return;
+    p.active = active;
+    store.emit("promotions");
+  },
+  async remove(id) {
+    store.data.promotions = store.data.promotions.filter((p) => p.id !== id);
+    store.emit("promotions");
+  },
+  subscribe(cb) {
+    const fire = () =>
+      cb([...store.data.promotions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("promotions", fire);
+  },
+};
+
 export const mockRepositories: Repositories = {
   users,
   activity,
@@ -3245,6 +3288,7 @@ export const mockRepositories: Repositories = {
   cart,
   orders,
   usedBooks,
+  promotions,
   studyAbroad,
   studyLeads,
   promoSettings,

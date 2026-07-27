@@ -41,6 +41,7 @@ export function buildSeed(): Tables {
     announcements: [],
     notifications: [],
     pushSubscriptions: [],
+    promotions: [],
     expenses: [],
     transferRequests: [],
     joinRequests: [],

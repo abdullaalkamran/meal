@@ -1,6 +1,7 @@
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { SideNav } from "./SideNav";
+import { LoginPromoPopup } from "@/components/student/LoginPromoPopup";
 import type { NavItem } from "./navItems";
 
 export function AppShell({
@@ -24,6 +25,7 @@ export function AppShell({
         </main>
       </div>
       {hasNav && <BottomNav items={navItems} />}
+      <LoginPromoPopup />
     </div>
   );
 }

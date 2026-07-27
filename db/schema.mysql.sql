@@ -959,6 +959,20 @@ CREATE TABLE marketing_targets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Single-row table (id is always 1) for the homepage promo carousel settings.
+-- Home-page promotions the Service Manager uploads: wide hero banners and
+-- square login-popup cards. Image is an uploaded photo stored as a data URL.
+CREATE TABLE promotions (
+  id         VARCHAR(64) NOT NULL PRIMARY KEY,
+  placement  ENUM('hero','popup') NOT NULL,
+  image      MEDIUMTEXT  NOT NULL,
+  title      VARCHAR(191) NULL,
+  tagline    VARCHAR(255) NULL,
+  link_url   VARCHAR(512) NULL,
+  active     BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at DATETIME(3) NOT NULL,
+  INDEX idx_promotions_placement (placement, active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE hero_promo_settings (
   id              TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
   source_study    BOOLEAN NOT NULL DEFAULT TRUE,

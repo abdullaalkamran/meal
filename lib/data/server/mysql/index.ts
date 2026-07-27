@@ -29,6 +29,7 @@ import {
   orders,
   products,
   promoSettings,
+  promotions,
   serviceCatalog,
   studyAbroad,
   studyLeads,
@@ -132,4 +133,5 @@ export const mysqlRepositories: Repositories = {
   studyAbroad,
   studyLeads,
   promoSettings,
+  promotions,
 };

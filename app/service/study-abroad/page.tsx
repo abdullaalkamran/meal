@@ -93,6 +93,7 @@ function subtitle(i: StudyAbroadItem): string {
 }
 
 const SOURCE_OPTIONS: { key: keyof import("@/lib/data").HeroPromoSettings["sources"]; label: string }[] = [
+  { key: "banners", label: "Home banners (uploaded)" },
   { key: "study", label: "Study abroad promo cards" },
   { key: "offers", label: "Shop offers" },
   { key: "grocery", label: "Grocery store slide" },
@@ -250,7 +251,7 @@ export default function ServiceStudyAbroadPage() {
               <div key={s.key} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2">
                 <span className="text-[11px] font-bold">{s.label}</span>
                 <Switch
-                  checked={promoSettings.sources[s.key]}
+                  checked={promoSettings.sources[s.key] ?? true}
                   onChange={(checked) =>
                     repo.promoSettings.update({
                       sources: { ...promoSettings.sources, [s.key]: checked },

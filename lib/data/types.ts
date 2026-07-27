@@ -861,12 +861,30 @@ export type NewStudyLead = Omit<StudyLead, "id" | "createdAt" | "contacted">;
 /** Service-Manager-controlled settings for the promotional carousel on every
  * member's homepage: which card types appear, how long each slide shows, and
  * the photo card height in px. */
+/** A promo photo the Service Manager (or Super Admin) uploads to show on the
+ * home page — either as a wide banner slide in the home hero carousel, or as a
+ * square card that pops up once after a member signs in. Managed on the
+ * Service dashboard; the image is an uploaded photo stored as a data URL. */
+export interface Promotion {
+  id: string;
+  placement: "hero" | "popup";
+  image: string;
+  title?: string;
+  tagline?: string;
+  /** Optional link opened when the banner/card is tapped. */
+  linkUrl?: string;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface HeroPromoSettings {
   sources: {
     study: boolean;
     offers: boolean;
     grocery: boolean;
     books: boolean;
+    /** Service-Manager-uploaded home banners. */
+    banners?: boolean;
   };
   /** Seconds each slide stays before auto-advancing (2–15). */
   intervalSec: number;

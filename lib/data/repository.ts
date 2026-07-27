@@ -45,6 +45,7 @@ import type {
   PaymentMethod,
   Payment,
   Product,
+  Promotion,
   ProductKind,
   Rating,
   NewServiceListing,
@@ -600,6 +601,18 @@ export interface StudyLeadRepository {
   subscribe(cb: (list: StudyLead[]) => void): Unsubscribe;
 }
 
+export interface PromotionRepository {
+  /** Every promotion, for the Service dashboard. */
+  listAll(): Promise<Promotion[]>;
+  /** Active promotions for a placement, shown to members (hero or popup). */
+  listActive(placement: Promotion["placement"]): Promise<Promotion[]>;
+  add(promo: Omit<Promotion, "id" | "createdAt" | "active">): Promise<void>;
+  update(id: string, patch: Partial<Omit<Promotion, "id" | "createdAt">>): Promise<void>;
+  toggleActive(id: string, active: boolean): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: Promotion[]) => void): Unsubscribe;
+}
+
 export interface UsedBookRepository {
   listAll(): Promise<UsedBookListing[]>;
   add(book: NewUsedBook): Promise<void>;
@@ -651,6 +664,7 @@ export interface Repositories {
   cart: CartRepository;
   orders: OrderRepository;
   usedBooks: UsedBookRepository;
+  promotions: PromotionRepository;
   studyAbroad: StudyAbroadRepository;
   studyLeads: StudyLeadRepository;
   promoSettings: PromoSettingsRepository;
