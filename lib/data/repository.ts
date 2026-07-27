@@ -340,6 +340,9 @@ export interface ShortageRepository {
 
 export interface BillRepository {
   getBill(hostelId: string, userId: string, month: string): Promise<Bill | undefined>;
+  /** The member's most recent bill of any month — used to read a former
+   * member's closing balance for settlement. */
+  getLatestForUser(hostelId: string, userId: string): Promise<Bill | undefined>;
   listByHostel(hostelId: string, month: string): Promise<Bill[]>;
   listPayments(billId: string): Promise<Payment[]>;
   pay(payment: Omit<Payment, "id">): Promise<void>;

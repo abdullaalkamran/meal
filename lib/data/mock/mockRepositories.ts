@@ -1610,6 +1610,11 @@ const bills: BillRepository = {
       (b) => b.hostelId === hostelId && b.userId === userId && b.month === month
     );
   },
+  async getLatestForUser(hostelId, userId) {
+    return store.data.bills
+      .filter((b) => b.hostelId === hostelId && b.userId === userId)
+      .sort((a, b) => b.month.localeCompare(a.month))[0];
+  },
   async listByHostel(hostelId, month) {
     return store.data.bills.filter((b) => b.hostelId === hostelId && b.month === month);
   },
@@ -1813,14 +1818,21 @@ const bills: BillRepository = {
           };
         });
 
-    const prevDate = new Date(year, mon - 2, 1);
-    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-
     // The AUTOMATIC meal rate: this month's shopping spend ÷ meals eaten
     // (member + guest). Every member and guest meal is billed at this actual
     // per-meal cost — the sum of all meal charges equals the shopping spend.
     const { rate: mealRate } = actualMealRateFor(hostelId, month);
     const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    // What each member personally spent on approved shopping this month —
+    // credited against their own meal cost below (same set that feeds the
+    // rate), so a heavy shopper's meal cost nets to a credit.
+    const shoppingByUser = new Map<string, number>();
+    for (const c of store.data.shoppingCosts) {
+      if (c.hostelId !== hostelId || c.status !== "approved") continue;
+      if (!c.dates.some((d) => d.startsWith(month))) continue;
+      shoppingByUser.set(c.userId, (shoppingByUser.get(c.userId) ?? 0) + c.amount);
+    }
 
     // Which month the rent line covers (default: the bill's own month), and
     // whether the hostel charges a month's advance rent on a member's first bill.
@@ -1873,7 +1885,14 @@ const bills: BillRepository = {
           amount: round2(guestMeals * mealRate),
         });
       }
-      const mealCostTotal = round2((ownMeals + guestMeals) * mealRate);
+      // Credit the member's own shopping spend against their meal cost, so the
+      // bill nets to (meals − their spend) and matches the monthly report. Can
+      // go negative — a credit the hostel owes, which then carries forward.
+      const shoppingSpent = shoppingByUser.get(u.id) ?? 0;
+      if (shoppingSpent > 0) {
+        mealCostItems.push({ label: "Your shopping this month (credit)", amount: -round2(shoppingSpent) });
+      }
+      const mealCostTotal = round2((ownMeals + guestMeals) * mealRate - shoppingSpent);
 
       const serviceItems = expenseItemsFor(utilityExpenses, u.id);
       // Owner-set flat monthly service charge — not expense-backed, so it
@@ -1928,11 +1947,14 @@ const bills: BillRepository = {
           paid: paidFor("cookSalary"),
         },
       ];
-      const prevBill = store.data.bills.find(
-        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === prevMonth
-      );
-      const previousBalance = prevBill ? Math.max(prevBill.grandTotal - prevBill.paid, 0) : 0;
-      const grandTotal = sections.reduce((sum, s) => sum + s.total, 0) + previousBalance;
+      // Carry the running balance from the member's MOST RECENT prior bill (not
+      // strictly last month, so a skipped month never drops it), keeping BOTH
+      // signs: a due (+) to collect or a credit (−) that reduces this bill.
+      const prevBill = store.data.bills
+        .filter((b) => b.hostelId === hostelId && b.userId === u.id && b.month < month)
+        .sort((a, b) => b.month.localeCompare(a.month))[0];
+      const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
+      const grandTotal = round2(sections.reduce((sum, s) => sum + s.total, 0) + previousBalance);
 
       return {
         id: existing?.id ?? nextId("bill"),
@@ -2536,7 +2558,7 @@ const MIN_LEAVE_NOTICE_DAYS = 30;
  * sealing: runs on every read rather than needing a background job, and is
  * cheap since a hostel only ever has a handful of leave requests (not an
  * unbounded date range). */
-function processDueLeaveRequests(hostelId: string): void {
+async function processDueLeaveRequests(hostelId: string): Promise<void> {
   const due = store.data.leaveRequests.filter(
     (r) => r.hostelId === hostelId && r.status === "approved" && r.leaveDate <= today()
   );
@@ -2544,6 +2566,16 @@ function processDueLeaveRequests(hostelId: string): void {
     const idx = store.data.users.findIndex((u) => u.id === r.userId);
     if (idx === -1 || store.data.users[idx].banned) continue;
     const user = store.data.users[idx];
+    // Generate this member's FINAL bill for their leave month while they're
+    // still billable (generateBills skips banned members) and fold in any held
+    // advance rent, so their closing balance is captured before they leave the
+    // roster. Runs once — the ban below makes them skip this loop afterward.
+    try {
+      await bills.generateBills(hostelId, r.leaveDate.slice(0, 7));
+      await bills.applyAdvanceOnLeave(hostelId, user.id);
+    } catch {
+      // Never let a settlement hiccup block the ban.
+    }
     store.data.rooms.forEach((room) => {
       if (room.occupantIds.includes(user.id)) {
         room.occupantIds = room.occupantIds.filter((id) => id !== user.id);
@@ -2559,12 +2591,12 @@ function processDueLeaveRequests(hostelId: string): void {
 
 const leaveRequests: LeaveRequestRepository = {
   async listByHostel(hostelId) {
-    processDueLeaveRequests(hostelId);
+    await processDueLeaveRequests(hostelId);
     return store.data.leaveRequests.filter((r) => r.hostelId === hostelId);
   },
   async listByUser(userId) {
     const user = store.data.users.find((u) => u.id === userId);
-    if (user?.hostelId) processDueLeaveRequests(user.hostelId);
+    if (user?.hostelId) await processDueLeaveRequests(user.hostelId);
     return store.data.leaveRequests.filter((r) => r.userId === userId);
   },
   async request(req) {

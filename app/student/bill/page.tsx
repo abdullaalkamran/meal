@@ -121,6 +121,18 @@ export default function StudentBillPage() {
         </Card>
       )}
 
+      {previousDue < 0 && (
+        <Card className="flex items-center justify-between border border-primary/30 bg-primary-soft">
+          <div>
+            <div className="text-[12.5px] font-extrabold text-primary">Previous credit</div>
+            <div className="text-[10px] font-semibold text-text-secondary">
+              Carried over from an earlier month — it reduces this bill
+            </div>
+          </div>
+          <div className="text-[13.5px] font-extrabold text-primary">{formatBDT(-previousDue)}</div>
+        </Card>
+      )}
+
       {bill.sections.map((section) => {
         const meta = SECTION_META[section.label];
         const sectionDue = section.total - section.paid;
