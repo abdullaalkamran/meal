@@ -2,11 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { repo, type Announcement } from "@/lib/data";
+import { today } from "@/lib/utils/date";
 import { useAnnouncements } from "./useAnnouncements";
 import { useShortages } from "./useShortages";
 import { useSwaps } from "./useSwaps";
+import { useDutyPlans } from "./useDutyPlans";
 
-type Payload = { reportId?: string; requestId?: string; shortageId?: string; swapId?: string };
+type Payload = {
+  reportId?: string;
+  requestId?: string;
+  shortageId?: string;
+  swapId?: string;
+  planId?: string;
+};
 
 const payloadOf = (a: Announcement) => a.payload as Payload | undefined;
 
@@ -30,6 +38,7 @@ export function useActionableAnnouncements(
   const announcements = useAnnouncements(hostelId);
   const shortages = useShortages(hostelId);
   const swaps = useSwaps(hostelId);
+  const plans = useDutyPlans(hostelId);
   const [votedReportIds, setVotedReportIds] = useState<Set<string>>(new Set());
   const [votedRequestIds, setVotedRequestIds] = useState<Set<string>>(new Set());
   const [tick, setTick] = useState(0);
@@ -118,6 +127,13 @@ export function useActionableAnnouncements(
       case "swap-request": {
         const s = swaps.find((x) => x.id === payload?.swapId);
         return !(s && s.status !== "pending");
+      }
+      case "spin-wheel-cta": {
+        // Drop once this member has spun that rotation — or if the rotation is
+        // gone (replaced) or already over, so a stale "spin now" never lingers.
+        const plan = plans.find((p) => p.id === payload?.planId);
+        if (!plan || plan.endDate < today()) return false;
+        return !(userId && plan.spun?.[userId]);
       }
       default:
         return true;
