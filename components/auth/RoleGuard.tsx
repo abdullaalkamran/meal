@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { ROLE_HOME, useSession } from "@/lib/auth/SessionProvider";
+import { MealSplash } from "@/components/ui/MealSplash";
 import type { Role } from "@/lib/data";
 
 export function RoleGuard({
@@ -29,7 +30,10 @@ export function RoleGuard({
     }
   }, [isLoading, user, viewRole, role, router]);
 
-  if (isLoading || !user || viewRole !== role) return null;
+  // Show the splash while the session resolves, then keep blank during the
+  // redirect the effect above kicks off for the wrong role / no user.
+  if (isLoading) return <MealSplash />;
+  if (!user || viewRole !== role) return null;
 
   return <>{children}</>;
 }
