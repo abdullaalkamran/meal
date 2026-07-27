@@ -9,6 +9,8 @@ import type {
   MealEditRequest,
   MealEditVote,
   MealSlot,
+  ShoppingCostEditRequest,
+  ShoppingCostEditVote,
   SwapRequest,
 } from "../../types";
 import type {
@@ -16,10 +18,11 @@ import type {
   CookLeaveRepository,
   DutyRepository,
   MealEditRepository,
+  ShoppingCostEditRepository,
   SwapRepository,
 } from "../../repository";
 import { all, fromIso, one, run, toDay, toIso, transaction, type Queryable } from "./connection";
-import { currentActor, notifyHostelStaff } from "./context";
+import { currentActor, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -616,6 +619,142 @@ export const mealEdits: MealEditRepository = {
 
   async withdraw(requestId) {
     await run("DELETE FROM meal_edit_requests WHERE id = ?", [requestId]);
+  },
+
+  subscribe: serverOnly,
+};
+
+// ── Shopping-cost edits (vote-gated, like meal edits) ───────────────────────
+
+interface ShopEditRow {
+  id: string; hostel_id: string; cost_id: string; target_user_id: string;
+  current_amount: number; new_amount: number; new_items: string | null;
+  reason: string; requested_by: string; status: ShoppingCostEditRequest["status"]; created_at: string;
+}
+
+const toShopEdit = (r: ShopEditRow): ShoppingCostEditRequest => ({
+  id: r.id,
+  hostelId: r.hostel_id,
+  costId: r.cost_id,
+  targetUserId: r.target_user_id,
+  currentAmount: Number(r.current_amount),
+  newAmount: Number(r.new_amount),
+  newItems: r.new_items ?? undefined,
+  reason: r.reason,
+  requestedBy: r.requested_by,
+  status: r.status,
+  createdAt: toIso(r.created_at),
+});
+
+export const shoppingCostEdits: ShoppingCostEditRepository = {
+  async listByHostel(hostelId) {
+    const rows = await all<ShopEditRow>(
+      `SELECT id, hostel_id, cost_id, target_user_id, current_amount, new_amount, new_items,
+              reason, requested_by, status, created_at
+         FROM shopping_cost_edit_requests WHERE hostel_id = ?`,
+      [hostelId]
+    );
+    return rows.map(toShopEdit);
+  },
+
+  async request(req) {
+    await transaction(async (tx) => {
+      const id = newId("shopedit");
+      await run(
+        `INSERT INTO shopping_cost_edit_requests
+           (id, hostel_id, cost_id, target_user_id, current_amount, new_amount, new_items, reason, requested_by, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [
+          id, req.hostelId, req.costId, req.targetUserId, req.currentAmount, req.newAmount,
+          req.newItems ?? null, req.reason ?? "", req.requestedBy, now(),
+        ],
+        tx
+      );
+      const target = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.targetUserId], tx);
+      const name = target?.name ?? "a member";
+      await postAnnouncement(
+        req.hostelId, "shopping-cost-edit-poll", `Change ${name}’s shopping cost to ৳${req.newAmount}?`,
+        `The manager wants to change ${name}’s recorded shopping cost from ৳${req.currentAmount} to ৳${req.newAmount}` +
+          `${req.reason ? `. Reason: ${req.reason}` : ""}. Vote yes to allow — it changes this month’s meal rate for everyone.`,
+        { requestId: id, costId: req.costId, targetUserId: req.targetUserId }, tx
+      );
+    });
+  },
+
+  /** Records the vote and, at half the hostel's boarders voting yes, applies
+   * the proposed amount/items to the cost. */
+  async vote(requestId, userId, choice) {
+    await transaction(async (tx) => {
+      await run(
+        `INSERT INTO shopping_cost_edit_votes (request_id, user_id, choice, voted_at) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE choice = VALUES(choice), voted_at = VALUES(voted_at)`,
+        [requestId, userId, choice, now()],
+        tx
+      );
+      const req = await one<ShopEditRow>(
+        `SELECT id, hostel_id, cost_id, target_user_id, new_amount, new_items, status
+           FROM shopping_cost_edit_requests WHERE id = ?`,
+        [requestId],
+        tx
+      );
+      if (!req || req.status !== "pending") return;
+
+      const boarders = await one<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM users WHERE hostel_id = ? AND role NOT IN ('cook','owner')",
+        [req.hostel_id],
+        tx
+      );
+      const yes = await one<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM shopping_cost_edit_votes WHERE request_id = ? AND choice = 'yes'",
+        [requestId],
+        tx
+      );
+      const total = boarders?.n ?? 0;
+      if (total > 0 && (yes?.n ?? 0) / total >= 0.5) {
+        await run("UPDATE shopping_cost_edit_requests SET status = 'approved' WHERE id = ?", [requestId], tx);
+        // Apply the approved change to the cost itself.
+        if (req.new_items === null) {
+          await run("UPDATE shopping_costs SET amount = ? WHERE id = ?", [req.new_amount, req.cost_id], tx);
+        } else {
+          await run(
+            "UPDATE shopping_costs SET amount = ?, items = ? WHERE id = ?",
+            [req.new_amount, req.new_items, req.cost_id],
+            tx
+          );
+        }
+        await run(
+          `UPDATE announcements
+              SET kind = 'shopping-cost-edit-resolved', title = 'Shopping cost change approved',
+                  body = CONCAT('Members approved the change — the cost is now ৳', ?, '.')
+            WHERE kind = 'shopping-cost-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?`,
+          [req.new_amount, requestId],
+          tx
+        );
+        await notify(
+          req.target_user_id,
+          "Your shopping cost was changed",
+          `Members approved changing your recorded shopping cost to ৳${req.new_amount}.`,
+          tx
+        );
+      }
+    });
+  },
+
+  async listVotes(requestId) {
+    const rows = await all<{ request_id: string; user_id: string; choice: ShoppingCostEditVote["choice"]; voted_at: string }>(
+      "SELECT request_id, user_id, choice, voted_at FROM shopping_cost_edit_votes WHERE request_id = ?",
+      [requestId]
+    );
+    return rows.map<ShoppingCostEditVote>((r) => ({
+      requestId: r.request_id,
+      userId: r.user_id,
+      choice: r.choice,
+      votedAt: toIso(r.voted_at),
+    }));
+  },
+
+  async withdraw(requestId) {
+    await run("DELETE FROM shopping_cost_edit_requests WHERE id = ?", [requestId]);
   },
 
   subscribe: serverOnly,

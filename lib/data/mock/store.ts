@@ -43,6 +43,8 @@ import type {
   Room,
   ServiceListing,
   ShoppingCost,
+  ShoppingCostEditRequest,
+  ShoppingCostEditVote,
   ShortageRequest,
   StudyAbroadItem,
   StudyLead,
@@ -66,6 +68,8 @@ export interface Tables {
   dutyPlans: DutyPlan[];
   swapRequests: SwapRequest[];
   shoppingCosts: ShoppingCost[];
+  shoppingCostEditRequests: ShoppingCostEditRequest[];
+  shoppingCostEditVotes: ShoppingCostEditVote[];
   shortageRequests: ShortageRequest[];
   bills: Bill[];
   payments: Payment[];

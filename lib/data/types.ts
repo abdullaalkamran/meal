@@ -330,6 +330,11 @@ export interface ShoppingCost {
    * rate (see billing's mealRateFor) — an unreviewed number a member typed
    * in doesn't silently move everyone's bill. */
   status: "pending" | "approved" | "denied";
+  /** Set when the manager entered this cost on the member's behalf (rather
+   * than the member submitting it). It counts as that member's shopping cost,
+   * is approved on entry, and is shown to everyone so it's transparent who
+   * recorded it. */
+  addedByManager?: boolean;
   createdAt: string;
 }
 
@@ -493,6 +498,36 @@ export interface MealEditVote {
   votedAt: string;
 }
 
+/** Manager's request to change one member's already-recorded shopping cost —
+ * gated behind the same hostel-wide vote as meal edits, so the manager can't
+ * unilaterally rewrite what counts toward everyone's meal rate. The proposed
+ * new amount/items travel with the request, and it auto-applies once yes votes
+ * reach half the hostel's boarders. */
+export interface ShoppingCostEditRequest {
+  id: string;
+  hostelId: string;
+  /** The shopping cost being edited. */
+  costId: string;
+  /** Whose cost it is (for the poll wording). */
+  targetUserId: string;
+  /** Snapshot of the amount at request time, so the poll reads sensibly even
+   * if something else changes meanwhile. */
+  currentAmount: number;
+  newAmount: number;
+  newItems?: string;
+  reason: string;
+  requestedBy: string;
+  status: "pending" | "approved" | "denied";
+  createdAt: string;
+}
+
+export interface ShoppingCostEditVote {
+  requestId: string;
+  userId: string;
+  choice: "yes" | "no";
+  votedAt: string;
+}
+
 export type AnnouncementKind =
   | "general"
   | "cook-absence-poll"
@@ -504,7 +539,9 @@ export type AnnouncementKind =
   | "swap-denied"
   | "shortage-alert"
   | "meal-edit-poll"
-  | "meal-edit-resolved";
+  | "meal-edit-resolved"
+  | "shopping-cost-edit-poll"
+  | "shopping-cost-edit-resolved";
 
 export interface Announcement {
   id: string;

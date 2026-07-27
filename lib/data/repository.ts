@@ -52,6 +52,8 @@ import type {
   ServiceKind,
   ServiceListing,
   ShoppingCost,
+  ShoppingCostEditRequest,
+  ShoppingCostEditVote,
   ShortageRequest,
   SignupInput,
   Stars,
@@ -308,9 +310,25 @@ export interface SwapRepository {
 
 export interface ShoppingCostRepository {
   listByHostel(hostelId: string): Promise<ShoppingCost[]>;
-  submit(cost: Omit<ShoppingCost, "id" | "createdAt" | "status">): Promise<void>;
+  submit(cost: Omit<ShoppingCost, "id" | "createdAt" | "status" | "addedByManager">): Promise<void>;
+  /** Manager records a cost on a member's behalf — counts as that member's
+   * shopping cost, approved on entry, and flagged so all members can see the
+   * manager entered it. */
+  recordForMember(cost: Omit<ShoppingCost, "id" | "createdAt" | "status" | "addedByManager">): Promise<void>;
   /** Manager approve/deny — only 'approved' spend counts toward the actual meal rate. */
   decide(id: string, status: "approved" | "denied"): Promise<void>;
+}
+
+export interface ShoppingCostEditRepository {
+  listByHostel(hostelId: string): Promise<ShoppingCostEditRequest[]>;
+  /** Creates the edit request and posts a hostel-wide vote-poll announcement. */
+  request(req: Omit<ShoppingCostEditRequest, "id" | "status" | "createdAt">): Promise<void>;
+  /** Records the vote; once yes votes reach half the hostel's boarders the
+   * proposed amount/items are applied to the cost automatically. */
+  vote(requestId: string, userId: string, choice: ShoppingCostEditVote["choice"]): Promise<void>;
+  listVotes(requestId: string): Promise<ShoppingCostEditVote[]>;
+  withdraw(requestId: string): Promise<void>;
+  subscribe(hostelId: string, cb: (list: ShoppingCostEditRequest[]) => void): Unsubscribe;
 }
 
 export interface ShortageRepository {
@@ -592,6 +610,7 @@ export interface Repositories {
   duties: DutyRepository;
   swaps: SwapRepository;
   shoppingCosts: ShoppingCostRepository;
+  shoppingCostEdits: ShoppingCostEditRepository;
   shortages: ShortageRepository;
   bills: BillRepository;
   cookLeave: CookLeaveRepository;

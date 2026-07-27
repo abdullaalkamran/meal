@@ -27,9 +27,12 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { AddExpenseSheet } from "@/components/manager/AddExpenseSheet";
+import { RecordShoppingCostSheet } from "@/components/manager/RecordShoppingCostSheet";
+import { EditShoppingCostSheet } from "@/components/manager/EditShoppingCostSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
-import { repo, type Bill, type BillSection } from "@/lib/data";
+import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests";
+import { repo, type Bill, type BillSection, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
@@ -81,6 +84,9 @@ function ManagerFinancePage() {
   const { toast } = useToast();
   const [bills, setBills] = useState<Bill[]>([]);
   const [expenseSheetOpen, setExpenseSheetOpen] = useState(false);
+  const [shoppingCostSheetOpen, setShoppingCostSheetOpen] = useState(false);
+  const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
+  const [editCost, setEditCost] = useState<ShoppingCost | null>(null);
   const [generateSheetOpen, setGenerateSheetOpen] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
@@ -94,10 +100,22 @@ function ManagerFinancePage() {
   const monthEnd = lastDayOfMonth(monthStr);
   const canSuspendMeals = monthEnd >= today();
 
+  const costEdits = useShoppingCostEditRequests(activeHostelId);
+
   useEffect(() => {
     if (!activeHostelId) return;
     repo.bills.listByHostel(activeHostelId, monthStr).then(setBills);
   }, [activeHostelId, monthStr, allExpenses]);
+
+  // This month's shopping costs — the manager can propose an edit on any of
+  // them (gated behind a member vote). costEdits is in the deps so an approved
+  // vote (which changes an amount) re-fetches the updated figure.
+  useEffect(() => {
+    if (!activeHostelId) return;
+    repo.shoppingCosts
+      .listByHostel(activeHostelId)
+      .then((list) => setShoppingCosts(list.filter((c) => c.dates.some((d) => d.startsWith(monthStr)))));
+  }, [activeHostelId, monthStr, costEdits]);
 
 
   const refreshBills = () => {
@@ -150,15 +168,24 @@ function ManagerFinancePage() {
 
   return (
     <div className="flex flex-col gap-5 pt-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="text-[17.5px] font-extrabold tracking-tight">Finance</div>
-        <button
-          type="button"
-          onClick={() => setExpenseSheetOpen(true)}
-          className="min-h-10 cursor-pointer rounded-pill bg-primary px-4 text-[11.5px] font-extrabold text-white"
-        >
-          + Expense
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShoppingCostSheetOpen(true)}
+            className="min-h-10 cursor-pointer rounded-pill bg-primary-soft px-3.5 text-[11.5px] font-extrabold text-primary"
+          >
+            + Shopping
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpenseSheetOpen(true)}
+            className="min-h-10 cursor-pointer rounded-pill bg-primary px-4 text-[11.5px] font-extrabold text-white"
+          >
+            + Expense
+          </button>
+        </div>
       </div>
 
       <MonthNav
@@ -409,6 +436,78 @@ function ManagerFinancePage() {
       </div>
 
       <div>
+        <div className="mb-2 text-[13.5px] font-extrabold">
+          Shopping costs · {formatMonthLabel(monthStr)}
+        </div>
+        {shoppingCosts.length === 0 ? (
+          <Card className="text-[11.5px] font-semibold text-text-secondary">
+            No shopping costs recorded for this month.
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {[...shoppingCosts]
+              .sort((a, b) => (a.dates[0] ?? "").localeCompare(b.dates[0] ?? ""))
+              .map((c) => {
+                const pendingEdit = costEdits.find(
+                  (e) => e.costId === c.id && e.status === "pending"
+                );
+                return (
+                  <Card key={c.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className="truncate text-[12px] font-extrabold">{nameOf(c.userId)}</div>
+                        {c.addedByManager && (
+                          <span className="rounded-pill bg-orange-soft px-1.5 py-0.5 text-[8px] font-extrabold text-orange">
+                            Added by you
+                          </span>
+                        )}
+                        {c.status === "pending" && (
+                          <span className="rounded-pill bg-bg px-1.5 py-0.5 text-[8px] font-extrabold text-text-secondary">
+                            Awaiting approval
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-[10px] font-semibold text-text-secondary">
+                        {c.dates[0]}
+                        {c.items ? ` · ${c.items}` : ""}
+                      </div>
+                      {pendingEdit && (
+                        <div className="mt-0.5 text-[9.5px] font-bold text-orange">
+                          Change to {formatBDT(pendingEdit.newAmount)} — members voting
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[12.5px] font-extrabold">{formatBDT(c.amount)}</div>
+                      {pendingEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            repo.shoppingCostEdits.withdraw(pendingEdit.id);
+                            toast("Edit request withdrawn");
+                          }}
+                          className="text-[10px] font-extrabold text-danger"
+                        >
+                          Withdraw
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditCost(c)}
+                          className="text-[10px] font-extrabold text-primary"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+          </div>
+        )}
+      </div>
+
+      <div>
         <div className="mb-2 text-[13.5px] font-extrabold">Recent expenses</div>
         {expenses.length === 0 ? (
           <Card className="text-[11.5px] font-semibold text-text-secondary">No expenses recorded.</Card>
@@ -493,6 +592,19 @@ function ManagerFinancePage() {
         onClose={() => setExpenseSheetOpen(false)}
         hostelId={activeHostelId}
         month={monthStr}
+      />
+      <RecordShoppingCostSheet
+        open={shoppingCostSheetOpen}
+        onClose={() => setShoppingCostSheetOpen(false)}
+        hostelId={activeHostelId}
+      />
+      <EditShoppingCostSheet
+        open={!!editCost}
+        onClose={() => setEditCost(null)}
+        hostelId={activeHostelId}
+        requestedBy={user?.id}
+        cost={editCost ?? undefined}
+        memberName={editCost ? nameOf(editCost.userId) : ""}
       />
       <GenerateBillsSheet
         open={generateSheetOpen}

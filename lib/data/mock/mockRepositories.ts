@@ -29,6 +29,7 @@ import type {
   RoomRepository,
   ServiceCatalogRepository,
   ShoppingCostRepository,
+  ShoppingCostEditRepository,
   ShortageRepository,
   StudyAbroadRepository,
   StudyLeadRepository,
@@ -37,7 +38,7 @@ import type {
   UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
+import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
@@ -1446,11 +1447,121 @@ const shoppingCosts: ShoppingCostRepository = {
     );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
+  async recordForMember(cost) {
+    // Manager entered it — it's the member's cost, approved on entry, and
+    // flagged so everyone can see it was recorded by the manager.
+    store.data.shoppingCosts.push({
+      ...cost,
+      id: nextId("shopcost"),
+      status: "approved",
+      addedByManager: true,
+      createdAt: new Date().toISOString(),
+    });
+    notifyUser(
+      cost.userId,
+      "Shopping cost recorded for you",
+      `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`
+    );
+    store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
   async decide(id, status) {
     const cost = store.data.shoppingCosts.find((c) => c.id === id);
     if (!cost) return;
     cost.status = status;
     store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
+};
+
+const shoppingCostEdits: ShoppingCostEditRepository = {
+  async listByHostel(hostelId) {
+    return store.data.shoppingCostEditRequests.filter((r) => r.hostelId === hostelId);
+  },
+  async request(req) {
+    const created: ShoppingCostEditRequest = {
+      ...req,
+      id: nextId("shopedit"),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    store.data.shoppingCostEditRequests.push(created);
+    const targetName = store.data.users.find((u) => u.id === req.targetUserId)?.name ?? "a member";
+    store.data.announcements.push({
+      id: nextId("ann"),
+      hostelId: req.hostelId,
+      kind: "shopping-cost-edit-poll",
+      title: `Change ${targetName}’s shopping cost to ৳${req.newAmount}?`,
+      body:
+        `The manager wants to change ${targetName}’s recorded shopping cost from ৳${req.currentAmount} to ৳${req.newAmount}` +
+        `${req.reason ? `. Reason: ${req.reason}` : ""}. Vote yes to allow — it changes this month’s meal rate for everyone.`,
+      payload: { requestId: created.id, costId: req.costId, targetUserId: req.targetUserId },
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`shoppingCostEdits:${req.hostelId}`);
+    store.emit(`announcements:${req.hostelId}`);
+  },
+  async vote(requestId, userId, choice) {
+    const existing = store.data.shoppingCostEditVotes.find(
+      (v) => v.requestId === requestId && v.userId === userId
+    );
+    if (existing) {
+      existing.choice = choice;
+      existing.votedAt = new Date().toISOString();
+    } else {
+      store.data.shoppingCostEditVotes.push({ requestId, userId, choice, votedAt: new Date().toISOString() });
+    }
+
+    const request = store.data.shoppingCostEditRequests.find((r) => r.id === requestId);
+    if (!request || request.status !== "pending") return;
+
+    const boarders = store.data.users.filter(
+      (u) => u.hostelId === request.hostelId && u.role !== "cook" && u.role !== "owner"
+    );
+    const yesVotes = store.data.shoppingCostEditVotes.filter(
+      (v) => v.requestId === requestId && v.choice === "yes"
+    ).length;
+    if (boarders.length > 0 && yesVotes / boarders.length >= 0.5) {
+      request.status = "approved";
+      // Apply the approved change to the cost itself.
+      const cost = store.data.shoppingCosts.find((c) => c.id === request.costId);
+      if (cost) {
+        cost.amount = request.newAmount;
+        if (request.newItems !== undefined) cost.items = request.newItems;
+        store.emit(`shoppingCosts:${request.hostelId}`);
+      }
+      const ann = store.data.announcements.find(
+        (a) =>
+          a.kind === "shopping-cost-edit-poll" &&
+          (a.payload as { requestId?: string })?.requestId === requestId
+      );
+      if (ann) {
+        ann.kind = "shopping-cost-edit-resolved";
+        ann.title = "Shopping cost change approved";
+        ann.body = `Members approved the change — the cost is now ৳${request.newAmount}.`;
+      }
+      notifyUser(
+        request.targetUserId,
+        "Your shopping cost was changed",
+        `Members approved changing your recorded shopping cost to ৳${request.newAmount}.`
+      );
+    }
+    store.emit(`shoppingCostEdits:${request.hostelId}`);
+    store.emit(`announcements:${request.hostelId}`);
+  },
+  async listVotes(requestId) {
+    return store.data.shoppingCostEditVotes.filter((v) => v.requestId === requestId);
+  },
+  async withdraw(requestId) {
+    const request = store.data.shoppingCostEditRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    store.data.shoppingCostEditRequests = store.data.shoppingCostEditRequests.filter(
+      (r) => r.id !== requestId
+    );
+    store.emit(`shoppingCostEdits:${request.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () => cb(store.data.shoppingCostEditRequests.filter((r) => r.hostelId === hostelId));
+    fire();
+    return store.on(`shoppingCostEdits:${hostelId}`, fire);
   },
 };
 
@@ -3027,6 +3138,7 @@ export const mockRepositories: Repositories = {
   duties,
   swaps,
   shoppingCosts,
+  shoppingCostEdits,
   shortages,
   bills,
   cookLeave,

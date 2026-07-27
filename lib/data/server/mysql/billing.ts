@@ -27,7 +27,7 @@ import type {
 import { currentMonth, formatMonthLabel, formatShortDate } from "../../../utils/date";
 import { isServiceChargeCategory } from "../../../utils/expenseCategories";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity, notifyHostelStaff } from "./context";
+import { logActivity, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -131,9 +131,9 @@ export const shoppingCosts: ShoppingCostRepository = {
   async listByHostel(hostelId) {
     const rows = await all<{
       id: string; hostel_id: string; user_id: string; amount: number; items: string | null;
-      status: "pending" | "approved" | "denied"; created_at: string;
+      status: "pending" | "approved" | "denied"; added_by_manager: number; created_at: string;
     }>(
-      "SELECT id, hostel_id, user_id, amount, items, status, created_at FROM shopping_costs WHERE hostel_id = ?",
+      "SELECT id, hostel_id, user_id, amount, items, status, added_by_manager, created_at FROM shopping_costs WHERE hostel_id = ?",
       [hostelId]
     );
     if (!rows.length) return [];
@@ -155,6 +155,7 @@ export const shoppingCosts: ShoppingCostRepository = {
       amount: Number(r.amount),
       items: r.items ?? undefined,
       status: r.status,
+      addedByManager: !!r.added_by_manager,
       createdAt: toIso(r.created_at),
     }));
   },
@@ -174,6 +175,28 @@ export const shoppingCosts: ShoppingCostRepository = {
         cost.hostelId,
         "Shopping cost to approve",
         `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`,
+        tx
+      );
+    });
+  },
+
+  async recordForMember(cost) {
+    // Manager entered it — approved on entry, flagged as manager-added, and the
+    // member is told so they (and everyone reading the shopping list) know.
+    await transaction(async (tx) => {
+      const id = newId("shopcost");
+      await run(
+        "INSERT INTO shopping_costs (id, hostel_id, user_id, amount, items, status, added_by_manager, created_at) VALUES (?, ?, ?, ?, ?, 'approved', 1, ?)",
+        [id, cost.hostelId, cost.userId, cost.amount, cost.items ?? null, fromIso(new Date().toISOString())],
+        tx
+      );
+      for (const day of cost.dates ?? []) {
+        await run("INSERT IGNORE INTO shopping_cost_dates (cost_id, day) VALUES (?, ?)", [id, day], tx);
+      }
+      await notify(
+        cost.userId,
+        "Shopping cost recorded for you",
+        `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`,
         tx
       );
     });

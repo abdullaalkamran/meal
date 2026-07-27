@@ -27,6 +27,8 @@ export function buildSeed(): Tables {
     dutyPlans: [],
     swapRequests: [],
     shoppingCosts: [],
+    shoppingCostEditRequests: [],
+    shoppingCostEditVotes: [],
     shortageRequests: [],
     bills: [],
     payments: [],
