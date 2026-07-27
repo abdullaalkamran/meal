@@ -7,8 +7,19 @@ import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { usePromotions } from "@/hooks/usePromotions";
+import { usePromoSettings } from "@/hooks/usePromoSettings";
 import { PromotionFormSheet } from "@/components/service/PromotionFormSheet";
-import { repo, type Promotion } from "@/lib/data";
+import { repo, type HeroPromoSettings, type Promotion } from "@/lib/data";
+
+// Everything the home carousel can show, toggled in one place. "banners" are
+// the uploaded ones below; the rest are built-in app sections.
+const SOURCE_OPTIONS: { key: keyof HeroPromoSettings["sources"]; label: string }[] = [
+  { key: "banners", label: "Uploaded home banners" },
+  { key: "study", label: "Study abroad promo cards" },
+  { key: "offers", label: "Shop offers" },
+  { key: "grocery", label: "Grocery store slide" },
+  { key: "books", label: "Buy / old books slide" },
+];
 
 const SECTIONS: { placement: Promotion["placement"]; title: string; hint: string }[] = [
   {
@@ -25,6 +36,7 @@ const SECTIONS: { placement: Promotion["placement"]; title: string; hint: string
 
 export default function ServicePromotionsPage() {
   const promos = usePromotions();
+  const promoSettings = usePromoSettings();
   const { toast } = useToast();
   const [sheet, setSheet] = useState<{ placement: Promotion["placement"]; editing?: Promotion } | null>(null);
 
@@ -33,9 +45,65 @@ export default function ServicePromotionsPage() {
       <div>
         <div className="text-[17.5px] font-extrabold tracking-tight">Home page promotions</div>
         <div className="text-[10.5px] font-semibold text-text-secondary">
-          Upload banners for the home carousel and pop-up cards shown after login.
+          Everything on the members&rsquo; home carousel &amp; login popup, in one place.
         </div>
       </div>
+
+      {/* One place to turn every home-carousel source on/off, plus its timing */}
+      <Card className="flex flex-col gap-3">
+        <div>
+          <div className="text-[12.5px] font-extrabold">Home carousel</div>
+          <div className="text-[9.5px] font-semibold text-text-secondary">
+            What rotates on every member&rsquo;s home screen
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          {SOURCE_OPTIONS.map((s) => (
+            <div key={s.key} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2">
+              <span className="text-[11px] font-bold">{s.label}</span>
+              <Switch
+                checked={promoSettings.sources[s.key] ?? true}
+                onChange={(checked) =>
+                  repo.promoSettings.update({
+                    sources: { ...promoSettings.sources, [s.key]: checked },
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="rounded-btn bg-bg px-3 py-2">
+            <div className="text-[9px] font-extrabold uppercase text-text-secondary">Slide duration (sec)</div>
+            <input
+              type="number"
+              min={2}
+              max={15}
+              value={promoSettings.intervalSec}
+              onChange={(e) => {
+                const v = Math.min(15, Math.max(2, Number(e.target.value) || 4));
+                repo.promoSettings.update({ intervalSec: v });
+              }}
+              className="mt-0.5 w-full bg-transparent text-[13px] font-extrabold outline-none"
+            />
+          </label>
+          <label className="rounded-btn bg-bg px-3 py-2">
+            <div className="text-[9px] font-extrabold uppercase text-text-secondary">Photo height (px)</div>
+            <input
+              type="number"
+              min={120}
+              max={240}
+              step={10}
+              value={promoSettings.photoHeightPx}
+              onChange={(e) => {
+                const v = Math.min(240, Math.max(120, Number(e.target.value) || 150));
+                repo.promoSettings.update({ photoHeightPx: v });
+              }}
+              className="mt-0.5 w-full bg-transparent text-[13px] font-extrabold outline-none"
+            />
+          </label>
+        </div>
+      </Card>
 
       {SECTIONS.map((s) => {
         const items = promos.filter((p) => p.placement === s.placement);

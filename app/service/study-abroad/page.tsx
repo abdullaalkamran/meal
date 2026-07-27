@@ -21,7 +21,6 @@ import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { useStudyAbroadItems } from "@/hooks/useStudyAbroad";
 import { useStudyLeads } from "@/hooks/useStudyLeads";
-import { usePromoSettings } from "@/hooks/usePromoSettings";
 import { StudyAbroadFormSheet } from "@/components/service/StudyAbroadFormSheet";
 import { ProductImage } from "@/components/store/ProductImage";
 import { repo, type StudyAbroadItem, type StudyAbroadKind, type StudyLead } from "@/lib/data";
@@ -92,18 +91,10 @@ function subtitle(i: StudyAbroadItem): string {
   }
 }
 
-const SOURCE_OPTIONS: { key: keyof import("@/lib/data").HeroPromoSettings["sources"]; label: string }[] = [
-  { key: "banners", label: "Home banners (uploaded)" },
-  { key: "study", label: "Study abroad promo cards" },
-  { key: "offers", label: "Shop offers" },
-  { key: "grocery", label: "Grocery store slide" },
-  { key: "books", label: "Buy books slide" },
-];
 
 export default function ServiceStudyAbroadPage() {
   const all = useStudyAbroadItems();
   const leads = useStudyLeads();
-  const promoSettings = usePromoSettings();
   const { toast } = useToast();
   const [tab, setTab] = useState<StudyAbroadKind | "leads">("country");
   const [query, setQuery] = useState("");
@@ -237,66 +228,8 @@ export default function ServiceStudyAbroadPage() {
         />
       </div>
 
-      {/* Homepage carousel controls — what members see on their home hero */}
-      {tab === "promo" && (
-        <Card className="flex flex-col gap-3">
-          <div>
-            <div className="text-[12.5px] font-extrabold">Member homepage carousel</div>
-            <div className="text-[9.5px] font-semibold text-text-secondary">
-              Which promotional cards rotate on every member&rsquo;s home screen
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            {SOURCE_OPTIONS.map((s) => (
-              <div key={s.key} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2">
-                <span className="text-[11px] font-bold">{s.label}</span>
-                <Switch
-                  checked={promoSettings.sources[s.key] ?? true}
-                  onChange={(checked) =>
-                    repo.promoSettings.update({
-                      sources: { ...promoSettings.sources, [s.key]: checked },
-                    })
-                  }
-                />
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="rounded-btn bg-bg px-3 py-2">
-              <div className="text-[9px] font-extrabold uppercase text-text-secondary">Slide duration (sec)</div>
-              <input
-                type="number"
-                min={2}
-                max={15}
-                value={promoSettings.intervalSec}
-                onChange={(e) => {
-                  const v = Math.min(15, Math.max(2, Number(e.target.value) || 4));
-                  repo.promoSettings.update({ intervalSec: v });
-                }}
-                className="mt-0.5 w-full bg-transparent text-[13px] font-extrabold outline-none"
-              />
-            </label>
-            <label className="rounded-btn bg-bg px-3 py-2">
-              <div className="text-[9px] font-extrabold uppercase text-text-secondary">Photo height (px)</div>
-              <input
-                type="number"
-                min={120}
-                max={240}
-                step={10}
-                value={promoSettings.photoHeightPx}
-                onChange={(e) => {
-                  const v = Math.min(240, Math.max(120, Number(e.target.value) || 150));
-                  repo.promoSettings.update({ photoHeightPx: v });
-                }}
-                className="mt-0.5 w-full bg-transparent text-[13px] font-extrabold outline-none"
-              />
-            </label>
-          </div>
-          <div className="text-[9px] font-semibold text-text-secondary">
-            Upload promo photos at roughly 780 × {promoSettings.photoHeightPx * 2} px for a sharp card.
-          </div>
-        </Card>
-      )}
+      {/* Home-carousel controls now live in Service → Home page promotions,
+          so every promo source is managed in one place. */}
 
       {!activeKind ? (
         leadResults.length === 0 ? (
