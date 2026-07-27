@@ -12,6 +12,7 @@ import {
 } from "react";
 import { repo, type Hostel, type Role, type User } from "@/lib/data";
 import { clearQueryCache } from "@/lib/data/remote/remoteRepositories";
+import { maybePromptOnLogin } from "@/lib/push/client";
 import { ensureMonthEndReportNotices } from "@/lib/reports/monthEndNotice";
 import { fetchSession, serverLogin, serverLogout, type LoginScope } from "./session";
 
@@ -135,6 +136,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setViewRoleState(u.role);
       setActiveHostelId(u.role === "owner" ? u.ownedHostelIds?.[0] : u.hostelId);
       router.push(ROLE_HOME[u.role]);
+      // Right after sign-in, offer browser push (prompts only if undecided).
+      void maybePromptOnLogin();
       return { ok: true };
     },
     [router]

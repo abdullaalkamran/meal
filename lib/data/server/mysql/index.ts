@@ -19,6 +19,7 @@ import {
   transfers,
 } from "./requests";
 import { cookAttendance, cookLeave, duties, mealEdits, shoppingCostEdits, swaps } from "./duties";
+import { pushSubscriptions } from "./push";
 import {
   campaigns,
   cart,
@@ -112,6 +113,7 @@ export const mysqlRepositories: Repositories = {
   mealEdits,
   announcements,
   notifications,
+  pushSubscriptions,
   expenses,
   transfers,
   joinRequests,

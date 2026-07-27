@@ -20,6 +20,7 @@ import type {
   MealStopRepository,
   MenuRepository,
   NotificationRepository,
+  PushSubscriptionRepository,
   OrderRepository,
   CartRepository,
   ProductRepository,
@@ -39,6 +40,7 @@ import type {
   UserRepository,
 } from "../repository";
 import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
+import { getVapidPublicKey, sendToSubscription } from "../../push/webpush";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
@@ -205,6 +207,18 @@ function logActivity(hostelId: string, action: string, detail?: string) {
   store.emit(`activity:${hostelId}`);
 }
 
+/** Best-effort browser push to every device the user subscribed, pruning dead
+ * subscriptions. Fire-and-forget from notifyUser — never blocks or throws. */
+async function sendPushToUserMock(userId: string, payload: { title: string; body: string; url?: string }) {
+  const subs = store.data.pushSubscriptions.filter((s) => s.userId === userId);
+  for (const sub of subs) {
+    const { gone } = await sendToSubscription(sub, payload);
+    if (gone) {
+      store.data.pushSubscriptions = store.data.pushSubscriptions.filter((s) => s.endpoint !== sub.endpoint);
+    }
+  }
+}
+
 function notifyUser(userId: string, title: string, body: string) {
   store.data.notifications.push({
     id: nextId("notif"),
@@ -215,6 +229,10 @@ function notifyUser(userId: string, title: string, body: string) {
     createdAt: new Date().toISOString(),
   });
   store.emit(`notifications:${userId}`);
+  // Push it to the browser too, so it arrives even when the app is closed.
+  setImmediate(() => {
+    void sendPushToUserMock(userId, { title, body }).catch(() => {});
+  });
 }
 
 /** Notifies a hostel's manager and owner (the people who approve things),
@@ -2274,6 +2292,9 @@ const notifications: NotificationRepository = {
       createdAt: new Date().toISOString(),
     });
     store.emit(`notifications:${n.userId}`);
+    setImmediate(() => {
+      void sendPushToUserMock(n.userId, { title: n.title, body: n.body }).catch(() => {});
+    });
   },
   async markRead(id) {
     const n = store.data.notifications.find((x) => x.id === id);
@@ -2290,6 +2311,36 @@ const notifications: NotificationRepository = {
       );
     fire();
     return store.on(`notifications:${userId}`, fire);
+  },
+};
+
+const pushSubscriptions: PushSubscriptionRepository = {
+  async getPublicKey() {
+    return getVapidPublicKey();
+  },
+  async save(sub) {
+    const userId = actingUser?.id;
+    if (!userId || !sub?.endpoint) return;
+    // Upsert by endpoint so the same browser never piles up duplicate rows.
+    const existing = store.data.pushSubscriptions.find((s) => s.endpoint === sub.endpoint);
+    if (existing) {
+      existing.userId = userId;
+      existing.p256dh = sub.p256dh;
+      existing.auth = sub.auth;
+    } else {
+      store.data.pushSubscriptions.push({
+        id: nextId("push"),
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.p256dh,
+        auth: sub.auth,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  },
+  async unsubscribe(endpoint) {
+    if (!endpoint) return;
+    store.data.pushSubscriptions = store.data.pushSubscriptions.filter((s) => s.endpoint !== endpoint);
   },
 };
 
@@ -3178,6 +3229,7 @@ export const mockRepositories: Repositories = {
   mealEdits,
   announcements,
   notifications,
+  pushSubscriptions,
   expenses,
   transfers,
   joinRequests,

@@ -40,6 +40,7 @@ export function buildSeed(): Tables {
     mealEditVotes: [],
     announcements: [],
     notifications: [],
+    pushSubscriptions: [],
     expenses: [],
     transferRequests: [],
     joinRequests: [],

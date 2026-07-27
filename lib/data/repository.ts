@@ -39,6 +39,7 @@ import type {
   NewProduct,
   NewUsedBook,
   Notification,
+  PushSubscriptionInput,
   Order,
   CartItem,
   PaymentMethod,
@@ -425,6 +426,19 @@ export interface AnnouncementRepository {
   subscribe(hostelId: string, cb: (list: Announcement[]) => void): Unsubscribe;
 }
 
+export interface PushSubscriptionRepository {
+  /** The VAPID public key the browser needs to create a subscription (empty
+   * when push isn't configured on the server). */
+  getPublicKey(): Promise<string>;
+  /** Store the current session user's browser push subscription (upsert by
+   * endpoint). The user is taken from the session, not a passed id. Named
+   * `save` (not `subscribe`) because the RPC layer reserves the `subscribe*`
+   * prefix for client-side polling subscriptions. */
+  save(sub: PushSubscriptionInput): Promise<void>;
+  /** Drop a subscription by endpoint (e.g. the user turned push off). */
+  unsubscribe(endpoint: string): Promise<void>;
+}
+
 export interface NotificationRepository {
   listByUser(userId: string): Promise<Notification[]>;
   /** Pushes a notification directly (e.g. the month-end report reminder). */
@@ -621,6 +635,7 @@ export interface Repositories {
   mealEdits: MealEditRepository;
   announcements: AnnouncementRepository;
   notifications: NotificationRepository;
+  pushSubscriptions: PushSubscriptionRepository;
   expenses: ExpenseRepository;
   transfers: TransferRepository;
   joinRequests: JoinRequestRepository;

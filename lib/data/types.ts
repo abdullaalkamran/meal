@@ -528,6 +528,15 @@ export interface ShoppingCostEditVote {
   votedAt: string;
 }
 
+/** A browser Web Push subscription, stored per user so the server can push
+ * notifications even when the app is closed. The keys come from the browser's
+ * PushManager; the record is bound to the session user, never a passed id. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 export type AnnouncementKind =
   | "general"
   | "cook-absence-poll"

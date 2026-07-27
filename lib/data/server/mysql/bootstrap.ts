@@ -312,6 +312,24 @@ async function seedPlatformTeam(): Promise<void> {
   }
 }
 
+/** Creates push_subscriptions on databases that predate browser push. */
+async function ensurePushSubscriptionsTable(): Promise<void> {
+  if (await tableExists("push_subscriptions")) return;
+  await run(
+    `CREATE TABLE push_subscriptions (
+       id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+       user_id    VARCHAR(64)  NOT NULL,
+       endpoint   VARCHAR(512) NOT NULL,
+       p256dh     TEXT         NOT NULL,
+       auth       TEXT         NOT NULL,
+       created_at DATETIME(3)  NOT NULL,
+       UNIQUE KEY uq_push_endpoint (endpoint(191)),
+       INDEX idx_push_user (user_id),
+       CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 /** Creates leave_requests on databases that predate it. */
 async function ensureLeaveRequestsTable(): Promise<void> {
   if (await tableExists("leave_requests")) return;
@@ -362,6 +380,7 @@ export function ensureReady(): Promise<void> {
       await ensureHostelStreetColumn();
       await ensureServicePermissionColumn();
       await ensureLeaveRequestsTable();
+      await ensurePushSubscriptionsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

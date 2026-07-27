@@ -81,6 +81,7 @@ export interface Tables {
   mealEditVotes: MealEditVote[];
   announcements: Announcement[];
   notifications: Notification[];
+  pushSubscriptions: { id: string; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }[];
   expenses: Expense[];
   transferRequests: HostelTransferRequest[];
   joinRequests: JoinRequest[];

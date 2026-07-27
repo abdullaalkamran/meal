@@ -371,6 +371,21 @@ CREATE TABLE shopping_costs (
   CONSTRAINT fk_shopping_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Browser Web Push subscriptions — one row per browser per user, so the server
+-- can push notifications even when the app is closed. Endpoint is unique so a
+-- browser re-subscribing upserts instead of duplicating.
+CREATE TABLE push_subscriptions (
+  id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+  user_id    VARCHAR(64)  NOT NULL,
+  endpoint   VARCHAR(512) NOT NULL,
+  p256dh     TEXT         NOT NULL,
+  auth       TEXT         NOT NULL,
+  created_at DATETIME(3)  NOT NULL,
+  UNIQUE KEY uq_push_endpoint (endpoint(191)),
+  INDEX idx_push_user (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ShoppingCost.dates: string[] — the duty days this spend covers. The monthly
 -- meal rate sums costs whose dates fall in the month.
 CREATE TABLE shopping_cost_dates (
