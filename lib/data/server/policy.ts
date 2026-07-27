@@ -112,6 +112,10 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   studyLeads: { setContacted: SERVICE_TEAM, remove: SERVICE_TEAM },
   promoSettings: { update: SERVICE_TEAM },
   orders: { updateStatus: SERVICE_TEAM },
+  storeSettings: { update: SERVICE_TEAM },
+  // listAll shows every code incl. inactive/expired — admin-only. validate
+  // (checkout) stays open to any signed-in buyer.
+  coupons: { listAll: SERVICE_TEAM, add: SERVICE_TEAM, update: SERVICE_TEAM, remove: SERVICE_TEAM },
   community: { remove: SERVICE_TEAM },
   campaigns: { create: MARKETING_TEAM, updateStatus: MARKETING_TEAM, remove: MARKETING_TEAM },
   marketing: { setTarget: MARKETING_TEAM },

@@ -278,6 +278,63 @@ async function ensurePromoSettings(): Promise<void> {
   if (rows.length === 0) await run("INSERT INTO hero_promo_settings (id) VALUES (1)");
 }
 
+/** Widens orders.status to the full delivery pipeline, and adds the
+ * discount/coupon/buyer-phone columns, on databases that predate them. */
+async function ensureOrderPipelineColumns(): Promise<void> {
+  const row = await one<{ COLUMN_TYPE: string }>(
+    "SELECT COLUMN_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = 'status'"
+  );
+  if (row && !row.COLUMN_TYPE.includes("preparing")) {
+    await run(
+      "ALTER TABLE orders MODIFY COLUMN status ENUM('placed','confirmed','preparing','picked_up','on_the_way','delivered','cancelled') NOT NULL DEFAULT 'placed'"
+    );
+  }
+  if (!(await columnExists("orders", "discount"))) {
+    await run("ALTER TABLE orders ADD COLUMN discount DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER delivery_fee");
+  }
+  if (!(await columnExists("orders", "coupon_code"))) {
+    await run("ALTER TABLE orders ADD COLUMN coupon_code VARCHAR(32) NULL AFTER discount");
+  }
+  if (!(await columnExists("orders", "buyer_phone"))) {
+    await run("ALTER TABLE orders ADD COLUMN buyer_phone VARCHAR(32) NULL AFTER note");
+  }
+}
+
+async function ensureCouponsTable(): Promise<void> {
+  if (await tableExists("coupons")) return;
+  await run(
+    `CREATE TABLE coupons (
+       id               VARCHAR(64) NOT NULL PRIMARY KEY,
+       code             VARCHAR(32) NOT NULL,
+       kind             ENUM('percent','flat') NOT NULL,
+       value            DECIMAL(10,2) NOT NULL,
+       active           BOOLEAN     NOT NULL DEFAULT TRUE,
+       min_order_amount DECIMAL(10,2) NULL,
+       max_uses         INT         NULL,
+       used_count       INT         NOT NULL DEFAULT 0,
+       expires_at       DATE        NULL,
+       created_at       DATETIME(3) NOT NULL,
+       UNIQUE KEY uq_coupons_code (code)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
+async function ensureStoreSettingsTable(): Promise<void> {
+  if (!(await tableExists("store_settings"))) {
+    await run(
+      `CREATE TABLE store_settings (
+         id                       TINYINT     NOT NULL PRIMARY KEY DEFAULT 1,
+         delivery_fee_enabled     BOOLEAN     NOT NULL DEFAULT TRUE,
+         delivery_fee             DECIMAL(10,2) NOT NULL DEFAULT 30,
+         free_delivery_min_amount DECIMAL(10,2) NULL,
+         CONSTRAINT ck_store_settings_singleton CHECK (id = 1)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+  const rows = await all<{ id: number }>("SELECT id FROM store_settings LIMIT 1");
+  if (rows.length === 0) await run("INSERT INTO store_settings (id) VALUES (1)");
+}
+
 /** Idempotent; safe to await before every request. */
 export function ensureReady(): Promise<void> {
   if (!readyPromise) {
@@ -298,6 +355,9 @@ export function ensureReady(): Promise<void> {
       await ensureHostelStreetColumn();
       await ensureServicePermissionColumn();
       await ensureLeaveRequestsTable();
+      await ensureOrderPipelineColumns();
+      await ensureCouponsTable();
+      await ensureStoreSettingsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

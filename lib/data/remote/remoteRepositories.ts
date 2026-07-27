@@ -12,7 +12,7 @@ import type {
   SwapRequest,
   User,
 } from "../types";
-import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository } from "../repository";
+import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StoreSettingsRepository, CouponRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository } from "../repository";
 const POLL_INTERVAL_MS = 2500;
 
 // The activity-log actor is derived server-side from the session cookie
@@ -332,6 +332,16 @@ const orders = remoteRepo<OrderRepository>("orders", {
     makeSubscribe(() => rpc<Awaited<ReturnType<OrderRepository["listAll"]>>>("orders", "listAll", []), cb),
 });
 
+const storeSettings = remoteRepo<StoreSettingsRepository>("storeSettings", {
+  subscribe: (cb) =>
+    makeSubscribe(() => rpc<Awaited<ReturnType<StoreSettingsRepository["get"]>>>("storeSettings", "get", []), cb),
+});
+
+const coupons = remoteRepo<CouponRepository>("coupons", {
+  subscribe: (cb) =>
+    makeSubscribe(() => rpc<Awaited<ReturnType<CouponRepository["listAll"]>>>("coupons", "listAll", []), cb),
+});
+
 const studyAbroad = remoteRepo<StudyAbroadRepository>("studyAbroad", {
   subscribe: (cb) =>
     makeSubscribe(() => rpc<Awaited<ReturnType<StudyAbroadRepository["listAll"]>>>("studyAbroad", "listAll", []), cb),
@@ -390,6 +400,8 @@ export const remoteRepositories: Repositories = {
   products,
   cart,
   orders,
+  storeSettings,
+  coupons,
   usedBooks,
   studyAbroad,
   studyLeads,

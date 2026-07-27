@@ -7,6 +7,7 @@ import type {
   CommunityRepository,
   CookAttendanceRepository,
   CookLeaveRepository,
+  CouponRepository,
   DutyRepository,
   ExpenseRepository,
   ExploreInteractionRepository,
@@ -30,6 +31,7 @@ import type {
   ServiceCatalogRepository,
   ShoppingCostRepository,
   ShortageRepository,
+  StoreSettingsRepository,
   StudyAbroadRepository,
   StudyLeadRepository,
   SwapRepository,
@@ -37,12 +39,13 @@ import type {
   UsedBookRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
+import type { Bill, BillSection, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
 import { isServiceChargeCategory } from "../../utils/expenseCategories";
 import { deliveryFeeFor } from "../../utils/store";
+import { formatBDT } from "../../utils/currency";
 import { hashPassword, verifyPassword as verifyPasswordHash } from "../server/password";
 import { nextId, store } from "./store";
 
@@ -2821,6 +2824,57 @@ const cart: CartRepository = {
   },
 };
 
+const ORDER_STATUS_TITLE: Record<Order["status"], string> = {
+  placed: "Order placed",
+  confirmed: "Order confirmed",
+  preparing: "Order is being prepared",
+  picked_up: "Order picked up",
+  on_the_way: "Order on the way",
+  delivered: "Order delivered",
+  cancelled: "Order cancelled",
+};
+
+function orderStatusBody(status: Order["status"], total: number): string {
+  switch (status) {
+    case "confirmed":
+      return `Your order (${formatBDT(total)}) has been confirmed and is being prepared.`;
+    case "preparing":
+      return `Your order (${formatBDT(total)}) is being prepared.`;
+    case "picked_up":
+      return `Your order (${formatBDT(total)}) has been picked up for delivery.`;
+    case "on_the_way":
+      return `Your order (${formatBDT(total)}) is on the way.`;
+    case "delivered":
+      return `Your order (${formatBDT(total)}) has been delivered. Thanks for shopping with us!`;
+    case "cancelled":
+      return `Your order (${formatBDT(total)}) has been cancelled.`;
+    default:
+      return "";
+  }
+}
+
+/** Throws with a user-facing reason if `code` can't be applied to a cart of
+ * this subtotal right now. Doesn't consume a redemption — callers that go on
+ * to actually place the order do that themselves, atomically. */
+function checkCoupon(code: string, subtotal: number): Coupon {
+  const coupon = store.data.coupons.find((c) => c.code.toUpperCase() === code.trim().toUpperCase());
+  if (!coupon) throw new Error("That coupon code doesn't exist.");
+  if (!coupon.active) throw new Error("This coupon is no longer active.");
+  if (coupon.expiresAt && coupon.expiresAt < today()) throw new Error("This coupon has expired.");
+  if (coupon.maxUses !== undefined && coupon.usedCount >= coupon.maxUses) {
+    throw new Error("This coupon has reached its usage limit.");
+  }
+  if (coupon.minOrderAmount && subtotal < coupon.minOrderAmount) {
+    throw new Error(`This coupon needs a minimum order of ${formatBDT(coupon.minOrderAmount)}.`);
+  }
+  return coupon;
+}
+
+function discountFor(coupon: Coupon, subtotal: number): number {
+  const raw = coupon.kind === "percent" ? (subtotal * coupon.value) / 100 : coupon.value;
+  return Math.min(Math.round(raw * 100) / 100, subtotal);
+}
+
 const orders: OrderRepository = {
   async listByUser(userId) {
     return [...store.data.orders]
@@ -2837,8 +2891,23 @@ const orders: OrderRepository = {
       if (!p) return [];
       return [{ productId: p.id, kind: p.kind, name: p.name, qty: c.qty, price: p.price }];
     });
+    if (items.length === 0) throw new Error("Your cart is empty.");
+    if (!details.note?.trim()) throw new Error("A delivery address is required.");
     const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
-    const deliveryFee = deliveryFeeFor(items.some((i) => i.kind === "grocery"));
+    const deliveryFee = deliveryFeeFor(
+      items.some((i) => i.kind === "grocery"),
+      subtotal,
+      store.data.storeSettings
+    );
+
+    let discount = 0;
+    let couponIdx = -1;
+    if (details.couponCode?.trim()) {
+      const coupon = checkCoupon(details.couponCode, subtotal);
+      discount = discountFor(coupon, subtotal);
+      couponIdx = store.data.coupons.findIndex((c) => c.id === coupon.id);
+    }
+
     const user = store.data.users.find((u) => u.id === userId);
     const order: Order = {
       id: nextId("order"),
@@ -2847,13 +2916,22 @@ const orders: OrderRepository = {
       items,
       subtotal,
       deliveryFee,
-      total: subtotal + deliveryFee,
+      ...(discount > 0 ? { discount, couponCode: details.couponCode!.trim().toUpperCase() } : {}),
+      total: Math.max(0, subtotal + deliveryFee - discount),
       paymentMethod: details.paymentMethod,
       status: "placed",
-      note: details.note,
+      note: details.note.trim(),
+      buyerPhone: user?.phone,
       createdAt: new Date().toISOString(),
     };
     store.data.orders.push(order);
+    if (couponIdx !== -1) {
+      store.data.coupons[couponIdx] = {
+        ...store.data.coupons[couponIdx],
+        usedCount: store.data.coupons[couponIdx].usedCount + 1,
+      };
+      store.emit("coupons");
+    }
     store.data.cartItems = store.data.cartItems.filter((c) => c.userId !== userId);
     store.emit(`orders:${userId}`);
     store.emit("orders");
@@ -2865,6 +2943,23 @@ const orders: OrderRepository = {
     if (idx === -1) return;
     const order = store.data.orders[idx];
     store.data.orders[idx] = { ...order, status };
+    store.emit(`orders:${order.userId}`);
+    store.emit("orders");
+    if (status !== order.status && status !== "placed") {
+      notifyUser(order.userId, ORDER_STATUS_TITLE[status], orderStatusBody(status, order.total));
+    }
+  },
+  async cancel(orderId) {
+    const idx = store.data.orders.findIndex((o) => o.id === orderId);
+    if (idx === -1) return;
+    const order = store.data.orders[idx];
+    if (order.userId !== actingUser?.id) {
+      throw new Error("You can only cancel your own orders.");
+    }
+    if (order.status !== "placed") {
+      throw new Error("This order can no longer be cancelled — contact the service team.");
+    }
+    store.data.orders[idx] = { ...order, status: "cancelled" };
     store.emit(`orders:${order.userId}`);
     store.emit("orders");
   },
@@ -2883,6 +2978,56 @@ const orders: OrderRepository = {
       cb([...store.data.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     fire();
     return store.on("orders", fire);
+  },
+};
+
+const storeSettings: StoreSettingsRepository = {
+  async get() {
+    return { ...store.data.storeSettings };
+  },
+  async update(patch) {
+    store.data.storeSettings = { ...store.data.storeSettings, ...patch };
+    store.emit("storeSettings");
+  },
+  subscribe(cb) {
+    const fire = () => cb({ ...store.data.storeSettings });
+    fire();
+    return store.on("storeSettings", fire);
+  },
+};
+
+const coupons: CouponRepository = {
+  async listAll() {
+    return [...store.data.coupons].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async add(coupon) {
+    const code = coupon.code.trim().toUpperCase();
+    if (!code) throw new Error("Enter a coupon code.");
+    if (store.data.coupons.some((c) => c.code.toUpperCase() === code)) {
+      throw new Error("A coupon with this code already exists.");
+    }
+    store.data.coupons.push({ ...coupon, code, id: nextId("coupon"), usedCount: 0, createdAt: new Date().toISOString() });
+    store.emit("coupons");
+  },
+  async update(id, patch) {
+    const idx = store.data.coupons.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const next = { ...store.data.coupons[idx], ...patch };
+    if (patch.code) next.code = patch.code.trim().toUpperCase();
+    store.data.coupons[idx] = next;
+    store.emit("coupons");
+  },
+  async remove(id) {
+    store.data.coupons = store.data.coupons.filter((c) => c.id !== id);
+    store.emit("coupons");
+  },
+  async validate(code, subtotal) {
+    return checkCoupon(code, subtotal);
+  },
+  subscribe(cb) {
+    const fire = () => cb([...store.data.coupons].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("coupons", fire);
   },
 };
 
@@ -3048,6 +3193,8 @@ export const mockRepositories: Repositories = {
   products,
   cart,
   orders,
+  storeSettings,
+  coupons,
   usedBooks,
   studyAbroad,
   studyLeads,

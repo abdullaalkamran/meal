@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { Minus, Plus, ShoppingCart, Tag, Trash2, X } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -13,7 +13,9 @@ import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { ProductImage } from "@/components/store/ProductImage";
 import { useAllProducts } from "@/hooks/useProducts";
 import { useCart } from "@/hooks/useCart";
-import { repo, type PaymentMethod } from "@/lib/data";
+import { useRooms } from "@/hooks/useRooms";
+import { useStoreSettings } from "@/hooks/useStoreSettings";
+import { repo, type Coupon, type PaymentMethod } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { deliveryFeeFor, summarizeCart } from "@/lib/utils/store";
 
@@ -23,32 +25,78 @@ export default function CartPage() {
   const { user, hostel } = useSession();
   const products = useAllProducts();
   const cart = useCart(user?.id);
+  const rooms = useRooms(user?.hostelId);
+  const storeSettings = useStoreSettings();
   const { toast } = useToast();
   const router = useRouter();
   const [method, setMethod] = useState<PaymentMethod>("bKash");
   const [note, setNote] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [coupon, setCoupon] = useState<Coupon | null>(null);
+  const [couponError, setCouponError] = useState("");
+  const [checkingCoupon, setCheckingCoupon] = useState(false);
 
   const lines = cart
     .map((c) => ({ item: c, product: products.find((p) => p.id === c.productId) }))
     .filter((l): l is { item: typeof l.item; product: NonNullable<typeof l.product> } => !!l.product);
 
   const { subtotal, hasGrocery } = summarizeCart(cart, products);
-  const deliveryFee = deliveryFeeFor(hasGrocery);
-  const total = subtotal + deliveryFee;
+  const deliveryFee = deliveryFeeFor(hasGrocery, subtotal, storeSettings);
+  const discount = coupon
+    ? Math.min(coupon.kind === "percent" ? (subtotal * coupon.value) / 100 : coupon.value, subtotal)
+    : 0;
+  const total = Math.max(0, subtotal + deliveryFee - discount);
+
+  // Prefill the delivery address with the member's own room once it's known,
+  // but never overwrite something they've already started typing.
+  const myRoom = rooms.find((r) => r.id === user?.roomId);
+  useEffect(() => {
+    if (note || !hostel) return;
+    queueMicrotask(() => setNote(myRoom ? `${hostel.name}, Room ${myRoom.number}` : hostel.name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostel, myRoom]);
 
   const setQty = (id: string, qty: number) => user && repo.cart.setQty(user.id, id, qty);
   const remove = (id: string) => user && repo.cart.remove(user.id, id);
 
+  const applyCoupon = async () => {
+    if (!couponInput.trim() || checkingCoupon) return;
+    setCheckingCoupon(true);
+    setCouponError("");
+    try {
+      const result = await repo.coupons.validate(couponInput.trim(), subtotal);
+      setCoupon(result);
+      toast(`Coupon ${result.code} applied`);
+    } catch (err) {
+      setCoupon(null);
+      setCouponError(err instanceof Error ? err.message : "Could not apply this coupon.");
+    } finally {
+      setCheckingCoupon(false);
+    }
+  };
+  const removeCoupon = () => {
+    setCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+  };
+
   const placeOrder = async () => {
-    if (!user || lines.length === 0) return;
+    if (!user || lines.length === 0 || !note.trim()) return;
     setPlacing(true);
-    await repo.orders.place(user.id, {
-      paymentMethod: method,
-      note: note.trim() || (hostel ? `Deliver to ${hostel.name}` : undefined),
-    });
-    toast("Order placed");
-    router.push("/explore/orders");
+    try {
+      await repo.orders.place(user.id, {
+        paymentMethod: method,
+        note: note.trim(),
+        couponCode: coupon?.code,
+      });
+      toast("Order placed");
+      router.push("/explore/orders");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not place the order.");
+    } finally {
+      setPlacing(false);
+    }
   };
 
   if (lines.length === 0) {
@@ -126,11 +174,54 @@ export default function CartPage() {
           <span>Delivery fee</span>
           <span>{deliveryFee === 0 ? "Free" : formatBDT(deliveryFee)}</span>
         </div>
+        {!!discount && (
+          <div className="flex justify-between text-[11.5px] font-semibold text-primary">
+            <span>Coupon ({coupon!.code})</span>
+            <span>−{formatBDT(discount)}</span>
+          </div>
+        )}
         <div className="mt-1 flex justify-between border-t border-border pt-2 text-[13.5px] font-extrabold">
           <span>Total</span>
           <span className="text-primary">{formatBDT(total)}</span>
         </div>
       </Card>
+
+      <div>
+        <div className="mb-1.5 text-[10.5px] font-bold text-text-secondary">Coupon code</div>
+        {coupon ? (
+          <div className="flex items-center justify-between rounded-btn border border-primary bg-primary-soft px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-[12px] font-extrabold text-primary">
+              <Icon icon={Tag} size={14} />
+              {coupon.code}
+            </div>
+            <button type="button" onClick={removeCoupon} aria-label="Remove coupon">
+              <Icon icon={X} size={15} className="text-primary" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={couponInput}
+              onChange={(e) => {
+                setCouponInput(e.target.value);
+                setCouponError("");
+              }}
+              placeholder="Enter code"
+              className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold uppercase"
+            />
+            <button
+              type="button"
+              onClick={applyCoupon}
+              disabled={!couponInput.trim() || checkingCoupon}
+              className="shrink-0 rounded-btn bg-bg px-4 text-[11px] font-extrabold text-primary disabled:opacity-50"
+            >
+              {checkingCoupon ? "…" : "Apply"}
+            </button>
+          </div>
+        )}
+        {couponError && <div className="mt-1.5 text-[10px] font-bold text-danger">{couponError}</div>}
+      </div>
 
       <div>
         <div className="mb-2 text-[13.5px] font-extrabold">Payment method</div>
@@ -151,17 +242,20 @@ export default function CartPage() {
       </div>
 
       <div>
-        <div className="mb-1.5 text-[10.5px] font-bold text-text-secondary">Delivery note (optional)</div>
+        <div className="mb-1.5 text-[10.5px] font-bold text-text-secondary">Delivery address</div>
         <input
           type="text"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={hostel ? `Deliver to ${hostel.name}` : "Delivery address / note"}
+          placeholder="Hostel name, room number"
           className="w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
         />
+        <div className="mt-1 text-[9.5px] font-semibold text-text-secondary">
+          Shown to the Service Manager with your phone number so your order can actually be delivered.
+        </div>
       </div>
 
-      <Button fullWidth onClick={placeOrder} disabled={placing}>
+      <Button fullWidth onClick={placeOrder} disabled={placing || !note.trim()}>
         Place order · {formatBDT(total)}
       </Button>
     </div>

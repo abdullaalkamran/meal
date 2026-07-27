@@ -52,6 +52,8 @@ export function buildSeed(): Tables {
     products: [],
     cartItems: [],
     orders: [],
+    storeSettings: { deliveryFeeEnabled: true, deliveryFee: 30 },
+    coupons: [],
     usedBookListings: [],
     studyAbroadItems: [],
     studyLeads: [],

@@ -192,4 +192,23 @@ body.font-bn {
   .report-print-area tr {
     break-inside: avoid;
   }
+
+  /* ---- Order invoice print-to-PDF: portrait, unlike the landscape report
+     above — named @page lets the two coexist without one clobbering the
+     other's orientation. ---- */
+  @page invoice {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+  .invoice-print-area,
+  .invoice-print-area * {
+    visibility: visible;
+  }
+  .invoice-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    page: invoice;
+  }
 }

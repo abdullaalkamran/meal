@@ -11,6 +11,7 @@ import type {
   Campaign,
   CartItem,
   CommunityPost,
+  Coupon,
   ExploreInteraction,
   GeoArea,
   HeroPromoSettings,
@@ -28,18 +29,23 @@ import type {
   CampaignRepository,
   CartRepository,
   CommunityRepository,
+  CouponRepository,
   ExploreInteractionRepository,
   MarketingRepository,
   OrderRepository,
   ProductRepository,
   PromoSettingsRepository,
   ServiceCatalogRepository,
+  StoreSettingsRepository,
   StudyAbroadRepository,
   StudyLeadRepository,
   UsedBookRepository,
 } from "../../repository";
 import { deliveryFeeFor } from "../../../utils/store";
+import { formatBDT } from "../../../utils/currency";
+import { today } from "../../../utils/date";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
+import { currentActor, notify } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -469,10 +475,11 @@ export const cart: CartRepository = {
 async function loadOrders(where: string, params: unknown[]): Promise<Order[]> {
   const rows = await all<{
     id: string; user_id: string; hostel_id: string | null; subtotal: number; delivery_fee: number;
+    discount: number; coupon_code: string | null;
     total: number; payment_method: Order["paymentMethod"]; status: Order["status"];
-    note: string | null; created_at: string;
+    note: string | null; buyer_phone: string | null; created_at: string;
   }>(
-    `SELECT id, user_id, hostel_id, subtotal, delivery_fee, total, payment_method, status, note, created_at
+    `SELECT id, user_id, hostel_id, subtotal, delivery_fee, discount, coupon_code, total, payment_method, status, note, buyer_phone, created_at
        FROM orders WHERE ${where} ORDER BY created_at DESC`,
     params
   );
@@ -498,12 +505,107 @@ async function loadOrders(where: string, params: unknown[]): Promise<Order[]> {
     items: byOrder.get(r.id) ?? [],
     subtotal: Number(r.subtotal),
     deliveryFee: Number(r.delivery_fee),
+    ...(Number(r.discount) > 0 ? { discount: Number(r.discount) } : {}),
+    ...(r.coupon_code ? { couponCode: r.coupon_code } : {}),
     total: Number(r.total),
     paymentMethod: r.payment_method,
     status: r.status,
     note: r.note ?? undefined,
+    buyerPhone: r.buyer_phone ?? undefined,
     createdAt: toIso(r.created_at),
   }));
+}
+
+const ORDER_STATUS_TITLE: Record<Order["status"], string> = {
+  placed: "Order placed",
+  confirmed: "Order confirmed",
+  preparing: "Order is being prepared",
+  picked_up: "Order picked up",
+  on_the_way: "Order on the way",
+  delivered: "Order delivered",
+  cancelled: "Order cancelled",
+};
+
+function orderStatusBody(status: Order["status"], total: number): string {
+  switch (status) {
+    case "confirmed":
+      return `Your order (${formatBDT(total)}) has been confirmed and is being prepared.`;
+    case "preparing":
+      return `Your order (${formatBDT(total)}) is being prepared.`;
+    case "picked_up":
+      return `Your order (${formatBDT(total)}) has been picked up for delivery.`;
+    case "on_the_way":
+      return `Your order (${formatBDT(total)}) is on the way.`;
+    case "delivered":
+      return `Your order (${formatBDT(total)}) has been delivered. Thanks for shopping with us!`;
+    case "cancelled":
+      return `Your order (${formatBDT(total)}) has been cancelled.`;
+    default:
+      return "";
+  }
+}
+
+interface StoreSettingsRow {
+  delivery_fee_enabled: number;
+  delivery_fee: number;
+  free_delivery_min_amount: number | null;
+}
+
+async function loadStoreSettings(on?: Queryable): Promise<StoreSettingsRow> {
+  const row = await one<StoreSettingsRow>(
+    "SELECT delivery_fee_enabled, delivery_fee, free_delivery_min_amount FROM store_settings WHERE id = 1",
+    [],
+    on
+  );
+  return row ?? { delivery_fee_enabled: 1, delivery_fee: 30, free_delivery_min_amount: null };
+}
+
+interface CouponRow {
+  id: string; code: string; kind: Coupon["kind"]; value: number; active: number;
+  min_order_amount: number | null; max_uses: number | null; used_count: number;
+  expires_at: string | null; created_at: string;
+}
+
+const toCoupon = (r: CouponRow): Coupon => ({
+  id: r.id,
+  code: r.code,
+  kind: r.kind,
+  value: Number(r.value),
+  active: toBool(r.active),
+  minOrderAmount: r.min_order_amount !== null ? Number(r.min_order_amount) : undefined,
+  maxUses: r.max_uses ?? undefined,
+  usedCount: r.used_count,
+  expiresAt: r.expires_at ? toDay(r.expires_at) : undefined,
+  createdAt: toIso(r.created_at),
+});
+
+const COUPON_COLS =
+  "id, code, kind, value, active, min_order_amount, max_uses, used_count, expires_at, created_at";
+
+/** Throws with a user-facing reason if `code` can't be applied to a cart of
+ * this subtotal right now. Doesn't consume a redemption. */
+async function checkCoupon(code: string, subtotal: number, on?: Queryable): Promise<Coupon> {
+  const row = await one<CouponRow>(
+    `SELECT ${COUPON_COLS} FROM coupons WHERE code = ?`,
+    [code.trim().toUpperCase()],
+    on
+  );
+  if (!row) throw new Error("That coupon code doesn't exist.");
+  const coupon = toCoupon(row);
+  if (!coupon.active) throw new Error("This coupon is no longer active.");
+  if (coupon.expiresAt && coupon.expiresAt < today()) throw new Error("This coupon has expired.");
+  if (coupon.maxUses !== undefined && coupon.usedCount >= coupon.maxUses) {
+    throw new Error("This coupon has reached its usage limit.");
+  }
+  if (coupon.minOrderAmount && subtotal < coupon.minOrderAmount) {
+    throw new Error(`This coupon needs a minimum order of ${formatBDT(coupon.minOrderAmount)}.`);
+  }
+  return coupon;
+}
+
+function discountFor(coupon: Coupon, subtotal: number): number {
+  const raw = coupon.kind === "percent" ? (subtotal * coupon.value) / 100 : coupon.value;
+  return Math.min(Math.round(raw * 100) / 100, subtotal);
 }
 
 export const orders: OrderRepository = {
@@ -516,7 +618,8 @@ export const orders: OrderRepository = {
   },
 
   /** Snapshots the cart into an order (prices copied so later catalog edits
-   * never rewrite history), then clears the cart. */
+   * never rewrite history), then clears the cart. Delivery fee and coupon
+   * discount are computed/verified here — never trusted from the client. */
   async place(userId, details) {
     const orderId = newId("order");
     await transaction(async (tx) => {
@@ -527,15 +630,42 @@ export const orders: OrderRepository = {
         [userId],
         tx
       );
+      if (lines.length === 0) throw new Error("Your cart is empty.");
+      if (!details.note?.trim()) throw new Error("A delivery address is required.");
       const subtotal = lines.reduce((s, l) => s + Number(l.price) * l.qty, 0);
-      const deliveryFee = deliveryFeeFor(lines.some((l) => l.kind === "grocery"));
-      const user = await one<{ hostel_id: string | null }>("SELECT hostel_id FROM users WHERE id = ?", [userId], tx);
+      const settingsRow = await loadStoreSettings(tx);
+      const deliveryFee = deliveryFeeFor(
+        lines.some((l) => l.kind === "grocery"),
+        subtotal,
+        {
+          deliveryFeeEnabled: toBool(settingsRow.delivery_fee_enabled),
+          deliveryFee: Number(settingsRow.delivery_fee),
+          freeDeliveryMinAmount:
+            settingsRow.free_delivery_min_amount !== null ? Number(settingsRow.free_delivery_min_amount) : undefined,
+        }
+      );
+
+      let discount = 0;
+      let couponCode: string | undefined;
+      if (details.couponCode?.trim()) {
+        const coupon = await checkCoupon(details.couponCode, subtotal, tx);
+        discount = discountFor(coupon, subtotal);
+        couponCode = coupon.code;
+        await run("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?", [coupon.id], tx);
+      }
+
+      const user = await one<{ hostel_id: string | null; phone: string }>(
+        "SELECT hostel_id, phone FROM users WHERE id = ?",
+        [userId],
+        tx
+      );
       await run(
-        `INSERT INTO orders (id, user_id, hostel_id, subtotal, delivery_fee, total, payment_method, status, note, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'placed', ?, ?)`,
+        `INSERT INTO orders (id, user_id, hostel_id, subtotal, delivery_fee, discount, coupon_code, total, payment_method, status, note, buyer_phone, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'placed', ?, ?, ?)`,
         [
-          orderId, userId, user?.hostel_id ?? null, subtotal, deliveryFee, subtotal + deliveryFee,
-          details.paymentMethod, details.note ?? null, now(),
+          orderId, userId, user?.hostel_id ?? null, subtotal, deliveryFee, discount, couponCode ?? null,
+          Math.max(0, subtotal + deliveryFee - discount),
+          details.paymentMethod, details.note.trim(), user?.phone ?? null, now(),
         ],
         tx
       );
@@ -552,11 +682,118 @@ export const orders: OrderRepository = {
   },
 
   async updateStatus(orderId, status) {
-    await run("UPDATE orders SET status = ? WHERE id = ?", [status, orderId]);
+    await transaction(async (tx) => {
+      const order = await one<{ user_id: string; status: Order["status"]; total: number }>(
+        "SELECT user_id, status, total FROM orders WHERE id = ?",
+        [orderId],
+        tx
+      );
+      if (!order) return;
+      await run("UPDATE orders SET status = ? WHERE id = ?", [status, orderId], tx);
+      if (status !== order.status && status !== "placed") {
+        await notify(order.user_id, ORDER_STATUS_TITLE[status], orderStatusBody(status, Number(order.total)), tx);
+      }
+    });
+  },
+
+  async cancel(orderId) {
+    await transaction(async (tx) => {
+      const order = await one<{ user_id: string; status: Order["status"] }>(
+        "SELECT user_id, status FROM orders WHERE id = ?",
+        [orderId],
+        tx
+      );
+      if (!order) return;
+      if (order.user_id !== currentActor()?.id) {
+        throw new Error("You can only cancel your own orders.");
+      }
+      if (order.status !== "placed") {
+        throw new Error("This order can no longer be cancelled — contact the service team.");
+      }
+      await run("UPDATE orders SET status = 'cancelled' WHERE id = ?", [orderId], tx);
+    });
   },
 
   subscribe: serverOnly,
   subscribeAll: serverOnly,
+};
+
+// ── Store settings (delivery fee, single row) ──────────────────────────────
+
+export const storeSettings: StoreSettingsRepository = {
+  async get() {
+    const r = await loadStoreSettings();
+    return {
+      deliveryFeeEnabled: toBool(r.delivery_fee_enabled),
+      deliveryFee: Number(r.delivery_fee),
+      freeDeliveryMinAmount: r.free_delivery_min_amount !== null ? Number(r.free_delivery_min_amount) : undefined,
+    };
+  },
+
+  async update(patch) {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    const put = (col: string, v: unknown) => { sets.push(`${col} = ?`); params.push(v); };
+    if (patch.deliveryFeeEnabled !== undefined) put("delivery_fee_enabled", patch.deliveryFeeEnabled ? 1 : 0);
+    if (patch.deliveryFee !== undefined) put("delivery_fee", patch.deliveryFee);
+    if ("freeDeliveryMinAmount" in patch) put("free_delivery_min_amount", patch.freeDeliveryMinAmount ?? null);
+    if (!sets.length) return;
+    await run(`UPDATE store_settings SET ${sets.join(", ")} WHERE id = 1`, params);
+  },
+
+  subscribe: serverOnly,
+};
+
+// ── Coupons ─────────────────────────────────────────────────────────────────
+
+export const coupons: CouponRepository = {
+  async listAll() {
+    const rows = await all<CouponRow>(`SELECT ${COUPON_COLS} FROM coupons ORDER BY created_at DESC`);
+    return rows.map(toCoupon);
+  },
+
+  async add(coupon) {
+    const code = coupon.code.trim().toUpperCase();
+    if (!code) throw new Error("Enter a coupon code.");
+    try {
+      await run(
+        "INSERT INTO coupons (id, code, kind, value, active, min_order_amount, max_uses, used_count, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        [
+          newId("coupon"), code, coupon.kind, coupon.value, coupon.active ? 1 : 0,
+          coupon.minOrderAmount ?? null, coupon.maxUses ?? null, coupon.expiresAt ?? null, now(),
+        ]
+      );
+    } catch (err) {
+      if ((err as { errno?: number }).errno === 1062) throw new Error("A coupon with this code already exists.");
+      throw err;
+    }
+  },
+
+  async update(id, patch) {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    const put = (col: string, v: unknown) => { sets.push(`${col} = ?`); params.push(v); };
+    if (patch.code !== undefined) put("code", patch.code.trim().toUpperCase());
+    if (patch.kind !== undefined) put("kind", patch.kind);
+    if (patch.value !== undefined) put("value", patch.value);
+    if (patch.active !== undefined) put("active", patch.active ? 1 : 0);
+    if ("minOrderAmount" in patch) put("min_order_amount", patch.minOrderAmount ?? null);
+    if ("maxUses" in patch) put("max_uses", patch.maxUses ?? null);
+    if ("expiresAt" in patch) put("expires_at", patch.expiresAt ?? null);
+    if (!sets.length) return;
+    params.push(id);
+    await run(`UPDATE coupons SET ${sets.join(", ")} WHERE id = ?`, params);
+  },
+
+  async remove(id) {
+    await run("DELETE FROM coupons WHERE id = ?", [id]);
+  },
+
+  async validate(code, subtotal) {
+    return checkCoupon(code, subtotal);
+  },
+
+  subscribe: serverOnly,
 };
 
 // ── Used books ─────────────────────────────────────────────────────────────

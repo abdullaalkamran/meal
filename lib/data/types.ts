@@ -724,6 +724,38 @@ export interface CartItem {
   qty: number;
 }
 
+/** Store-wide delivery fee policy — Service Manager configurable (Super Admin
+ * too). A single row, like HeroPromoSettings. */
+export interface StoreSettings {
+  /** Off = every order ships free, deliveryFee is never charged. */
+  deliveryFeeEnabled: boolean;
+  /** Flat fee (৳) charged on an order with at least one grocery item. */
+  deliveryFee: number;
+  /** Subtotal (৳) at/above which delivery is free even with the fee enabled.
+   * 0/undefined = no waiver — always charge the fee when enabled. */
+  freeDeliveryMinAmount?: number;
+}
+
+/** A discount code a member can enter at checkout. */
+export interface Coupon {
+  id: string;
+  code: string;
+  kind: "percent" | "flat";
+  /** 1–100 for "percent", a ৳ amount for "flat". */
+  value: number;
+  active: boolean;
+  /** Cart subtotal (before delivery fee) must be at least this to qualify. */
+  minOrderAmount?: number;
+  /** Total redemptions allowed across the whole platform; undefined = unlimited. */
+  maxUses?: number;
+  usedCount: number;
+  /** ISO date — the code stops working after this day. */
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export type NewCoupon = Omit<Coupon, "id" | "createdAt" | "usedCount">;
+
 export type PaymentMethod = "bKash" | "Nagad" | "Card" | "Cash";
 
 /** A snapshot line item on a placed order — copied from the product so later
@@ -736,6 +768,19 @@ export interface OrderItem {
   price: number;
 }
 
+/** Full delivery pipeline a Service Manager walks an order through. Every
+ * step (except cancelled) is a strict forward progression — see
+ * ORDER_STATUS_FLOW in lib/utils/store.ts for the exact next-step map used
+ * by both the UI and the server. */
+export type OrderStatus =
+  | "placed"
+  | "confirmed"
+  | "preparing"
+  | "picked_up"
+  | "on_the_way"
+  | "delivered"
+  | "cancelled";
+
 export interface Order {
   id: string;
   userId: string;
@@ -743,11 +788,18 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   deliveryFee: number;
+  /** Amount knocked off by couponCode, already reflected in `total`. */
+  discount?: number;
+  couponCode?: string;
   total: number;
   paymentMethod: PaymentMethod;
-  status: "placed" | "confirmed" | "delivered" | "cancelled";
-  /** Delivery address / note (defaults to the buyer's hostel + room). */
+  status: OrderStatus;
+  /** Delivery address (hostel + room, or a custom note) — required at
+   * checkout so every order can actually be delivered. */
   note?: string;
+  /** Snapshot of the buyer's contact number at order time, so it survives
+   * even if they later change their profile phone. */
+  buyerPhone?: string;
   createdAt: string;
 }
 

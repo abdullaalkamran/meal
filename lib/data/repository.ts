@@ -18,6 +18,8 @@ import type {
   CookAttendanceReport,
   CookAttendanceVote,
   CookLeaveRequest,
+  Coupon,
+  NewCoupon,
   DutyPlan,
   Expense,
   ExploreInteraction,
@@ -57,6 +59,7 @@ import type {
   Stars,
   NewStudyAbroadItem,
   NewStudyLead,
+  StoreSettings,
   StudyAbroadItem,
   StudyLead,
   SwapRequest,
@@ -527,16 +530,45 @@ export interface OrderRepository {
   /** Every order across the platform — Service Manager order management. */
   listAll(): Promise<Order[]>;
   /** Snapshots the user's cart into a new order (computing subtotal, delivery
-   * fee, and total), clears the cart, and returns the placed order. */
+   * fee from the live StoreSettings, and a coupon discount if `couponCode` is
+   * given and still valid), clears the cart, and returns the placed order.
+   * The delivery fee and discount are always computed/verified server-side —
+   * never trust a client-supplied amount for either. */
   place(
     userId: string,
-    details: { paymentMethod: PaymentMethod; note?: string }
+    details: { paymentMethod: PaymentMethod; note: string; couponCode?: string }
   ): Promise<Order>;
-  /** Service Manager advances/cancels an order (placed → confirmed → delivered,
-   * or cancelled) — the buyer sees the change live on their orders page. */
+  /** Service Manager advances/cancels an order along the full delivery
+   * pipeline (placed → confirmed → preparing → picked_up → on_the_way →
+   * delivered, or cancelled at any point before delivered) — the buyer sees
+   * the change live on their orders page, and is notified on every step. */
   updateStatus(orderId: string, status: Order["status"]): Promise<void>;
+  /** Buyer cancels their OWN order — only while it's still "placed" (not yet
+   * confirmed). Self-checked server-side: throws for another buyer's order,
+   * or once it's moved past "placed". */
+  cancel(orderId: string): Promise<void>;
   subscribe(userId: string, cb: (list: Order[]) => void): Unsubscribe;
   subscribeAll(cb: (list: Order[]) => void): Unsubscribe;
+}
+
+export interface StoreSettingsRepository {
+  get(): Promise<StoreSettings>;
+  update(patch: Partial<StoreSettings>): Promise<void>;
+  subscribe(cb: (settings: StoreSettings) => void): Unsubscribe;
+}
+
+export interface CouponRepository {
+  /** Every coupon, incl. inactive/expired — Service Manager management. */
+  listAll(): Promise<Coupon[]>;
+  add(coupon: NewCoupon): Promise<void>;
+  update(id: string, patch: Partial<Coupon>): Promise<void>;
+  remove(id: string): Promise<void>;
+  /** Checks a code against a cart subtotal (active, not expired, under its
+   * use cap, subtotal meets its minimum) — throws a friendly reason if not,
+   * returns the coupon (with its current discount value) if it is. Doesn't
+   * consume a use; place() does that atomically at checkout. */
+  validate(code: string, subtotal: number): Promise<Coupon>;
+  subscribe(cb: (list: Coupon[]) => void): Unsubscribe;
 }
 
 export interface StudyAbroadRepository {
@@ -613,6 +645,8 @@ export interface Repositories {
   products: ProductRepository;
   cart: CartRepository;
   orders: OrderRepository;
+  storeSettings: StoreSettingsRepository;
+  coupons: CouponRepository;
   usedBooks: UsedBookRepository;
   studyAbroad: StudyAbroadRepository;
   studyLeads: StudyLeadRepository;

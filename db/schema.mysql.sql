@@ -823,10 +823,13 @@ CREATE TABLE orders (
   hostel_id      VARCHAR(64) NULL,
   subtotal       DECIMAL(10,2) NOT NULL DEFAULT 0,
   delivery_fee   DECIMAL(10,2) NOT NULL DEFAULT 0,
+  discount       DECIMAL(10,2) NOT NULL DEFAULT 0,
+  coupon_code    VARCHAR(32) NULL,
   total          DECIMAL(10,2) NOT NULL DEFAULT 0,
   payment_method ENUM('bKash','Nagad','Card','Cash') NOT NULL,
-  status         ENUM('placed','confirmed','delivered','cancelled') NOT NULL DEFAULT 'placed',
+  status         ENUM('placed','confirmed','preparing','picked_up','on_the_way','delivered','cancelled') NOT NULL DEFAULT 'placed',
   note           TEXT        NULL,
+  buyer_phone    VARCHAR(32) NULL,
   created_at     DATETIME(3) NOT NULL,
   INDEX idx_orders_user (user_id, created_at),
   CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -844,6 +847,29 @@ CREATE TABLE order_items (
   price      DECIMAL(10,2) NOT NULL,
   INDEX idx_order_items_order (order_id),
   CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE coupons (
+  id               VARCHAR(64) NOT NULL PRIMARY KEY,
+  code             VARCHAR(32) NOT NULL,
+  kind             ENUM('percent','flat') NOT NULL,
+  value            DECIMAL(10,2) NOT NULL,
+  active           BOOLEAN     NOT NULL DEFAULT TRUE,
+  min_order_amount DECIMAL(10,2) NULL,
+  max_uses         INT         NULL,
+  used_count       INT         NOT NULL DEFAULT 0,
+  expires_at       DATE        NULL,
+  created_at       DATETIME(3) NOT NULL,
+  UNIQUE KEY uq_coupons_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Single-row store-wide delivery fee policy, same pattern as hero_promo_settings.
+CREATE TABLE store_settings (
+  id                      TINYINT     NOT NULL PRIMARY KEY DEFAULT 1,
+  delivery_fee_enabled    BOOLEAN     NOT NULL DEFAULT TRUE,
+  delivery_fee            DECIMAL(10,2) NOT NULL DEFAULT 30,
+  free_delivery_min_amount DECIMAL(10,2) NULL,
+  CONSTRAINT ck_store_settings_singleton CHECK (id = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE used_book_listings (

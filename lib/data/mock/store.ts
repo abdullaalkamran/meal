@@ -16,6 +16,7 @@ import type {
   CookAttendanceReport,
   CookAttendanceVote,
   CookLeaveRequest,
+  Coupon,
   DutyPlan,
   Expense,
   ExploreInteraction,
@@ -44,6 +45,7 @@ import type {
   ServiceListing,
   ShoppingCost,
   ShortageRequest,
+  StoreSettings,
   StudyAbroadItem,
   StudyLead,
   SwapRequest,
@@ -91,6 +93,8 @@ export interface Tables {
   products: Product[];
   cartItems: CartItem[];
   orders: Order[];
+  storeSettings: StoreSettings;
+  coupons: Coupon[];
   usedBookListings: UsedBookListing[];
   studyAbroadItems: StudyAbroadItem[];
   studyLeads: StudyLead[];

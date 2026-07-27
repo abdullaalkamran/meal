@@ -1,29 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Package } from "lucide-react";
+import Link from "next/link";
+import { Package, Search } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAllOrders } from "@/hooks/useOrders";
-import { repo, type Order, type User } from "@/lib/data";
+import { repo, type Order, type OrderStatus, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatShortDate } from "@/lib/utils/date";
+import { ORDER_STATUS_FLOW, ORDER_STATUS_LABEL, ORDER_STATUS_TONE, nextOrderStatus } from "@/lib/utils/store";
 
-const STATUS_TONE: Record<Order["status"], string> = {
-  placed: "bg-blue-soft text-blue",
-  confirmed: "bg-orange-soft text-orange",
-  delivered: "bg-primary-soft text-primary",
-  cancelled: "bg-danger-soft text-danger",
-};
-
-const FILTERS: ("all" | Order["status"])[] = ["all", "placed", "confirmed", "delivered", "cancelled"];
+const FILTERS: ("all" | OrderStatus)[] = ["all", ...ORDER_STATUS_FLOW, "cancelled"];
 
 export default function ServiceOrdersPage() {
   const orders = useAllOrders();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     repo.users.listAll().then(setUsers);
@@ -31,21 +27,20 @@ export default function ServiceOrdersPage() {
 
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? "Member";
 
-  const open = orders.filter((o) => o.status === "placed" || o.status === "confirmed").length;
+  const open = orders.filter((o) => o.status !== "delivered" && o.status !== "cancelled").length;
   const revenue = orders
     .filter((o) => o.status !== "cancelled")
     .reduce((sum, o) => sum + o.total, 0);
-  const results = orders.filter((o) => filter === "all" || o.status === filter);
+  const q = query.trim().toLowerCase();
+  const results = orders.filter(
+    (o) =>
+      (filter === "all" || o.status === filter) &&
+      (!q || nameOf(o.userId).toLowerCase().includes(q) || o.id.toLowerCase().includes(q))
+  );
 
   const setStatus = async (o: Order, status: Order["status"]) => {
     await repo.orders.updateStatus(o.id, status);
-    toast(
-      status === "confirmed"
-        ? "Order confirmed"
-        : status === "delivered"
-          ? "Order marked delivered"
-          : "Order cancelled"
-    );
+    toast(status === "cancelled" ? "Order cancelled" : `Order ${ORDER_STATUS_LABEL[status].toLowerCase()}`);
   };
 
   return (
@@ -72,17 +67,28 @@ export default function ServiceOrdersPage() {
         </Card>
       </div>
 
+      <div className="relative">
+        <Icon icon={Search} size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search buyer name or order id"
+          className="w-full rounded-btn border border-border bg-card py-2.5 pl-9 pr-3 text-[12px] font-bold shadow-chip"
+        />
+      </div>
+
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
           <button
             key={f}
             type="button"
             onClick={() => setFilter(f)}
-            className={`rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold capitalize ${
+            className={`rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold ${
               filter === f ? "bg-primary text-white" : "bg-bg text-text-secondary"
             }`}
           >
-            {f}
+            {f === "all" ? "All" : ORDER_STATUS_LABEL[f]}
           </button>
         ))}
       </div>
@@ -101,51 +107,45 @@ export default function ServiceOrdersPage() {
         <div className="flex flex-col gap-2.5">
           {results.map((o) => (
             <Card key={o.id} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-extrabold">{nameOf(o.userId)}</div>
-                  <div className="text-[10px] font-semibold text-text-secondary">
-                    {formatShortDate(o.createdAt.slice(0, 10))} · {o.paymentMethod}
-                    {o.note ? ` · ${o.note}` : ""}
+              <Link href={`/service/orders/${o.id}`} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="truncate text-[12px] font-extrabold">{nameOf(o.userId)}</div>
+                    <div className="text-[10px] font-semibold text-text-secondary">
+                      {formatShortDate(o.createdAt.slice(0, 10))} · {o.paymentMethod}
+                      {o.note ? ` · ${o.note}` : ""}
+                    </div>
                   </div>
-                </div>
-                <span className={`shrink-0 rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold capitalize ${STATUS_TONE[o.status]}`}>
-                  {o.status}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5">
-                {o.items.map((i) => (
-                  <span key={i.productId} className="rounded-pill bg-bg px-2 py-1 text-[10px] font-bold text-text-secondary">
-                    {i.name} ×{i.qty}
+                  <span className={`shrink-0 rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${ORDER_STATUS_TONE[o.status]}`}>
+                    {ORDER_STATUS_LABEL[o.status]}
                   </span>
-                ))}
-              </div>
+                </div>
 
-              <div className="flex items-center justify-between border-t border-border pt-2">
-                <span className="text-[10.5px] font-semibold text-text-secondary">
-                  {o.items.reduce((n, i) => n + i.qty, 0)} items · delivery {o.deliveryFee === 0 ? "free" : formatBDT(o.deliveryFee)}
-                </span>
-                <span className="text-[13px] font-extrabold text-primary">{formatBDT(o.total)}</span>
-              </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {o.items.map((i) => (
+                    <span key={i.productId} className="rounded-pill bg-bg px-2 py-1 text-[10px] font-bold text-text-secondary">
+                      {i.name} ×{i.qty}
+                    </span>
+                  ))}
+                </div>
 
-              {(o.status === "placed" || o.status === "confirmed") && (
+                <div className="flex items-center justify-between border-t border-border pt-2">
+                  <span className="text-[10.5px] font-semibold text-text-secondary">
+                    {o.items.reduce((n, i) => n + i.qty, 0)} items · delivery {o.deliveryFee === 0 ? "free" : formatBDT(o.deliveryFee)}
+                  </span>
+                  <span className="text-[13px] font-extrabold text-primary">{formatBDT(o.total)}</span>
+                </div>
+              </Link>
+
+              {o.status !== "delivered" && o.status !== "cancelled" && (
                 <div className="flex gap-2">
-                  {o.status === "placed" ? (
+                  {nextOrderStatus(o.status) && (
                     <button
                       type="button"
-                      onClick={() => setStatus(o, "confirmed")}
+                      onClick={() => setStatus(o, nextOrderStatus(o.status)!)}
                       className="min-h-9 flex-1 rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
                     >
-                      Confirm order
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setStatus(o, "delivered")}
-                      className="min-h-9 flex-1 rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
-                    >
-                      Mark delivered
+                      {o.status === "placed" ? "Confirm order" : `Mark ${ORDER_STATUS_LABEL[nextOrderStatus(o.status)!].toLowerCase()}`}
                     </button>
                   )}
                   <button
