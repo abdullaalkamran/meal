@@ -265,12 +265,12 @@ export interface MealRepository {
     to: string,
     on: boolean
   ): Promise<void>;
-  /** The member's own "turn my future meals off / on" switch (User.
-   * futureMealsOff). While off, every future day defaults their meals to OFF
-   * until they turn a specific day back on. Applies immediately to the days
-   * they can already freely change (day after tomorrow onward); today and
-   * tomorrow stay cutoff-gated and still need a request. */
-  setMemberFutureMeals(hostelId: string, userId: string, off: boolean): Promise<void>;
+  /** The member's own per-meal "turn my future X off / on" switch (User.
+   * futureMealsOff[meal]). While off, every future day defaults THAT slot to
+   * OFF until they turn a specific day back on. Applies immediately to the
+   * days they can already freely change (day after tomorrow onward); today
+   * and tomorrow stay cutoff-gated and still need a request. */
+  setMemberFutureMeals(hostelId: string, userId: string, meal: MealSlot, off: boolean): Promise<void>;
   subscribe(hostelId: string, cb: (day: MealDay) => void): Unsubscribe;
 }
 
@@ -405,6 +405,11 @@ export interface CookAttendanceRepository {
   listByHostel(hostelId: string): Promise<CookAttendanceReport[]>;
   report(req: Omit<CookAttendanceReport, "id" | "createdAt">): Promise<CookAttendanceReport>;
   markCooked(hostelId: string, date: string, meal: MealSlot): Promise<void>;
+  /** Confirms every OFFERED, not-yet-decided (date, meal) slot in the range
+   * (clamped to today) as cooked in one action — catches up a backlog
+   * without re-litigating days already explicitly resolved (cooked or
+   * confirmed-absent) or disputed (reported). Returns how many it touched. */
+  markCookedRange(hostelId: string, from: string, to: string): Promise<{ confirmed: number }>;
   vote(reportId: string, userId: string, choice: CookAttendanceVote["choice"]): Promise<void>;
   listVotes(reportId: string): Promise<CookAttendanceVote[]>;
   confirmAbsent(reportId: string): Promise<void>;

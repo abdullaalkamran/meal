@@ -113,7 +113,18 @@ function ensureFresh() {
       // records stay valid. Persist immediately in the new version so this
       // one-time upgrade doesn't rerun. This is what stops a deploy from
       // wiping the JSON-backed database.
-      store.replaceData({ ...buildSeed(), ...parsed.data }, parsed.rev ?? 0);
+      const migrated = { ...buildSeed(), ...parsed.data };
+      // v43→: User.futureMealsOff went from a single boolean to a per-meal
+      // object ({ breakfast?, lunch?, dinner? }) — a legacy `true` meant "all
+      // three off", so it maps to all three switches on.
+      migrated.users = migrated.users.map((u) => {
+        const legacy = u.futureMealsOff as unknown;
+        if (typeof legacy === "boolean") {
+          return { ...u, futureMealsOff: legacy ? { breakfast: true, lunch: true, dinner: true } : undefined };
+        }
+        return u;
+      });
+      store.replaceData(migrated, parsed.rev ?? 0);
       pristine = false;
       persist();
       return;

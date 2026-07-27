@@ -66,7 +66,9 @@ interface UserRow {
   avatar_seed: string; hostel_id: string | null; room_id: string | null;
   student_id: string | null; department: string | null;
   division: string | null; district: string | null; thana: string | null;
-  meals_suspended: number; meals_default_off: number; banned: number;
+  meals_suspended: number;
+  future_breakfast_off: number; future_lunch_off: number; future_dinner_off: number;
+  banned: number;
   manager_rating: number | null; manager_rating_note: string | null;
   joined_at: string | null; advance_held: number;
   notify_announcements: number; notify_bills: number; notify_monthly_report: number;
@@ -107,7 +109,14 @@ function toUser(r: UserRow): User {
       ? { division: r.division, district: r.district, thana: r.thana }
       : undefined,
     mealsSuspended: toBool(r.meals_suspended) || undefined,
-    futureMealsOff: toBool(r.meals_default_off) || undefined,
+    futureMealsOff:
+      toBool(r.future_breakfast_off) || toBool(r.future_lunch_off) || toBool(r.future_dinner_off)
+        ? {
+            ...(toBool(r.future_breakfast_off) ? { breakfast: true } : {}),
+            ...(toBool(r.future_lunch_off) ? { lunch: true } : {}),
+            ...(toBool(r.future_dinner_off) ? { dinner: true } : {}),
+          }
+        : undefined,
     banned: toBool(r.banned) || undefined,
     managerRating: (r.manager_rating as Stars | null) ?? undefined,
     managerRatingNote: r.manager_rating_note ?? undefined,
@@ -213,7 +222,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, meals_default_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
+  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, future_breakfast_off, future_lunch_off, future_dinner_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);

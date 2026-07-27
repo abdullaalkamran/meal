@@ -216,9 +216,23 @@ async function ensureHostelVerifiedColumn(): Promise<void> {
   await run("ALTER TABLE hostels ADD COLUMN verified BOOLEAN NOT NULL DEFAULT FALSE AFTER meal_toggle_cutoff");
 }
 
+/** Replaces the old single meals_default_off flag with three per-meal
+ * switches (User.futureMealsOff[meal]). On a database that still has the old
+ * column, existing members who had it on get all three new switches on too —
+ * preserving what they'd already opted into — before the columns are added. */
 async function ensureMealsDefaultOffColumn(): Promise<void> {
-  if (await columnExists("users", "meals_default_off")) return;
-  await run("ALTER TABLE users ADD COLUMN meals_default_off BOOLEAN NOT NULL DEFAULT FALSE AFTER meals_suspended");
+  if (await columnExists("users", "future_breakfast_off")) return;
+  await run(
+    "ALTER TABLE users ADD COLUMN future_breakfast_off BOOLEAN NOT NULL DEFAULT FALSE AFTER meals_suspended"
+  );
+  await run("ALTER TABLE users ADD COLUMN future_lunch_off BOOLEAN NOT NULL DEFAULT FALSE AFTER future_breakfast_off");
+  await run("ALTER TABLE users ADD COLUMN future_dinner_off BOOLEAN NOT NULL DEFAULT FALSE AFTER future_lunch_off");
+  if (await columnExists("users", "meals_default_off")) {
+    await run(
+      `UPDATE users SET future_breakfast_off = meals_default_off, future_lunch_off = meals_default_off,
+         future_dinner_off = meals_default_off WHERE meals_default_off = 1`
+    );
+  }
 }
 
 async function ensureHostelStreetColumn(): Promise<void> {

@@ -160,11 +160,12 @@ function sealMockDays(hostelId: string, from: string, to: string) {
         // their JOIN day — joining today means today's cutoff (the evening
         // before) already passed, so they're not in today's planned meal.
         const joinedThisDay = b.joinedAt?.slice(0, 10) === day;
-        const on = (slot: boolean) => (b.futureMealsOff || joinedThisDay ? false : slot);
+        const on = (meal: MealSlot, slot: boolean) =>
+          b.futureMealsOff?.[meal] || joinedThisDay ? false : slot;
         entries[b.id] = {
-          breakfast: { on: on(mealsOffered.breakfast), guestCount: 0 },
-          lunch: { on: on(mealsOffered.lunch), guestCount: 0 },
-          dinner: { on: on(mealsOffered.dinner), guestCount: 0 },
+          breakfast: { on: on("breakfast", mealsOffered.breakfast), guestCount: 0 },
+          lunch: { on: on("lunch", mealsOffered.lunch), guestCount: 0 },
+          dinner: { on: on("dinner", mealsOffered.dinner), guestCount: 0 },
         };
         added = true;
       }
@@ -1209,31 +1210,34 @@ const meals: MealRepository = {
     }
     store.emit(`mealDay:${hostelId}`);
   },
-  async setMemberFutureMeals(hostelId, userId, off) {
+  async setMemberFutureMeals(hostelId, userId, meal, off) {
     const idx = store.data.users.findIndex((u) => u.id === userId);
     if (idx !== -1) {
-      store.data.users[idx] = { ...store.data.users[idx], futureMealsOff: off };
+      store.data.users[idx] = {
+        ...store.data.users[idx],
+        futureMealsOff: { ...store.data.users[idx].futureMealsOff, [meal]: off },
+      };
       emitUser(userId);
       store.emit(`users:${hostelId}`);
     }
     // Apply now to every future day the member can still change: tomorrow if
     // it's still before tonight's cutoff, otherwise the day after. Today is
     // never touched; unmaterialised days inherit the new default when sealed.
+    // Only THIS slot is touched — the other two keep whatever they already had.
     const cutoff = store.data.hostels.find((h) => h.id === hostelId)?.settings.mealToggleCutoff;
     const tomorrow = addDays(today(), 1);
     const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
     store.data.mealDays = store.data.mealDays.map((d) => {
       if (d.hostelId !== hostelId || d.date < fromDay || !d.entries[userId]) return d;
       const e = d.entries[userId];
-      const offered = (slot: MealSlot) => d.mealsOffered?.[slot] ?? isMealOffered(hostelId, slot);
+      const offered = d.mealsOffered?.[meal] ?? isMealOffered(hostelId, meal);
       return {
         ...d,
         entries: {
           ...d.entries,
           [userId]: {
-            breakfast: { ...e.breakfast, on: off ? false : offered("breakfast") },
-            lunch: { ...e.lunch, on: off ? false : offered("lunch") },
-            dinner: { ...e.dinner, on: off ? false : offered("dinner") },
+            ...e,
+            [meal]: { ...e[meal], on: off ? false : offered },
           },
         },
       };
@@ -2124,6 +2128,38 @@ const cookAttendance: CookAttendanceRepository = {
       });
     }
     store.emit(`cookAttendance:${hostelId}`);
+  },
+  async markCookedRange(hostelId, from, to) {
+    const last = to < today() ? to : today();
+    if (from > last) return { confirmed: 0 };
+    sealMockDays(hostelId, from, last);
+    const confirmedBy = actingUser?.id ?? "manager";
+    let confirmed = 0;
+    for (let d = from; d <= last; d = addDays(d, 1)) {
+      const day = store.data.mealDays.find((x) => x.hostelId === hostelId && x.date === d);
+      for (const meal of ["breakfast", "lunch", "dinner"] as MealSlot[]) {
+        const offered = day?.mealsOffered?.[meal] ?? isMealOffered(hostelId, meal);
+        if (!offered) continue;
+        // Never touch a slot that's already been explicitly decided (cooked,
+        // absent, or disputed) — bulk-confirm only fills genuine gaps.
+        const existing = store.data.cookAttendanceReports.some(
+          (r) => r.hostelId === hostelId && r.date === d && r.meal === meal
+        );
+        if (existing) continue;
+        store.data.cookAttendanceReports.push({
+          id: nextId("cookattend"),
+          hostelId,
+          date: d,
+          meal,
+          status: "resolved_cooked",
+          reportedBy: confirmedBy,
+          createdAt: new Date().toISOString(),
+        });
+        confirmed += 1;
+      }
+    }
+    if (confirmed > 0) store.emit(`cookAttendance:${hostelId}`);
+    return { confirmed };
   },
   async vote(reportId, userId, choice) {
     const existing = store.data.cookAttendanceVotes.find(

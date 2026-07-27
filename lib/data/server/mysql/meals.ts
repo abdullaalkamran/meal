@@ -216,14 +216,18 @@ export async function sealDays(hostelId: string, from: string, to: string): Prom
       // filter), but IS topped up for every day on/after it, even if the
       // day was sealed before they arrived.
       for (const slot of MEALS) {
+        // `slot` only ever comes from the fixed MEALS constant below, never
+        // user input, so interpolating the column name is safe.
+        const futureOffCol = `future_${slot}_off`;
         await run(
-          // Default OFF when: the member's own "future meals off" switch is on,
-          // OR this is their JOIN day — a member joining today has already
-          // missed today's cutoff (it was the evening before), so they can't
-          // be in today's already-planned meal. Otherwise the day's offer.
-          // Still one query per slot (O(days)) — flags read from the users row.
+          // Default OFF when: the member's own "future X off" switch (for
+          // THIS slot) is on, OR this is their JOIN day — a member joining
+          // today has already missed today's cutoff (it was the evening
+          // before), so they can't be in today's already-planned meal.
+          // Otherwise the day's offer. Still one query per slot (O(days)) —
+          // flags read from the users row.
           `INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count)
-           SELECT ?, ?, u.id, ?, IF(u.meals_default_off = 1 OR u.joined_at = ?, 0, ?), 0
+           SELECT ?, ?, u.id, ?, IF(u.${futureOffCol} = 1 OR u.joined_at = ?, 0, ?), 0
              FROM users u
             WHERE u.hostel_id = ? AND u.banned = 0
               AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
@@ -481,13 +485,24 @@ export const meals: MealRepository = {
     });
   },
 
-  async setMemberFutureMeals(hostelId, userId, off) {
+  async setMemberFutureMeals(hostelId, userId, meal, off) {
+    // `meal` crosses the RPC boundary as a plain string, so it must be
+    // validated against the fixed slot set before it's used to build a
+    // column name below — never interpolate an unchecked value there.
+    const FUTURE_OFF_COL: Record<MealSlot, string> = {
+      breakfast: "future_breakfast_off",
+      lunch: "future_lunch_off",
+      dinner: "future_dinner_off",
+    };
+    const col = FUTURE_OFF_COL[meal];
+    if (!col) throw new Error("Invalid meal slot.");
     await transaction(async (tx) => {
-      await run("UPDATE users SET meals_default_off = ? WHERE id = ?", [off ? 1 : 0, userId], tx);
+      await run(`UPDATE users SET ${col} = ? WHERE id = ?`, [off ? 1 : 0, userId], tx);
       // Apply now to every future day the member can still change: tomorrow if
       // it's still before tonight's cutoff, otherwise the day after (tomorrow
       // locks once its cutoff passes). Today is never touched; days not yet
-      // materialised inherit the new default when they seal.
+      // materialised inherit the new default when they seal. Only THIS slot
+      // is touched — the other two keep whatever they already had.
       const cutoffRow = await one<{ meal_toggle_cutoff: string }>(
         "SELECT meal_toggle_cutoff FROM hostels WHERE id = ?",
         [hostelId],
@@ -498,12 +513,12 @@ export const meals: MealRepository = {
       const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
       if (off) {
         await run(
-          "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ?",
-          [hostelId, userId, fromDay],
+          "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ? AND meal = ?",
+          [hostelId, userId, fromDay, meal],
           tx
         );
       } else {
-        // Turning back on: restore each slot to what its day actually offered
+        // Turning back on: restore the slot to what its day actually offered
         // (a closed slot stays off).
         await run(
           `UPDATE meal_entries e
@@ -512,8 +527,8 @@ export const meals: MealRepository = {
                               WHEN 'breakfast' THEN d.offers_breakfast
                               WHEN 'lunch' THEN d.offers_lunch
                               ELSE d.offers_dinner END
-            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ?`,
-          [hostelId, userId, fromDay],
+            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.meal = ?`,
+          [hostelId, userId, fromDay, meal],
           tx
         );
       }

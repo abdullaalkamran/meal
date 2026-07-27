@@ -211,7 +211,7 @@ export function MealsScreen({
       const boarderThatDay = !joinedDay || joinedDay <= selectedDate;
       if (!boarderThatDay || (day?.sealed && !entry)) return sum;
       const offeredThatDay = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
-      const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
+      const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offeredThatDay);
       return sum + (on ? 1 : 0) + (entry?.[meal]?.guestCount ?? 0);
     }, 0);
     return { meal, count };
@@ -445,7 +445,7 @@ export function MealsScreen({
                     // the member turned their own future meals off.
                     const offeredThatDay =
                       day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
-                    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
+                    const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offeredThatDay);
                     const guests = entry?.[meal]?.guestCount ?? 0;
                     return (
                       <div

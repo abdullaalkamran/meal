@@ -41,10 +41,12 @@ export interface User {
   /** Manager turned this boarder's meals off for an unpaid bill — they can't
    * re-enable their own toggles until the manager resumes them. */
   mealsSuspended?: boolean;
-  /** The member's own "turn my future meals off" switch: while on, every new
-   * day defaults their meals to OFF until they turn a specific day back on (or
-   * flip this off). Their own choice — unrelated to mealsSuspended. */
-  futureMealsOff?: boolean;
+  /** The member's own per-meal "turn my future X off" switches — e.g. always
+   * default breakfast off while keeping lunch/dinner on. While a slot is off,
+   * every new day defaults THAT slot to OFF until they turn a specific day's
+   * slot back on (or flip the switch off). Missing/false = on by default.
+   * Their own choice — unrelated to mealsSuspended. */
+  futureMealsOff?: Partial<Record<MealSlot, boolean>>;
   /** Manager banned this member from THIS hostel — record is kept (so they can
    * still switch/transfer to another hostel) but they're evicted from their
    * room seat, meals are off, and they're excluded from active roster,

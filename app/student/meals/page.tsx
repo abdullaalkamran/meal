@@ -60,36 +60,37 @@ export default function StudentMealsPage() {
   // value to show or toggle — never a default "on".
   const joinedDay = user?.joinedAt?.slice(0, 10);
   const notYetJoined = !!joinedDay && joinedDay > selectedDate;
-  // The member's own "future meals off" switch — mirrored optimistically so the
-  // UI flips immediately rather than waiting for the next session poll.
-  const [futureOff, setFutureOff] = useState(!!user?.futureMealsOff);
+  // The member's own per-meal "future X off" switches — mirrored optimistically
+  // so the UI flips immediately rather than waiting for the next session poll.
+  const [futureOff, setFutureOff] = useState<Partial<Record<MealSlot, boolean>>>(user?.futureMealsOff ?? {});
   useEffect(() => {
-    queueMicrotask(() => setFutureOff(!!user?.futureMealsOff));
+    queueMicrotask(() => setFutureOff(user?.futureMealsOff ?? {}));
   }, [user?.futureMealsOff]);
-  const toggleFutureMeals = async (next: boolean) => {
+  const toggleFutureMeals = async (meal: MealSlot, next: boolean) => {
     if (!activeHostelId || !user) return;
-    setFutureOff(next);
-    await repo.meals.setMemberFutureMeals(activeHostelId, user.id, next);
+    setFutureOff((prev) => ({ ...prev, [meal]: next }));
+    await repo.meals.setMemberFutureMeals(activeHostelId, user.id, meal, next);
     toast(
       next
-        ? "Future meals turned off — turn any day back on before its cutoff"
-        : "Future meals turned back on"
+        ? `Future ${MEAL_LABEL[meal].toLowerCase()} turned off — turn any day back on before its cutoff`
+        : `Future ${MEAL_LABEL[meal].toLowerCase()} turned back on`
     );
   };
-  // A day with no stored entry yet defaults OFF when the switch is on.
-  const defaultOn = !futureOff;
+  // A day with no stored entry yet defaults OFF for a slot whose future
+  // switch is on.
+  const defaultOn = (meal: MealSlot) => !futureOff[meal];
 
   // Is THIS member's whole day off? Used to colour-fill the calendar so they
   // can see which days their meals are stopped (and from when). A sealed/
-  // stored day reads its rows; an unsealed future day is off only if their
-  // future-meals switch is on. Days before they joined aren't marked.
+  // stored day reads its rows; an unsealed future day is off only if EVERY
+  // slot's future-meals switch is on. Days before they joined aren't marked.
   const myDayOff = (date: string): boolean => {
     if (!user) return false;
     const jd = user.joinedAt?.slice(0, 10);
     if (jd && jd > date) return false;
     const e = monthDays.find((x) => x.date === date)?.entries[user.id];
     if (e) return !e.breakfast.on && !e.lunch.on && !e.dinner.on;
-    return futureOff;
+    return !!futureOff.breakfast && !!futureOff.lunch && !!futureOff.dinner;
   };
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
@@ -153,7 +154,7 @@ export default function StudentMealsPage() {
     const boarder = !jd || jd <= selectedDate;
     if (!boarder || (day?.sealed && !entry)) return null;
     const offered = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
-    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offered);
+    const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offered);
     return { on, guests: entry?.[meal]?.guestCount ?? 0 };
   };
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => ({
@@ -254,20 +255,40 @@ export default function StudentMealsPage() {
         </div>
       )}
 
-      {/* The member's own future-meals master switch. Off = every future day
-          defaults to off until they turn a specific day back on (cutoff still
-          applies to today/tomorrow). Hidden while the manager has force-off. */}
+      {/* The member's own per-meal future-default switches. Off (for a slot) =
+          every future day defaults THAT meal to off until they turn a specific
+          day's slot back on (cutoff still applies to today/tomorrow). Only
+          meals the hostel actually offers are shown. Hidden while the manager
+          has force-off. */}
       {!mealsSuspended && (
-        <Card className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-extrabold">My future meals</div>
-            <div className="text-[10px] font-semibold text-text-secondary">
-              {futureOff
-                ? "Off — future days default to off. Turn any day back on before its cutoff."
-                : "On by default. Turn this off to skip all future meals until you turn a day back on."}
-            </div>
+        <Card>
+          <div className="mb-1 text-[12.5px] font-extrabold">My future meals</div>
+          <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+            Set a standing default for each meal — off means every future day starts off until
+            you turn a specific day back on.
           </div>
-          <Switch checked={!futureOff} onChange={(v) => toggleFutureMeals(!v)} />
+          <div className="flex flex-col divide-y divide-border">
+            {(["breakfast", "lunch", "dinner"] as MealSlot[])
+              .filter((meal) => hostel?.settings.mealsOffered?.[meal] ?? true)
+              .map((meal) => {
+                const c = MEAL_COLORS[meal];
+                const off = !!futureOff[meal];
+                return (
+                  <div key={meal} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
+                      <Icon icon={c.icon} size={16} className={c.text} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                      <div className="truncate text-[9.5px] font-semibold text-text-secondary">
+                        {off ? "Off by default — turn a day back on before its cutoff" : "On by default"}
+                      </div>
+                    </div>
+                    <Switch checked={!off} onChange={(v) => toggleFutureMeals(meal, !v)} />
+                  </div>
+                );
+              })}
+          </div>
         </Card>
       )}
 
@@ -319,7 +340,7 @@ export default function StudentMealsPage() {
             // when the day was sealed — not of the hostel's current setting,
             // so past days keep showing what actually happened.
             const closed = !((day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true);
-            const on = !closed && !notYetJoined && (entry?.on ?? defaultOn);
+            const on = !closed && !notYetJoined && (entry?.on ?? defaultOn(meal));
             return (
               <div key={meal} className="flex items-center gap-3 py-2.5">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${closed ? "bg-bg" : c.bg}`}>
@@ -615,7 +636,7 @@ export default function StudentMealsPage() {
                       day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
                     // A member who turned their future meals off shows off on
                     // days not yet materialised, not the offered default.
-                    const on = entry?.[meal]?.on ?? (m.futureMealsOff ? false : offeredThatDay);
+                    const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offeredThatDay);
                     return (
                       <div
                         key={meal}

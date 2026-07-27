@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
+import { BulkConfirmCookedSheet } from "@/components/manager/BulkConfirmCookedSheet";
 import { repo, type CookAttendanceReport, type CookAttendanceVote, type MealDay, type MealSlot } from "@/lib/data";
 import { addDays, formatShortDate, today } from "@/lib/utils/date";
 
@@ -23,6 +27,9 @@ interface HistoryRow {
   date: string;
   total: number;
   cancelledMeals: MealSlot[];
+  // Offered that day but never confirmed cooked, marked absent, or disputed —
+  // still zero everywhere (cooking count, meal rate, bills) until decided.
+  unconfirmedMeals: MealSlot[];
 }
 
 function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): HistoryRow[] {
@@ -42,7 +49,12 @@ function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): History
       const cancelledMeals = MEAL_SLOTS.filter((meal) =>
         reports.some((r) => r.date === d.date && r.meal === meal && r.status === "confirmed_absent")
       );
-      return { date: d.date, total, cancelledMeals };
+      const unconfirmedMeals = MEAL_SLOTS.filter((meal) => {
+        const offered = d.mealsOffered?.[meal] ?? true;
+        if (!offered) return false;
+        return !reports.some((r) => r.date === d.date && r.meal === meal);
+      });
+      return { date: d.date, total, cancelledMeals, unconfirmedMeals };
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -60,6 +72,9 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   const reports = useCookAttendanceForDate(activeHostelId, date);
   const [votesByReport, setVotesByReport] = useState<Record<string, CookAttendanceVote[]>>({});
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [historyKey, setHistoryKey] = useState(0);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     const reported = reports.filter((r) => r.status === "reported");
@@ -76,7 +91,9 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
       repo.meals.listMealDays(activeHostelId, { from, to }),
       repo.cookAttendance.listByHostel(activeHostelId),
     ]).then(([days, allReports]) => setHistory(buildHistory(days, allReports)));
-  }, [activeHostelId, date]);
+  }, [activeHostelId, date, historyKey]);
+
+  const unconfirmedDayCount = history.filter((h) => h.unconfirmedMeals.length > 0).length;
 
   const mealCounts = (["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
@@ -143,6 +160,30 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
           Next ›
         </button>
       </Card>
+
+      {!readOnly && unconfirmedDayCount > 0 && (
+        <Card className="flex items-center gap-3 border border-orange/30 bg-orange-soft">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card text-orange">
+            <Icon icon={AlertTriangle} size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-extrabold text-orange">
+              {unconfirmedDayCount} day{unconfirmedDayCount === 1 ? "" : "s"} in the last {HISTORY_DAYS} need
+              confirmation
+            </div>
+            <div className="text-[9.5px] font-semibold text-orange/80">
+              Unconfirmed meals count as zero everywhere — cooking count, meal rate, and bills.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            className="shrink-0 rounded-btn bg-orange px-3 py-2 text-[10.5px] font-extrabold text-white"
+          >
+            Bulk confirm
+          </button>
+        </Card>
+      )}
 
       <Card className="flex items-center justify-between">
         <div className="text-[11.5px] font-bold text-text-secondary">
@@ -257,7 +298,18 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
       })}
 
       <div>
-        <div className="mb-2 text-[13.5px] font-extrabold">Cooking history</div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[13.5px] font-extrabold">Cooking history</div>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => setBulkOpen(true)}
+              className="text-[11px] font-extrabold text-primary"
+            >
+              Bulk confirm
+            </button>
+          )}
+        </div>
         <div className="flex flex-col gap-2">
           {history.length === 0 && (
             <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
@@ -268,11 +320,16 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
             <Card key={h.date} className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[12px] font-bold">{formatShortDate(h.date)}</div>
-                {h.cancelledMeals.length > 0 && (
+                {(h.cancelledMeals.length > 0 || h.unconfirmedMeals.length > 0) && (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {h.cancelledMeals.map((m) => (
                       <Chip key={m} tone="danger" active>
                         {MEAL_LABEL[m]} cancelled
+                      </Chip>
+                    ))}
+                    {h.unconfirmedMeals.map((m) => (
+                      <Chip key={m} tone="orange" active>
+                        {MEAL_LABEL[m]} unconfirmed
                       </Chip>
                     ))}
                   </div>
@@ -283,6 +340,18 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
           ))}
         </div>
       </div>
+
+      {!readOnly && (
+        <BulkConfirmCookedSheet
+          open={bulkOpen}
+          onClose={() => setBulkOpen(false)}
+          hostelId={activeHostelId}
+          onConfirmed={(count) => {
+            toast(count > 0 ? `${count} meal${count === 1 ? "" : "s"} confirmed cooked` : "Nothing new to confirm");
+            setHistoryKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

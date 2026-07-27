@@ -97,7 +97,10 @@ CREATE TABLE users (
   thana               VARCHAR(64)  NULL,
   meals_suspended     BOOLEAN      NOT NULL DEFAULT FALSE,
   -- The member's own "turn my future meals off by default" switch.
-  meals_default_off   BOOLEAN      NOT NULL DEFAULT FALSE,
+  -- Per-meal "default my future X off" switches (User.futureMealsOff[meal]).
+  future_breakfast_off BOOLEAN     NOT NULL DEFAULT FALSE,
+  future_lunch_off     BOOLEAN     NOT NULL DEFAULT FALSE,
+  future_dinner_off    BOOLEAN     NOT NULL DEFAULT FALSE,
   banned              BOOLEAN      NOT NULL DEFAULT FALSE,
   manager_rating      TINYINT      NULL,
   manager_rating_note TEXT         NULL,

@@ -24,6 +24,8 @@ import type {
 import { all, fromIso, one, run, toDay, toIso, transaction, type Queryable } from "./connection";
 import { currentActor, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
+import { offeredOnDay, sealDays } from "./meals";
+import { addDays, today } from "../../../utils/date";
 
 const serverOnly = (): never => {
   throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
@@ -463,6 +465,33 @@ export const cookAttendance: CookAttendanceRepository = {
        ON DUPLICATE KEY UPDATE status = 'resolved_cooked', reported_by = VALUES(reported_by)`,
       [newId("cookattend"), hostelId, date, meal, confirmedBy, now()]
     );
+  },
+
+  async markCookedRange(hostelId, from, to) {
+    const last = to < today() ? to : today();
+    if (from > last) return { confirmed: 0 };
+    await sealDays(hostelId, from, last);
+    const confirmedBy = currentActor()?.id ?? "manager";
+    let confirmed = 0;
+    await transaction(async (tx) => {
+      for (let d = from; d <= last; d = addDays(d, 1)) {
+        const offered = await offeredOnDay(hostelId, d, tx);
+        for (const meal of ["breakfast", "lunch", "dinner"] as MealSlot[]) {
+          if (!offered[meal]) continue;
+          // INSERT IGNORE (not the upsert markCooked uses) — a slot that's
+          // already been explicitly decided (cooked, absent, or disputed)
+          // must never be silently overwritten by a bulk catch-up.
+          const affected = await run(
+            `INSERT IGNORE INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at)
+             VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?)`,
+            [newId("cookattend"), hostelId, d, meal, confirmedBy, now()],
+            tx
+          );
+          confirmed += affected;
+        }
+      }
+    });
+    return { confirmed };
   },
 
   async vote(reportId, userId, choice) {
