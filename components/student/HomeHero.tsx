@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BookOpen, ChevronRight, GraduationCap, Receipt, ShoppingBasket, Sparkles, Tag } from "lucide-react";
+import { BookOpen, ChevronRight, GraduationCap, Megaphone, Receipt, ShoppingBasket, Sparkles, Tag } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
 import { useServiceListings } from "@/hooks/useServiceListings";
 import { useStudyAbroadItems } from "@/hooks/useStudyAbroad";
 import { usePromoSettings } from "@/hooks/usePromoSettings";
+import { useActivePromotions } from "@/hooks/usePromotions";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
 import type { Bill } from "@/lib/data";
@@ -57,8 +58,21 @@ export function HomeHero({
   const studyPromos = useStudyAbroadItems()
     .filter((i) => i.kind === "promo" && i.active)
     .slice(0, 2);
+  // Service-Manager-uploaded home banners lead the carousel.
+  const banners = useActivePromotions("hero");
 
   const slides: Slide[] = [
+    ...(settings.sources.banners !== false
+      ? banners.map((b) => ({
+          id: b.id,
+          tag: "Featured",
+          icon: Megaphone,
+          title: b.title ?? "",
+          tagline: b.tagline ?? "",
+          href: b.linkUrl || "#",
+          image: b.image,
+        }))
+      : []),
     ...(settings.sources.study
       ? studyPromos.map((p) => ({
           id: p.id,

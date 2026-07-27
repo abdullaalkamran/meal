@@ -330,6 +330,11 @@ export interface ShoppingCost {
    * rate (see billing's mealRateFor) — an unreviewed number a member typed
    * in doesn't silently move everyone's bill. */
   status: "pending" | "approved" | "denied";
+  /** Set when the manager entered this cost on the member's behalf (rather
+   * than the member submitting it). It counts as that member's shopping cost,
+   * is approved on entry, and is shown to everyone so it's transparent who
+   * recorded it. */
+  addedByManager?: boolean;
   createdAt: string;
 }
 
@@ -493,6 +498,45 @@ export interface MealEditVote {
   votedAt: string;
 }
 
+/** Manager's request to change one member's already-recorded shopping cost —
+ * gated behind the same hostel-wide vote as meal edits, so the manager can't
+ * unilaterally rewrite what counts toward everyone's meal rate. The proposed
+ * new amount/items travel with the request, and it auto-applies once yes votes
+ * reach half the hostel's boarders. */
+export interface ShoppingCostEditRequest {
+  id: string;
+  hostelId: string;
+  /** The shopping cost being edited. */
+  costId: string;
+  /** Whose cost it is (for the poll wording). */
+  targetUserId: string;
+  /** Snapshot of the amount at request time, so the poll reads sensibly even
+   * if something else changes meanwhile. */
+  currentAmount: number;
+  newAmount: number;
+  newItems?: string;
+  reason: string;
+  requestedBy: string;
+  status: "pending" | "approved" | "denied";
+  createdAt: string;
+}
+
+export interface ShoppingCostEditVote {
+  requestId: string;
+  userId: string;
+  choice: "yes" | "no";
+  votedAt: string;
+}
+
+/** A browser Web Push subscription, stored per user so the server can push
+ * notifications even when the app is closed. The keys come from the browser's
+ * PushManager; the record is bound to the session user, never a passed id. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 export type AnnouncementKind =
   | "general"
   | "cook-absence-poll"
@@ -504,7 +548,9 @@ export type AnnouncementKind =
   | "swap-denied"
   | "shortage-alert"
   | "meal-edit-poll"
-  | "meal-edit-resolved";
+  | "meal-edit-resolved"
+  | "shopping-cost-edit-poll"
+  | "shopping-cost-edit-resolved";
 
 export interface Announcement {
   id: string;
@@ -867,12 +913,30 @@ export type NewStudyLead = Omit<StudyLead, "id" | "createdAt" | "contacted">;
 /** Service-Manager-controlled settings for the promotional carousel on every
  * member's homepage: which card types appear, how long each slide shows, and
  * the photo card height in px. */
+/** A promo photo the Service Manager (or Super Admin) uploads to show on the
+ * home page — either as a wide banner slide in the home hero carousel, or as a
+ * square card that pops up once after a member signs in. Managed on the
+ * Service dashboard; the image is an uploaded photo stored as a data URL. */
+export interface Promotion {
+  id: string;
+  placement: "hero" | "popup";
+  image: string;
+  title?: string;
+  tagline?: string;
+  /** Optional link opened when the banner/card is tapped. */
+  linkUrl?: string;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface HeroPromoSettings {
   sources: {
     study: boolean;
     offers: boolean;
     grocery: boolean;
     books: boolean;
+    /** Service-Manager-uploaded home banners. */
+    banners?: boolean;
   };
   /** Seconds each slide stays before auto-advancing (2–15). */
   intervalSec: number;

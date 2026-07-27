@@ -90,7 +90,9 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   leaveRequests: { decide: HOSTEL_STAFF },
   mealStops: { decide: HOSTEL_STAFF },
   guestMeals: { decide: HOSTEL_STAFF },
-  shoppingCosts: { decide: HOSTEL_STAFF },
+  shoppingCosts: { decide: HOSTEL_STAFF, recordForMember: HOSTEL_STAFF },
+  // Manager requests the change; voting/withdrawing stays open to members.
+  shoppingCostEdits: { request: HOSTEL_STAFF },
   // markCooked/confirmAbsent are the gate that decides whether a slot counts
   // toward cooking count AND billing (see mealRateFor/generateBills) —
   // deliberately manager/owner only, never the cook confirming their own
@@ -111,6 +113,14 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   studyAbroad: { add: SERVICE_TEAM, update: SERVICE_TEAM, toggleActive: SERVICE_TEAM, remove: SERVICE_TEAM },
   studyLeads: { setContacted: SERVICE_TEAM, remove: SERVICE_TEAM },
   promoSettings: { update: SERVICE_TEAM },
+  // Home-page banners + login popups: only the service team / super admin
+  // may create or change them; listing is open to signed-in members.
+  promotions: {
+    add: SERVICE_TEAM,
+    update: SERVICE_TEAM,
+    toggleActive: SERVICE_TEAM,
+    remove: SERVICE_TEAM,
+  },
   orders: { updateStatus: SERVICE_TEAM },
   storeSettings: { update: SERVICE_TEAM },
   // listAll shows every code incl. inactive/expired — admin-only. validate

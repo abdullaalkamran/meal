@@ -23,6 +23,7 @@ import {
   type AnnouncementKind,
   type CookAttendanceVote,
   type MealEditVote,
+  type ShoppingCostEditVote,
 } from "@/lib/data";
 import { formatRelativeTime } from "@/lib/utils/date";
 
@@ -44,6 +45,8 @@ const CATEGORY: Record<AnnouncementKind, CategoryMeta> = {
   "shortage-alert": { tag: "Urgent", icon: AlertTriangle, color: "#EF4444", soft: "bg-danger-soft" },
   "meal-edit-poll": { tag: "Vote", icon: PencilLine, color: "#4C7DF0", soft: "bg-blue-soft" },
   "meal-edit-resolved": { tag: "Notice", icon: CheckCircle2, color: "#10BFB4", soft: "bg-primary-soft" },
+  "shopping-cost-edit-poll": { tag: "Vote", icon: PencilLine, color: "#F59E0B", soft: "bg-orange-soft" },
+  "shopping-cost-edit-resolved": { tag: "Notice", icon: CheckCircle2, color: "#10BFB4", soft: "bg-primary-soft" },
   general: { tag: "Notice", icon: Megaphone, color: "#4C7DF0", soft: "bg-blue-soft" },
 };
 
@@ -56,6 +59,7 @@ export function AnnouncementItem({
 }) {
   const [votes, setVotes] = useState<CookAttendanceVote[]>([]);
   const [editVotes, setEditVotes] = useState<MealEditVote[]>([]);
+  const [costEditVotes, setCostEditVotes] = useState<ShoppingCostEditVote[]>([]);
   const reportId = (announcement.payload as { reportId?: string } | undefined)?.reportId;
   const requestId = (announcement.payload as { requestId?: string } | undefined)?.requestId;
   const meta = CATEGORY[announcement.kind];
@@ -94,6 +98,23 @@ export function AnnouncementItem({
     };
   }, [announcement.kind, announcement.hostelId, requestId]);
 
+  useEffect(() => {
+    if (announcement.kind !== "shopping-cost-edit-poll" || !requestId) return;
+    let cancelled = false;
+    const load = () =>
+      repo.shoppingCostEdits.listVotes(requestId).then((v) => {
+        if (!cancelled) setCostEditVotes(v);
+      });
+    load();
+    const unsub = announcement.hostelId
+      ? repo.shoppingCostEdits.subscribe(announcement.hostelId, load)
+      : undefined;
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, [announcement.kind, announcement.hostelId, requestId]);
+
   const myVote = votes.find((v) => v.userId === userId)?.choice;
   const vote = (choice: "yes" | "no" | "dk") => {
     if (reportId && userId) repo.cookAttendance.vote(reportId, userId, choice);
@@ -102,6 +123,11 @@ export function AnnouncementItem({
   const myEditVote = editVotes.find((v) => v.userId === userId)?.choice;
   const voteOnEdit = (choice: "yes" | "no") => {
     if (requestId && userId) repo.mealEdits.vote(requestId, userId, choice);
+  };
+
+  const myCostEditVote = costEditVotes.find((v) => v.userId === userId)?.choice;
+  const voteOnCostEdit = (choice: "yes" | "no") => {
+    if (requestId && userId) repo.shoppingCostEdits.vote(requestId, userId, choice);
   };
 
   return (
@@ -200,6 +226,39 @@ export function AnnouncementItem({
               <XCircle
                 size={15}
                 className={myEditVote === "no" ? "fill-danger text-white" : "text-text-secondary"}
+              />
+              No &middot; Deny
+            </button>
+          </div>
+        )}
+
+        {announcement.kind === "shopping-cost-edit-poll" && requestId && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => voteOnCostEdit("yes")}
+              className={`flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[11px] font-semibold ${
+                myCostEditVote === "yes"
+                  ? "border-primary bg-primary-soft text-primary"
+                  : "border-border text-text-secondary"
+              }`}
+            >
+              <CheckCircle2
+                size={15}
+                className={myCostEditVote === "yes" ? "fill-primary text-white" : "text-text-secondary"}
+              />
+              Yes &middot; Allow
+            </button>
+            <button
+              type="button"
+              onClick={() => voteOnCostEdit("no")}
+              className={`flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[11px] font-semibold ${
+                myCostEditVote === "no" ? "border-danger bg-danger-soft text-danger" : "border-border text-text-secondary"
+              }`}
+            >
+              <XCircle
+                size={15}
+                className={myCostEditVote === "no" ? "fill-danger text-white" : "text-text-secondary"}
               />
               No &middot; Deny
             </button>

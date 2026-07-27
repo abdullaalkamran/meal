@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Queryable } from "./connection";
 import { all, fromIso, run } from "./connection";
 import { newId } from "./ids";
+import { sendToSubscription } from "../../../push/webpush";
 
 export interface Actor {
   id: string;
@@ -52,7 +53,10 @@ export async function logActivity(
   );
 }
 
-/** Queues a notification for one user. */
+/** Queues a notification for one user, and — best-effort, outside any
+ * transaction — pushes it to that user's browsers so it arrives even when the
+ * app is closed. The push send is fire-and-forget: it must never slow the
+ * request or fail the surrounding write. */
 export async function notify(
   userId: string,
   title: string,
@@ -64,6 +68,26 @@ export async function notify(
     [newId("notif"), userId, title, body, fromIso(new Date().toISOString())],
     on
   );
+  setImmediate(() => {
+    void sendPushToUser(userId, { title, body }).catch(() => {});
+  });
+}
+
+/** Delivers a Web Push to every browser the user has subscribed, pruning any
+ * subscription the push service reports as dead. Uses the pool (never a caller's
+ * transaction connection) and never throws. */
+export async function sendPushToUser(
+  userId: string,
+  payload: { title: string; body: string; url?: string }
+): Promise<void> {
+  const subs = await all<{ endpoint: string; p256dh: string; auth: string }>(
+    "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?",
+    [userId]
+  );
+  for (const sub of subs) {
+    const { gone } = await sendToSubscription(sub, payload);
+    if (gone) await run("DELETE FROM push_subscriptions WHERE endpoint = ?", [sub.endpoint]);
+  }
 }
 
 /** Notifies the people who approve things for a hostel — its manager, and the

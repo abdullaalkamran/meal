@@ -7,11 +7,13 @@ import { Icon } from "@/components/ui/Icon";
 // Uploaded photos are downscaled + JPEG-compressed client-side before being
 // stored as a data URL — the whole mock DB lives in localStorage (~5 MB), so
 // full-resolution photos would blow the quota after a handful of products.
-const MAX_DIM = 320;
+// Callers that need a sharper image (home banners, popup cards) pass a bigger
+// `maxDim`.
+const DEFAULT_MAX_DIM = 320;
 
-async function fileToDataUrl(file: File): Promise<string> {
+async function fileToDataUrl(file: File, maxDim: number): Promise<string> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -25,10 +27,13 @@ export function ImagePicker({
   value,
   onChange,
   label = "PHOTO (optional)",
+  maxDim = DEFAULT_MAX_DIM,
 }: {
   value: string | undefined;
   onChange: (dataUrl: string | undefined) => void;
   label?: string;
+  /** Longest-edge cap in px for the downscaled upload (default 320). */
+  maxDim?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -37,7 +42,7 @@ export function ImagePicker({
     if (!file) return;
     setBusy(true);
     try {
-      onChange(await fileToDataUrl(file));
+      onChange(await fileToDataUrl(file, maxDim));
     } finally {
       setBusy(false);
     }

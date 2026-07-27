@@ -38,6 +38,8 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
   const [assignCookOpen, setAssignCookOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [billsByUser, setBillsByUser] = useState<Record<string, Bill>>({});
+  const [formerBills, setFormerBills] = useState<Record<string, Bill>>({});
+  const [formerSearch, setFormerSearch] = useState("");
 
   const active = members.filter((u) => !u.banned);
   const banned = members.filter((u) => u.banned);
@@ -57,6 +59,31 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
       setBillsByUser(map);
     });
   }, [activeHostelId, memberIdsKey]);
+
+  // Former members' final bills can be from a PAST month, so fetch each one's
+  // latest bill directly (the current-month map above won't have them). Their
+  // closing balance = grandTotal − paid (a due to collect or a credit owed).
+  const bannedIdsKey = banned.map((u) => u.id).join(",");
+  useEffect(() => {
+    if (!activeHostelId) return;
+    let cancelled = false;
+    // Promise.all([]) handles "no former members" without a synchronous
+    // setState in the effect body.
+    Promise.all(
+      banned.map((u) =>
+        repo.bills.getLatestForUser(activeHostelId, u.id).then((b) => [u.id, b] as const)
+      )
+    ).then((entries) => {
+      if (cancelled) return;
+      const map: Record<string, Bill> = {};
+      for (const [id, b] of entries) if (b) map[id] = b;
+      setFormerBills(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeHostelId, bannedIdsKey]);
 
   // A member QR scanned with a plain camera app opens this page as
   // /manager/members?assign=<userId> — jump straight to assigning them.
@@ -288,38 +315,74 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
       {banned.length > 0 && (
         <div>
           <div className="mb-2 flex items-center gap-2 text-[13.5px] font-extrabold">
-            Banned
+            Left this hostel
             <span className="rounded-pill bg-danger-soft px-2 py-0.5 text-[9.5px] font-extrabold text-danger">
               {banned.length}
             </span>
           </div>
+          {banned.length > 4 && (
+            <input
+              value={formerSearch}
+              onChange={(e) => setFormerSearch(e.target.value)}
+              placeholder="Search by name or phone"
+              className="mb-2 w-full rounded-btn border border-border bg-transparent px-3 py-2 text-[12px] font-semibold"
+            />
+          )}
           <div className="flex flex-col gap-2">
-            {banned.map((u) => (
-              <div
-                key={u.id}
-                className="flex items-center gap-3 rounded-card border border-border bg-card p-3 opacity-70"
-              >
-                <Avatar name={u.name} seed={u.avatarSeed} size={38} />
-                <button
-                  type="button"
-                  onClick={() => router.push(memberHref(u.id))}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <div className="truncate text-[12px] font-extrabold">{u.name}</div>
-                  <div className="text-[10px] font-semibold text-danger">Banned from this hostel</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await repo.users.setBanned(u.id, false);
-                    toast(`${u.name.split(" ")[0]} un-banned`);
-                  }}
-                  className="shrink-0 rounded-pill bg-primary-soft px-3 py-1.5 text-[10.5px] font-extrabold text-primary"
-                >
-                  Un-ban
-                </button>
-              </div>
-            ))}
+            {banned
+              .filter((u) => {
+                const q = formerSearch.trim().toLowerCase();
+                return !q || u.name.toLowerCase().includes(q) || (u.phone ?? "").includes(q);
+              })
+              .map((u) => {
+                const bill = formerBills[u.id];
+                const balance = bill ? bill.grandTotal - bill.paid : 0;
+                return (
+                  <div
+                    key={u.id}
+                    className="flex items-center gap-3 rounded-card border border-border bg-card p-3"
+                  >
+                    <Avatar name={u.name} seed={u.avatarSeed} size={38} />
+                    <button
+                      type="button"
+                      onClick={() => router.push(memberHref(u.id))}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="truncate text-[12px] font-extrabold">{u.name}</div>
+                      <div className="text-[10px] font-semibold text-text-secondary">
+                        {u.phone ?? "—"}
+                        {balance > 0
+                          ? " · owes this hostel"
+                          : balance < 0
+                            ? " · hostel owes them"
+                            : bill
+                              ? " · settled"
+                              : ""}
+                      </div>
+                    </button>
+                    {bill && balance !== 0 && (
+                      <div className="shrink-0 text-right">
+                        <div
+                          className={`text-[11.5px] font-extrabold ${balance > 0 ? "text-danger" : "text-primary"}`}
+                        >
+                          {balance > 0 ? `Due ${formatBDT(balance)}` : `Credit ${formatBDT(-balance)}`}
+                        </div>
+                        <div className="text-[8.5px] font-semibold text-text-secondary">to settle</div>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await repo.users.setBanned(u.id, false);
+                        toast(`${u.name.split(" ")[0]} un-banned`);
+                      }}
+                      className="shrink-0 rounded-pill bg-primary-soft px-3 py-1.5 text-[10.5px] font-extrabold text-primary"
+                    >
+                      Un-ban
+                    </button>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}

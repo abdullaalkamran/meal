@@ -126,6 +126,65 @@
   }
 }
 
+/* ---- Loading splash: a steaming bowl (meals are the heart of the app) ---- */
+@keyframes splashIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* Wisps of steam rising off the bowl and fading out. */
+@keyframes steamRise {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scaleX(1);
+  }
+  25% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px) scaleX(1.45);
+  }
+}
+/* Soft teal→cyan glow breathing behind the bowl. */
+@keyframes splashGlow {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.14);
+  }
+}
+/* The bowl gently bobs, as if simmering. */
+@keyframes bowlBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+/* Respect users who ask for less motion: keep the splash, drop the motion. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-steam,
+  .splash-glow,
+  .splash-bowl {
+    animation: none !important;
+  }
+  .splash-steam {
+    opacity: 0.5;
+  }
+}
+
 html,
 body {
   margin: 0;

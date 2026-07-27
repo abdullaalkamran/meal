@@ -8,6 +8,7 @@ import {
   Briefcase,
   ChefHat,
   ChevronRight,
+  Images,
   Layers,
   MessagesSquare,
   Plus,
@@ -123,6 +124,21 @@ export default function ServiceCatalogPage() {
           </Card>
         </Link>
       </div>
+
+      <Link href="/service/promotions">
+        <Card className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+            <Icon icon={Images} size={17} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-extrabold">Home page promotions</div>
+            <div className="text-[10px] font-semibold text-text-secondary">
+              Upload home banners &amp; login-popup cards
+            </div>
+          </div>
+          <Icon icon={ChevronRight} size={16} className="text-text-secondary" />
+        </Card>
+      </Link>
 
       {/* Kind tabs */}
       <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">

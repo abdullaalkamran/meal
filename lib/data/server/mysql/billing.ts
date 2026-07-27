@@ -27,7 +27,7 @@ import type {
 import { currentMonth, formatMonthLabel, formatShortDate } from "../../../utils/date";
 import { isServiceChargeCategory } from "../../../utils/expenseCategories";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity, notifyHostelStaff } from "./context";
+import { logActivity, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -131,9 +131,9 @@ export const shoppingCosts: ShoppingCostRepository = {
   async listByHostel(hostelId) {
     const rows = await all<{
       id: string; hostel_id: string; user_id: string; amount: number; items: string | null;
-      status: "pending" | "approved" | "denied"; created_at: string;
+      status: "pending" | "approved" | "denied"; added_by_manager: number; created_at: string;
     }>(
-      "SELECT id, hostel_id, user_id, amount, items, status, created_at FROM shopping_costs WHERE hostel_id = ?",
+      "SELECT id, hostel_id, user_id, amount, items, status, added_by_manager, created_at FROM shopping_costs WHERE hostel_id = ?",
       [hostelId]
     );
     if (!rows.length) return [];
@@ -155,6 +155,7 @@ export const shoppingCosts: ShoppingCostRepository = {
       amount: Number(r.amount),
       items: r.items ?? undefined,
       status: r.status,
+      addedByManager: !!r.added_by_manager,
       createdAt: toIso(r.created_at),
     }));
   },
@@ -174,6 +175,28 @@ export const shoppingCosts: ShoppingCostRepository = {
         cost.hostelId,
         "Shopping cost to approve",
         `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`,
+        tx
+      );
+    });
+  },
+
+  async recordForMember(cost) {
+    // Manager entered it — approved on entry, flagged as manager-added, and the
+    // member is told so they (and everyone reading the shopping list) know.
+    await transaction(async (tx) => {
+      const id = newId("shopcost");
+      await run(
+        "INSERT INTO shopping_costs (id, hostel_id, user_id, amount, items, status, added_by_manager, created_at) VALUES (?, ?, ?, ?, ?, 'approved', 1, ?)",
+        [id, cost.hostelId, cost.userId, cost.amount, cost.items ?? null, fromIso(new Date().toISOString())],
+        tx
+      );
+      for (const day of cost.dates ?? []) {
+        await run("INSERT IGNORE INTO shopping_cost_dates (cost_id, day) VALUES (?, ?)", [id, day], tx);
+      }
+      await notify(
+        cost.userId,
+        "Shopping cost recorded for you",
+        `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`,
         tx
       );
     });
@@ -337,6 +360,14 @@ async function applySectionPaid(billId: string, label: BillTarget, delta: number
 export const bills: BillRepository = {
   async getBill(hostelId, userId, month) {
     const found = await loadBills("hostel_id = ? AND user_id = ? AND month = ?", [hostelId, userId, month]);
+    return found[0];
+  },
+
+  async getLatestForUser(hostelId, userId) {
+    const found = await loadBills(
+      "hostel_id = ? AND user_id = ? ORDER BY month DESC LIMIT 1",
+      [hostelId, userId]
+    );
     return found[0];
   },
 
@@ -619,6 +650,21 @@ export const bills: BillRepository = {
         mealTotals.map((m) => [m.user_id, { own: Number(m.own ?? 0), guests: Number(m.guests ?? 0) }])
       );
 
+      // What each member personally spent on approved shopping this month —
+      // credited against their own meal cost below, so a member who shopped
+      // more than they ate ends up with a meal-cost credit instead of a charge.
+      const shopTotals = await all<{ user_id: string; spent: number | null }>(
+        `SELECT c.user_id, SUM(c.amount) AS spent
+           FROM shopping_costs c
+          WHERE c.hostel_id = ? AND c.status = 'approved'
+            AND EXISTS (SELECT 1 FROM shopping_cost_dates d
+                         WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)
+          GROUP BY c.user_id`,
+        [hostelId, month],
+        tx
+      );
+      const shoppingByUser = new Map(shopTotals.map((s) => [s.user_id, Number(s.spent ?? 0)]));
+
       const monthExpenses = await loadExpenses(hostelId, tx, month);
       const utilityExpenses = monthExpenses
         .filter((e) => isServiceChargeCategory(e.category))
@@ -643,10 +689,16 @@ export const bills: BillRepository = {
             };
           });
 
-      const prevDate = new Date(year, mon - 2, 1);
-      const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-      const prevBills = await loadBills("hostel_id = ? AND month = ?", [hostelId, prevMonth], tx);
-      const prevByUser = new Map(prevBills.map((b) => [b.userId, b]));
+      // Carry the member's running balance from their MOST RECENT prior bill
+      // (not strictly last calendar month) so a skipped month never drops it —
+      // and it carries BOTH signs: a due (+) to collect and a credit (−) that
+      // reduces this bill.
+      const priorBills = await loadBills("hostel_id = ? AND month < ?", [hostelId, month], tx);
+      const prevByUser = new Map<string, (typeof priorBills)[number]>();
+      for (const b of priorBills) {
+        const cur = prevByUser.get(b.userId);
+        if (!cur || b.month > cur.month) prevByUser.set(b.userId, b);
+      }
 
       const existingBills = await loadBills("hostel_id = ? AND month = ?", [hostelId, month], tx);
       const existingByUser = new Map(existingBills.map((b) => [b.userId, b]));
@@ -676,7 +728,15 @@ export const bills: BillRepository = {
             amount: round2(guestMeals * mealRate),
           });
         }
-        const mealCostTotal = round2((ownMeals + guestMeals) * mealRate);
+        // Credit the member for what they personally spent on shopping this
+        // month — so the bill nets to (meals − their spend), matching the
+        // monthly report. A heavy shopper's meal cost can go negative (a credit
+        // the hostel owes them), which then carries forward like any balance.
+        const shoppingSpent = shoppingByUser.get(u.id) ?? 0;
+        if (shoppingSpent > 0) {
+          mealCostItems.push({ label: "Your shopping this month (credit)", amount: -round2(shoppingSpent) });
+        }
+        const mealCostTotal = round2((ownMeals + guestMeals) * mealRate - shoppingSpent);
 
         const serviceItems = expenseItemsFor(utilityExpenses, u.id);
         if (ownerCharge > 0) {
@@ -723,8 +783,9 @@ export const bills: BillRepository = {
           { label: "cookSalary", items: salaryItems, total: salaryTotal, paid: paidFor("cookSalary") },
         ];
         const prevBill = prevByUser.get(u.id);
-        const previousBalance = prevBill ? Math.max(prevBill.grandTotal - prevBill.paid, 0) : 0;
-        const grandTotal = sections.reduce((s, x) => s + x.total, 0) + previousBalance;
+        // Carry the full remaining, both signs: a due (+) or a credit (−).
+        const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
+        const grandTotal = round2(sections.reduce((s, x) => s + x.total, 0) + previousBalance);
 
         const billId = existing?.id ?? newId("bill");
         const dueDate = options?.dueDate ?? existing?.dueDate;

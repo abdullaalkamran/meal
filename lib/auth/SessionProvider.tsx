@@ -11,6 +11,8 @@ import {
   useState,
 } from "react";
 import { repo, type Hostel, type Role, type User } from "@/lib/data";
+import { clearQueryCache } from "@/lib/data/remote/remoteRepositories";
+import { maybePromptOnLogin } from "@/lib/push/client";
 import { ensureMonthEndReportNotices } from "@/lib/reports/monthEndNotice";
 import { fetchSession, serverLogin, serverLogout, type LoginScope } from "./session";
 
@@ -127,11 +129,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     async (phone: string, password: string, scope: LoginScope = "hostel") => {
       const res = await serverLogin(phone, password, scope);
       if (!res.ok || !res.user) return { ok: false, error: res.error };
+      // New session — drop any cached data from a previous account.
+      clearQueryCache();
       const u = res.user;
       setUser(u);
       setViewRoleState(u.role);
       setActiveHostelId(u.role === "owner" ? u.ownedHostelIds?.[0] : u.hostelId);
       router.push(ROLE_HOME[u.role]);
+      // Right after sign-in, offer browser push (prompts only if undecided).
+      void maybePromptOnLogin();
       return { ok: true };
     },
     [router]
@@ -139,6 +145,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     void serverLogout();
+    clearQueryCache();
     setUser(undefined);
     setHostel(undefined);
     setViewRoleState(undefined);

@@ -2,6 +2,7 @@ import { FloatingCartButton } from "@/components/store/FloatingCartButton";
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { SideNav } from "./SideNav";
+import { LoginPromoPopup } from "@/components/student/LoginPromoPopup";
 import type { NavItem } from "./navItems";
 
 export function AppShell({
@@ -36,6 +37,7 @@ export function AppShell({
         </div>
       )}
       <FloatingCartButton />
+      <LoginPromoPopup />
     </div>
   );
 }

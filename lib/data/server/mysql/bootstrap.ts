@@ -145,6 +145,67 @@ async function ensureShoppingCostStatusColumn(): Promise<void> {
   await run("UPDATE shopping_costs SET status = 'approved'");
 }
 
+async function ensureShoppingCostAddedByManagerColumn(): Promise<void> {
+  if (await columnExists("shopping_costs", "added_by_manager")) return;
+  await run(
+    "ALTER TABLE shopping_costs ADD COLUMN added_by_manager BOOLEAN NOT NULL DEFAULT FALSE AFTER status"
+  );
+}
+
+/** Adds the shopping-cost-edit announcement kinds to the enum on databases
+ * that predate them (new INSERTs with those kinds fail otherwise). */
+async function ensureAnnouncementKinds(): Promise<void> {
+  const row = await one<{ COLUMN_TYPE: string }>(
+    "SELECT COLUMN_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'announcements' AND column_name = 'kind'"
+  );
+  if (row?.COLUMN_TYPE?.includes("shopping-cost-edit-poll")) return;
+  await run(
+    `ALTER TABLE announcements MODIFY COLUMN kind
+       ENUM('general','cook-absence-poll','cook-absence-resolved','cook-leave-approved',
+            'spin-wheel-cta','swap-request','swap-completed','swap-denied','shortage-alert',
+            'meal-edit-poll','meal-edit-resolved',
+            'shopping-cost-edit-poll','shopping-cost-edit-resolved') NOT NULL DEFAULT 'general'`
+  );
+}
+
+/** Creates the vote-gated shopping-cost-edit tables on databases that predate them. */
+async function ensureShoppingCostEditTables(): Promise<void> {
+  if (!(await tableExists("shopping_cost_edit_requests"))) {
+    await run(
+      `CREATE TABLE shopping_cost_edit_requests (
+         id             VARCHAR(64) NOT NULL PRIMARY KEY,
+         hostel_id      VARCHAR(64) NOT NULL,
+         cost_id        VARCHAR(64) NOT NULL,
+         target_user_id VARCHAR(64) NOT NULL,
+         current_amount DECIMAL(10,2) NOT NULL,
+         new_amount     DECIMAL(10,2) NOT NULL,
+         new_items      TEXT        NULL,
+         reason         TEXT        NOT NULL,
+         requested_by   VARCHAR(64) NOT NULL,
+         status         ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
+         created_at     DATETIME(3) NOT NULL,
+         INDEX idx_shop_edits_hostel (hostel_id),
+         CONSTRAINT fk_shop_edits_hostel FOREIGN KEY (hostel_id)      REFERENCES hostels(id)        ON DELETE CASCADE,
+         CONSTRAINT fk_shop_edits_cost   FOREIGN KEY (cost_id)        REFERENCES shopping_costs(id) ON DELETE CASCADE,
+         CONSTRAINT fk_shop_edits_target FOREIGN KEY (target_user_id) REFERENCES users(id)          ON DELETE CASCADE
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+  if (!(await tableExists("shopping_cost_edit_votes"))) {
+    await run(
+      `CREATE TABLE shopping_cost_edit_votes (
+         request_id VARCHAR(64) NOT NULL,
+         user_id    VARCHAR(64) NOT NULL,
+         choice     ENUM('yes','no') NOT NULL,
+         voted_at   DATETIME(3) NOT NULL,
+         PRIMARY KEY (request_id, user_id),
+         CONSTRAINT fk_shop_edit_votes_req  FOREIGN KEY (request_id) REFERENCES shopping_cost_edit_requests(id) ON DELETE CASCADE,
+         CONSTRAINT fk_shop_edit_votes_user FOREIGN KEY (user_id)    REFERENCES users(id)                       ON DELETE CASCADE
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+}
+
 async function ensureDutyGroupSizeColumn(): Promise<void> {
   if (await columnExists("duty_plans", "group_size")) return;
   await run("ALTER TABLE duty_plans ADD COLUMN group_size INT NOT NULL DEFAULT 1 AFTER budget_per_day");
@@ -251,6 +312,42 @@ async function seedPlatformTeam(): Promise<void> {
   }
 }
 
+/** Creates promotions (home banners + login popups) on databases that predate it. */
+async function ensurePromotionsTable(): Promise<void> {
+  if (await tableExists("promotions")) return;
+  await run(
+    `CREATE TABLE promotions (
+       id         VARCHAR(64) NOT NULL PRIMARY KEY,
+       placement  ENUM('hero','popup') NOT NULL,
+       image      MEDIUMTEXT  NOT NULL,
+       title      VARCHAR(191) NULL,
+       tagline    VARCHAR(255) NULL,
+       link_url   VARCHAR(512) NULL,
+       active     BOOLEAN     NOT NULL DEFAULT TRUE,
+       created_at DATETIME(3) NOT NULL,
+       INDEX idx_promotions_placement (placement, active)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
+/** Creates push_subscriptions on databases that predate browser push. */
+async function ensurePushSubscriptionsTable(): Promise<void> {
+  if (await tableExists("push_subscriptions")) return;
+  await run(
+    `CREATE TABLE push_subscriptions (
+       id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+       user_id    VARCHAR(64)  NOT NULL,
+       endpoint   VARCHAR(512) NOT NULL,
+       p256dh     TEXT         NOT NULL,
+       auth       TEXT         NOT NULL,
+       created_at DATETIME(3)  NOT NULL,
+       UNIQUE KEY uq_push_endpoint (endpoint(191)),
+       INDEX idx_push_user (user_id),
+       CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 /** Creates leave_requests on databases that predate it. */
 async function ensureLeaveRequestsTable(): Promise<void> {
   if (await tableExists("leave_requests")) return;
@@ -348,6 +445,9 @@ export function ensureReady(): Promise<void> {
       if (!(await tablesExist())) await applySchema();
       await ensureUserCredentialColumns();
       await ensureShoppingCostStatusColumn();
+      await ensureShoppingCostAddedByManagerColumn();
+      await ensureAnnouncementKinds();
+      await ensureShoppingCostEditTables();
       await ensureAdvanceRentColumns();
       await ensureDutyGroupSizeColumn();
       await ensureHostelVerifiedColumn();
@@ -358,6 +458,8 @@ export function ensureReady(): Promise<void> {
       await ensureOrderPipelineColumns();
       await ensureCouponsTable();
       await ensureStoreSettingsTable();
+      await ensurePushSubscriptionsTable();
+      await ensurePromotionsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
       await seedPlatformTeam();

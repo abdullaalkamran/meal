@@ -362,10 +362,28 @@ CREATE TABLE shopping_costs (
   -- rate (mealRateFor sums 'approved' only) — an unreviewed number a member
   -- typed in no longer silently inflates/deflates everyone's bill.
   status     ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
+  -- Set when the manager entered this on a member's behalf (auto-approved).
+  -- Shown to everyone so it's transparent the manager recorded it, not the member.
+  added_by_manager BOOLEAN NOT NULL DEFAULT FALSE,
   created_at DATETIME(3) NOT NULL,
   INDEX idx_shopping_hostel (hostel_id),
   CONSTRAINT fk_shopping_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE,
   CONSTRAINT fk_shopping_user   FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Browser Web Push subscriptions — one row per browser per user, so the server
+-- can push notifications even when the app is closed. Endpoint is unique so a
+-- browser re-subscribing upserts instead of duplicating.
+CREATE TABLE push_subscriptions (
+  id         VARCHAR(64)  NOT NULL PRIMARY KEY,
+  user_id    VARCHAR(64)  NOT NULL,
+  endpoint   VARCHAR(512) NOT NULL,
+  p256dh     TEXT         NOT NULL,
+  auth       TEXT         NOT NULL,
+  created_at DATETIME(3)  NOT NULL,
+  UNIQUE KEY uq_push_endpoint (endpoint(191)),
+  INDEX idx_push_user (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ShoppingCost.dates: string[] — the duty days this spend covers. The monthly
@@ -584,6 +602,36 @@ CREATE TABLE meal_edit_votes (
   CONSTRAINT fk_meal_edit_votes_user FOREIGN KEY (user_id)    REFERENCES users(id)              ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Manager's proposed change to one member's recorded shopping cost, gated by
+-- the same hostel-wide vote as meal edits; auto-applies at half the boarders.
+CREATE TABLE shopping_cost_edit_requests (
+  id             VARCHAR(64) NOT NULL PRIMARY KEY,
+  hostel_id      VARCHAR(64) NOT NULL,
+  cost_id        VARCHAR(64) NOT NULL,
+  target_user_id VARCHAR(64) NOT NULL,
+  current_amount DECIMAL(10,2) NOT NULL,
+  new_amount     DECIMAL(10,2) NOT NULL,
+  new_items      TEXT        NULL,
+  reason         TEXT        NOT NULL,
+  requested_by   VARCHAR(64) NOT NULL,
+  status         ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
+  created_at     DATETIME(3) NOT NULL,
+  INDEX idx_shop_edits_hostel (hostel_id),
+  CONSTRAINT fk_shop_edits_hostel FOREIGN KEY (hostel_id)      REFERENCES hostels(id)        ON DELETE CASCADE,
+  CONSTRAINT fk_shop_edits_cost   FOREIGN KEY (cost_id)        REFERENCES shopping_costs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_shop_edits_target FOREIGN KEY (target_user_id) REFERENCES users(id)          ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE shopping_cost_edit_votes (
+  request_id VARCHAR(64) NOT NULL,
+  user_id    VARCHAR(64) NOT NULL,
+  choice     ENUM('yes','no') NOT NULL,
+  voted_at   DATETIME(3) NOT NULL,
+  PRIMARY KEY (request_id, user_id),
+  CONSTRAINT fk_shop_edit_votes_req  FOREIGN KEY (request_id) REFERENCES shopping_cost_edit_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_shop_edit_votes_user FOREIGN KEY (user_id)    REFERENCES users(id)                       ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- Requests: join, transfer, meal stop, guest meal
 -- ─────────────────────────────────────────────────────────────────────────
@@ -692,7 +740,8 @@ CREATE TABLE announcements (
   hostel_id  VARCHAR(64) NOT NULL,
   kind       ENUM('general','cook-absence-poll','cook-absence-resolved','cook-leave-approved',
                   'spin-wheel-cta','swap-request','swap-completed','swap-denied','shortage-alert',
-                  'meal-edit-poll','meal-edit-resolved') NOT NULL DEFAULT 'general',
+                  'meal-edit-poll','meal-edit-resolved',
+                  'shopping-cost-edit-poll','shopping-cost-edit-resolved') NOT NULL DEFAULT 'general',
   title      VARCHAR(255) NOT NULL,
   body       TEXT         NOT NULL,
   -- Small kind-specific bag (reportId, planId, requestId…): stays JSON because
@@ -936,6 +985,20 @@ CREATE TABLE marketing_targets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Single-row table (id is always 1) for the homepage promo carousel settings.
+-- Home-page promotions the Service Manager uploads: wide hero banners and
+-- square login-popup cards. Image is an uploaded photo stored as a data URL.
+CREATE TABLE promotions (
+  id         VARCHAR(64) NOT NULL PRIMARY KEY,
+  placement  ENUM('hero','popup') NOT NULL,
+  image      MEDIUMTEXT  NOT NULL,
+  title      VARCHAR(191) NULL,
+  tagline    VARCHAR(255) NULL,
+  link_url   VARCHAR(512) NULL,
+  active     BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at DATETIME(3) NOT NULL,
+  INDEX idx_promotions_placement (placement, active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE hero_promo_settings (
   id              TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
   source_study    BOOLEAN NOT NULL DEFAULT TRUE,

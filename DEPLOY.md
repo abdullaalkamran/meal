@@ -256,6 +256,37 @@ response (and logs it) instead of emailing it. Leave this **off** in
 production. Rate limits: 5 codes/hour per account, 60-second resend cooldown,
 codes expire in 10 minutes, 5 verify attempts each.
 
+## Browser push notifications (Web Push)
+
+Every in-app notification is **also** pushed to the user's browser, so it
+arrives even when the app/tab is closed. This needs **VAPID keys** — generate a
+pair once and set them as environment variables:
+
+```
+npx web-push generate-vapid-keys
+```
+
+```
+VAPID_PUBLIC_KEY=<the printed public key>
+VAPID_PRIVATE_KEY=<the printed private key>   # SECRET — never commit
+VAPID_SUBJECT=mailto:you@yourdomain            # optional, defaults to a mailto
+```
+
+Set these in the CloudLinux **Environment variables** panel and **restart** the
+app. Until they're set, push is silently disabled (in-app notifications still
+work). The public key is served to the browser at runtime, so rotating keys is
+just "change env + restart" — no rebuild. The private key must never live in a
+committed file.
+
+Platform reality (browser Web Push, not the app's doing):
+- **Desktop** Chrome/Edge/Firefox deliver while the browser runs in the
+  background; a fully-quit browser with no background process can't be woken.
+- **Android** Chrome delivers in the background.
+- **iOS/iPadOS** (16.4+) deliver **only** when the site is installed to the Home
+  Screen as a PWA (Share → Add to Home Screen) — the manifest + icons for that
+  ship in `public/`.
+- Requires **HTTPS** (AutoSSL covers this); `localhost` is exempt for testing.
+
 ## What this app deliberately does NOT use
 
 To stay compatible with Passenger/shared hosting, this app avoids:

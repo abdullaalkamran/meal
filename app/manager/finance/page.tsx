@@ -27,9 +27,13 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { AddExpenseSheet } from "@/components/manager/AddExpenseSheet";
+import { RecordShoppingCostSheet } from "@/components/manager/RecordShoppingCostSheet";
+import { EditShoppingCostSheet } from "@/components/manager/EditShoppingCostSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
-import { repo, type Bill, type BillSection } from "@/lib/data";
+import { PayBillSheet } from "@/components/student/PayBillSheet";
+import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests";
+import { repo, type Bill, type BillSection, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
@@ -76,11 +80,20 @@ function ManagerFinancePage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const allExpenses = useExpenses(activeHostelId);
-  const boarders = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
+  const allHostelUsers = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
+  const boarders = allHostelUsers.filter((u) => !u.banned);
+  // Members who have left (banned) still carry a final bill to settle.
+  const formerMembers = allHostelUsers.filter((u) => u.banned);
   const rooms = useRooms(activeHostelId);
   const { toast } = useToast();
   const [bills, setBills] = useState<Bill[]>([]);
   const [expenseSheetOpen, setExpenseSheetOpen] = useState(false);
+  const [shoppingCostSheetOpen, setShoppingCostSheetOpen] = useState(false);
+  const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
+  const [editCost, setEditCost] = useState<ShoppingCost | null>(null);
+  const [formerBills, setFormerBills] = useState<Record<string, Bill>>({});
+  const [settleFormer, setSettleFormer] = useState<{ bill: Bill; name: string } | null>(null);
+  const [payFormer, setPayFormer] = useState<Bill | null>(null);
   const [generateSheetOpen, setGenerateSheetOpen] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
@@ -94,10 +107,22 @@ function ManagerFinancePage() {
   const monthEnd = lastDayOfMonth(monthStr);
   const canSuspendMeals = monthEnd >= today();
 
+  const costEdits = useShoppingCostEditRequests(activeHostelId);
+
   useEffect(() => {
     if (!activeHostelId) return;
     repo.bills.listByHostel(activeHostelId, monthStr).then(setBills);
   }, [activeHostelId, monthStr, allExpenses]);
+
+  // This month's shopping costs — the manager can propose an edit on any of
+  // them (gated behind a member vote). costEdits is in the deps so an approved
+  // vote (which changes an amount) re-fetches the updated figure.
+  useEffect(() => {
+    if (!activeHostelId) return;
+    repo.shoppingCosts
+      .listByHostel(activeHostelId)
+      .then((list) => setShoppingCosts(list.filter((c) => c.dates.some((d) => d.startsWith(monthStr)))));
+  }, [activeHostelId, monthStr, costEdits]);
 
 
   const refreshBills = () => {
@@ -105,7 +130,27 @@ function ManagerFinancePage() {
     repo.bills.listByHostel(activeHostelId, monthStr).then(setBills);
   };
 
-  const nameOf = (id: string) => boarders.find((u) => u.id === id)?.name ?? id;
+  // Each former member's most recent bill (their final one, often a past
+  // month), so their closing balance can be settled here. Re-fetched when the
+  // set of former members changes or a settlement resolves.
+  const formerIdsKey = formerMembers.map((u) => u.id).join(",");
+  const loadFormerBills = () => {
+    if (!activeHostelId) return;
+    // Promise.all([]) covers "no former members" without a synchronous setState.
+    Promise.all(
+      formerMembers.map((u) =>
+        repo.bills.getLatestForUser(activeHostelId, u.id).then((b) => [u.id, b] as const)
+      )
+    ).then((entries) => {
+      const map: Record<string, Bill> = {};
+      for (const [id, b] of entries) if (b) map[id] = b;
+      setFormerBills(map);
+    });
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadFormerBills, [activeHostelId, formerIdsKey, bills]);
+
+  const nameOf = (id: string) => allHostelUsers.find((u) => u.id === id)?.name ?? id;
 
   const sectionSummaries = SECTION_ORDER.map((label) => {
     let receivable = 0;
@@ -150,15 +195,24 @@ function ManagerFinancePage() {
 
   return (
     <div className="flex flex-col gap-5 pt-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="text-[17.5px] font-extrabold tracking-tight">Finance</div>
-        <button
-          type="button"
-          onClick={() => setExpenseSheetOpen(true)}
-          className="min-h-10 cursor-pointer rounded-pill bg-primary px-4 text-[11.5px] font-extrabold text-white"
-        >
-          + Expense
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShoppingCostSheetOpen(true)}
+            className="min-h-10 cursor-pointer rounded-pill bg-primary-soft px-3.5 text-[11.5px] font-extrabold text-primary"
+          >
+            + Shopping
+          </button>
+          <button
+            type="button"
+            onClick={() => setExpenseSheetOpen(true)}
+            className="min-h-10 cursor-pointer rounded-pill bg-primary px-4 text-[11.5px] font-extrabold text-white"
+          >
+            + Expense
+          </button>
+        </div>
       </div>
 
       <MonthNav
@@ -337,6 +391,12 @@ function ManagerFinancePage() {
                           <div>{formatBDT(previousDue)}</div>
                         </div>
                       )}
+                      {previousDue < 0 && (
+                        <div className="flex items-center justify-between text-[11px] font-bold text-primary">
+                          <div>Previous credit (carried forward)</div>
+                          <div>{formatBDT(-previousDue)}</div>
+                        </div>
+                      )}
                       {b.sections.map((s) => {
                         const sectionDue = s.total - s.paid;
                         return (
@@ -407,6 +467,124 @@ function ManagerFinancePage() {
             })}
         </div>
       </div>
+
+      <div>
+        <div className="mb-2 text-[13.5px] font-extrabold">
+          Shopping costs · {formatMonthLabel(monthStr)}
+        </div>
+        {shoppingCosts.length === 0 ? (
+          <Card className="text-[11.5px] font-semibold text-text-secondary">
+            No shopping costs recorded for this month.
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {[...shoppingCosts]
+              .sort((a, b) => (a.dates[0] ?? "").localeCompare(b.dates[0] ?? ""))
+              .map((c) => {
+                const pendingEdit = costEdits.find(
+                  (e) => e.costId === c.id && e.status === "pending"
+                );
+                return (
+                  <Card key={c.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <div className="truncate text-[12px] font-extrabold">{nameOf(c.userId)}</div>
+                        {c.addedByManager && (
+                          <span className="rounded-pill bg-orange-soft px-1.5 py-0.5 text-[8px] font-extrabold text-orange">
+                            Added by you
+                          </span>
+                        )}
+                        {c.status === "pending" && (
+                          <span className="rounded-pill bg-bg px-1.5 py-0.5 text-[8px] font-extrabold text-text-secondary">
+                            Awaiting approval
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate text-[10px] font-semibold text-text-secondary">
+                        {c.dates[0]}
+                        {c.items ? ` · ${c.items}` : ""}
+                      </div>
+                      {pendingEdit && (
+                        <div className="mt-0.5 text-[9.5px] font-bold text-orange">
+                          Change to {formatBDT(pendingEdit.newAmount)} — members voting
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[12.5px] font-extrabold">{formatBDT(c.amount)}</div>
+                      {pendingEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            repo.shoppingCostEdits.withdraw(pendingEdit.id);
+                            toast("Edit request withdrawn");
+                          }}
+                          className="text-[10px] font-extrabold text-danger"
+                        >
+                          Withdraw
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditCost(c)}
+                          className="text-[10px] font-extrabold text-primary"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+          </div>
+        )}
+      </div>
+
+      {formerMembers.length > 0 && (
+        <div>
+          <div className="mb-2 text-[13.5px] font-extrabold">Former members &mdash; settlements</div>
+          <div className="flex flex-col gap-2">
+            {formerMembers.map((u) => {
+              const bill = formerBills[u.id];
+              const balance = bill ? bill.grandTotal - bill.paid : 0;
+              return (
+                <Card key={u.id} className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12px] font-extrabold">{u.name}</div>
+                    <div className="text-[10px] font-semibold text-text-secondary">
+                      {!bill
+                        ? "No final bill yet"
+                        : balance > 0
+                          ? `Owes ${formatBDT(balance)}`
+                          : balance < 0
+                            ? `Hostel owes ${formatBDT(-balance)}`
+                            : "Settled"}
+                    </div>
+                  </div>
+                  {bill && balance > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPayFormer(bill)}
+                      className="shrink-0 rounded-pill bg-primary px-3 py-1.5 text-[10.5px] font-extrabold text-white"
+                    >
+                      Record payment
+                    </button>
+                  )}
+                  {bill && balance < 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSettleFormer({ bill, name: u.name })}
+                      className="shrink-0 rounded-pill bg-primary-soft px-3 py-1.5 text-[10.5px] font-extrabold text-primary"
+                    >
+                      Refund
+                    </button>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="mb-2 text-[13.5px] font-extrabold">Recent expenses</div>
@@ -494,6 +672,19 @@ function ManagerFinancePage() {
         hostelId={activeHostelId}
         month={monthStr}
       />
+      <RecordShoppingCostSheet
+        open={shoppingCostSheetOpen}
+        onClose={() => setShoppingCostSheetOpen(false)}
+        hostelId={activeHostelId}
+      />
+      <EditShoppingCostSheet
+        open={!!editCost}
+        onClose={() => setEditCost(null)}
+        hostelId={activeHostelId}
+        requestedBy={user?.id}
+        cost={editCost ?? undefined}
+        memberName={editCost ? nameOf(editCost.userId) : ""}
+      />
       <GenerateBillsSheet
         open={generateSheetOpen}
         onClose={() => setGenerateSheetOpen(false)}
@@ -511,6 +702,14 @@ function ManagerFinancePage() {
         memberName={settleUserId ? nameOf(settleUserId) : ""}
         onSettled={refreshBills}
       />
+      <SettleMealCreditSheet
+        open={!!settleFormer}
+        onClose={() => setSettleFormer(null)}
+        bill={settleFormer?.bill}
+        memberName={settleFormer?.name ?? ""}
+        onSettled={loadFormerBills}
+      />
+      <PayBillSheet open={!!payFormer} onClose={() => setPayFormer(null)} bill={payFormer ?? undefined} />
     </div>
   );
 }

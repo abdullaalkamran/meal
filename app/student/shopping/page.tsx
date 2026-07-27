@@ -444,7 +444,14 @@ export default function StudentShoppingPage() {
                   <Icon icon={ShoppingBag} size={15} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11.5px] font-extrabold">{nameOf(h.userId)}</div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-[11.5px] font-extrabold">{nameOf(h.userId)}</div>
+                    {h.addedByManager && (
+                      <span className="rounded-pill bg-orange-soft px-1.5 py-0.5 text-[8px] font-extrabold text-orange">
+                        Added by manager
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
                     {formatShortDate(h.dates[0])}
                     {h.items ? ` · ${h.items} items` : ""}

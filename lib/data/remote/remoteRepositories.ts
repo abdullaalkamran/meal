@@ -9,10 +9,11 @@ import type {
   Hostel,
   MealDay,
   Menu,
+  ShoppingCostEditRequest,
   SwapRequest,
   User,
 } from "../types";
-import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StoreSettingsRepository, CouponRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository } from "../repository";
+import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StoreSettingsRepository, CouponRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository, ShoppingCostEditRepository, PushSubscriptionRepository, PromotionRepository } from "../repository";
 const POLL_INTERVAL_MS = 2500;
 
 // The activity-log actor is derived server-side from the session cookie
@@ -60,11 +61,11 @@ async function rawRpc<T>(
   if (!res.ok) {
     throw new Error(json?.error ?? `${repo}.${method} failed (${res.status})`);
   }
-  if (mutation && typeof json?.rev === "number" && json.rev !== lastRev) {
-    // Our own write changed the data — refresh subscriptions immediately so
-    // the UI updates without waiting for the next poll tick.
-    lastRev = json.rev;
-    refreshAllSoon();
+  if (mutation && typeof json?.rev === "number") {
+    // Our own write may have changed the data — advance the revision (which
+    // clears the query cache) and refresh subscriptions immediately so the UI
+    // updates without waiting for the next poll tick.
+    setRev(json.rev);
   }
   // `null` stands in for `undefined` over JSON (e.g. getUser misses).
   return (json?.result ?? undefined) as T;
@@ -73,9 +74,52 @@ async function rawRpc<T>(
 const isQueryMethod = (method: string) =>
   method.startsWith("list") || method.startsWith("get");
 
+// ── Query cache + in-flight dedup ──────────────────────────────────────────
+// Every hook is its own RPC round-trip and every navigation remounts them, so
+// without this a single page can fire dozens of identical requests and refetch
+// them all again the moment you come back. We cache each query's result under
+// the current server revision and share any in-flight request, so:
+//   • duplicate concurrent reads (many hooks want the same list) hit ONE fetch;
+//   • revisiting a page within the same revision is served from memory;
+//   • any write (or a poll detecting someone else's write) bumps the revision,
+//     which drops the whole cache so nothing stale is ever shown.
+const queryCache = new Map<string, unknown>();
+const inflight = new Map<string, Promise<unknown>>();
+const cacheKey = (repo: string, method: string, args: unknown[]) =>
+  `${repo}.${method}(${JSON.stringify(args)})`;
+
+/** Advances the known server revision, dropping cached queries when it moves. */
+function setRev(rev: number) {
+  if (rev === lastRev) return;
+  lastRev = rev;
+  queryCache.clear();
+  refreshAllSoon();
+}
+
+/** Drops all cached query results — called on login/logout so one account can
+ * never be shown another's cached data (keys aren't session-scoped). */
+export function clearQueryCache() {
+  queryCache.clear();
+  inflight.clear();
+}
+
 async function rpc<T>(repo: string, method: string, args: unknown[]): Promise<T> {
   await ensureReady();
-  return rawRpc<T>(repo, method, args, !isQueryMethod(method));
+  if (!isQueryMethod(method)) return rawRpc<T>(repo, method, args, true);
+
+  const key = cacheKey(repo, method, args);
+  if (queryCache.has(key)) return queryCache.get(key) as T;
+  const pending = inflight.get(key);
+  if (pending) return pending as Promise<T>;
+
+  const p = rawRpc<T>(repo, method, args, false)
+    .then((data) => {
+      queryCache.set(key, data);
+      return data;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p as Promise<T>;
 }
 
 // ── Subscriptions: poll the server rev, re-fetch on change ─────────────────
@@ -102,10 +146,7 @@ async function pollOnce() {
   try {
     const res = await fetch("/api/rpc", { cache: "no-store" });
     const { rev } = (await res.json()) as { rev: number };
-    if (rev !== lastRev) {
-      lastRev = rev;
-      refreshAllSoon();
-    }
+    setRev(rev);
   } catch {
     // Offline / server restarting — try again next tick.
   }
@@ -222,6 +263,13 @@ const swaps = remoteRepo<SwapRepository>("swaps", {
 });
 
 const shoppingCosts = remoteRepo<ShoppingCostRepository>("shoppingCosts");
+const shoppingCostEdits = remoteRepo<ShoppingCostEditRepository>("shoppingCostEdits", {
+  subscribe: (hostelId, cb) =>
+    makeSubscribe(
+      () => rpc<ShoppingCostEditRequest[]>("shoppingCostEdits", "listByHostel", [hostelId]),
+      cb
+    ),
+});
 
 const shortages = remoteRepo<ShortageRepository>("shortages", {
   subscribe: (hostelId, cb) =>
@@ -260,6 +308,8 @@ const notifications = remoteRepo<NotificationRepository>("notifications", {
   subscribe: (userId, cb) =>
     makeSubscribe(() => rpc<Awaited<ReturnType<NotificationRepository["listByUser"]>>>("notifications", "listByUser", [userId]), cb),
 });
+
+const pushSubscriptions = remoteRepo<PushSubscriptionRepository>("pushSubscriptions");
 
 const expenses = remoteRepo<ExpenseRepository>("expenses", {
   subscribe: (hostelId, cb) =>
@@ -362,6 +412,11 @@ const usedBooks = remoteRepo<UsedBookRepository>("usedBooks", {
     makeSubscribe(() => rpc<Awaited<ReturnType<UsedBookRepository["listAll"]>>>("usedBooks", "listAll", []), cb),
 });
 
+const promotions = remoteRepo<PromotionRepository>("promotions", {
+  subscribe: (cb) =>
+    makeSubscribe(() => rpc<Awaited<ReturnType<PromotionRepository["listAll"]>>>("promotions", "listAll", []), cb),
+});
+
 const activity = remoteRepo<ActivityRepository>("activity", {
   subscribe: (hostelId, cb) =>
     makeSubscribe(() => rpc<Awaited<ReturnType<ActivityRepository["listByHostel"]>>>("activity", "listByHostel", [hostelId]), cb),
@@ -379,6 +434,8 @@ export const remoteRepositories: Repositories = {
   duties,
   swaps,
   shoppingCosts,
+  shoppingCostEdits,
+  pushSubscriptions,
   shortages,
   bills,
   cookLeave,
@@ -403,6 +460,7 @@ export const remoteRepositories: Repositories = {
   storeSettings,
   coupons,
   usedBooks,
+  promotions,
   studyAbroad,
   studyLeads,
   promoSettings,

@@ -21,6 +21,16 @@ const notoBengali = Noto_Sans_Bengali({
 export const metadata: Metadata = {
   title: "MyDorm",
   description: "Student hostel & mess management",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "MyDorm", statusBarStyle: "default" },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport = {
+  themeColor: "#10bfb4",
 };
 
 export default function RootLayout({

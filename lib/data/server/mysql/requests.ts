@@ -34,6 +34,7 @@ import { logActivity, notify, notifyHostelStaff } from "./context";
 import { ensureEntries, invalidateSealCache, offeredOnDay } from "./meals";
 import { newId } from "./ids";
 import { users } from "./core";
+import { bills } from "./billing";
 
 const serverOnly = (): never => {
   throw new Error("subscribe() is a client-side concern; the server never dispatches it.");
@@ -321,13 +322,25 @@ const toLeave = (r: LeaveRow): LeaveRequest => ({
  * sealing: runs on every read rather than needing a background job — cheap,
  * since a hostel only ever has a handful of leave requests. */
 async function processDueLeaveRequests(hostelId: string): Promise<void> {
-  const due = await all<{ user_id: string }>(
-    "SELECT user_id FROM leave_requests WHERE hostel_id = ? AND status = 'approved' AND leave_date <= ?",
+  const due = await all<{ user_id: string; leave_date: string }>(
+    "SELECT user_id, leave_date FROM leave_requests WHERE hostel_id = ? AND status = 'approved' AND leave_date <= ?",
     [hostelId, today()]
   );
-  for (const { user_id } of due) {
+  for (const { user_id, leave_date } of due) {
     const user = await one<{ banned: number }>("SELECT banned FROM users WHERE id = ?", [user_id]);
     if (!user || toBool(user.banned)) continue;
+    // Generate this member's FINAL bill for their leave month while they're
+    // still billable (generateBills skips banned members) and fold in any held
+    // advance rent — so their closing balance (due or credit) is captured
+    // before they drop off the active roster. Runs once: the ban below makes
+    // this member skip the loop forever after. A settlement hiccup must never
+    // block the ban, so it's best-effort.
+    try {
+      await bills.generateBills(hostelId, toDay(leave_date).slice(0, 7));
+      await bills.applyAdvanceOnLeave(hostelId, user_id);
+    } catch {
+      // ignore — proceed to ban regardless.
+    }
     await users.setBanned(user_id, true);
     await logActivity(hostelId, "Member auto-banned (leave date reached)", undefined);
   }

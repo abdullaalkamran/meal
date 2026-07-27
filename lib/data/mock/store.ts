@@ -39,11 +39,14 @@ import type {
   CartItem,
   Payment,
   Product,
+  Promotion,
   Rating,
   Reaction,
   Room,
   ServiceListing,
   ShoppingCost,
+  ShoppingCostEditRequest,
+  ShoppingCostEditVote,
   ShortageRequest,
   StoreSettings,
   StudyAbroadItem,
@@ -68,6 +71,8 @@ export interface Tables {
   dutyPlans: DutyPlan[];
   swapRequests: SwapRequest[];
   shoppingCosts: ShoppingCost[];
+  shoppingCostEditRequests: ShoppingCostEditRequest[];
+  shoppingCostEditVotes: ShoppingCostEditVote[];
   shortageRequests: ShortageRequest[];
   bills: Bill[];
   payments: Payment[];
@@ -79,6 +84,8 @@ export interface Tables {
   mealEditVotes: MealEditVote[];
   announcements: Announcement[];
   notifications: Notification[];
+  pushSubscriptions: { id: string; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }[];
+  promotions: Promotion[];
   expenses: Expense[];
   transferRequests: HostelTransferRequest[];
   joinRequests: JoinRequest[];

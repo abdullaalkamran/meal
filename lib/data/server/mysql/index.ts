@@ -18,7 +18,8 @@ import {
   notifications,
   transfers,
 } from "./requests";
-import { cookAttendance, cookLeave, duties, mealEdits, swaps } from "./duties";
+import { cookAttendance, cookLeave, duties, mealEdits, shoppingCostEdits, swaps } from "./duties";
+import { pushSubscriptions } from "./push";
 import {
   campaigns,
   cart,
@@ -29,6 +30,7 @@ import {
   orders,
   products,
   promoSettings,
+  promotions,
   serviceCatalog,
   storeSettings,
   studyAbroad,
@@ -106,6 +108,7 @@ export const mysqlRepositories: Repositories = {
   duties,
   swaps,
   shoppingCosts,
+  shoppingCostEdits,
   shortages,
   bills,
   cookLeave,
@@ -113,6 +116,7 @@ export const mysqlRepositories: Repositories = {
   mealEdits,
   announcements,
   notifications,
+  pushSubscriptions,
   expenses,
   transfers,
   joinRequests,
@@ -133,4 +137,5 @@ export const mysqlRepositories: Repositories = {
   studyAbroad,
   studyLeads,
   promoSettings,
+  promotions,
 };

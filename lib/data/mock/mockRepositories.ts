@@ -21,6 +21,7 @@ import type {
   MealStopRepository,
   MenuRepository,
   NotificationRepository,
+  PushSubscriptionRepository,
   OrderRepository,
   CartRepository,
   ProductRepository,
@@ -30,6 +31,7 @@ import type {
   RoomRepository,
   ServiceCatalogRepository,
   ShoppingCostRepository,
+  ShoppingCostEditRepository,
   ShortageRepository,
   StoreSettingsRepository,
   StudyAbroadRepository,
@@ -37,9 +39,11 @@ import type {
   SwapRepository,
   TransferRepository,
   UsedBookRepository,
+  PromotionRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, SmtpSettings, StudyAbroadItem, User } from "../types";
+import type { Bill, BillSection, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
+import { getVapidPublicKey, sendToSubscription } from "../../push/webpush";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
 import { normalizePhone } from "../../utils/phone";
@@ -207,6 +211,18 @@ function logActivity(hostelId: string, action: string, detail?: string) {
   store.emit(`activity:${hostelId}`);
 }
 
+/** Best-effort browser push to every device the user subscribed, pruning dead
+ * subscriptions. Fire-and-forget from notifyUser — never blocks or throws. */
+async function sendPushToUserMock(userId: string, payload: { title: string; body: string; url?: string }) {
+  const subs = store.data.pushSubscriptions.filter((s) => s.userId === userId);
+  for (const sub of subs) {
+    const { gone } = await sendToSubscription(sub, payload);
+    if (gone) {
+      store.data.pushSubscriptions = store.data.pushSubscriptions.filter((s) => s.endpoint !== sub.endpoint);
+    }
+  }
+}
+
 function notifyUser(userId: string, title: string, body: string) {
   store.data.notifications.push({
     id: nextId("notif"),
@@ -217,6 +233,10 @@ function notifyUser(userId: string, title: string, body: string) {
     createdAt: new Date().toISOString(),
   });
   store.emit(`notifications:${userId}`);
+  // Push it to the browser too, so it arrives even when the app is closed.
+  setImmediate(() => {
+    void sendPushToUserMock(userId, { title, body }).catch(() => {});
+  });
 }
 
 /** Notifies a hostel's manager and owner (the people who approve things),
@@ -1449,11 +1469,121 @@ const shoppingCosts: ShoppingCostRepository = {
     );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
+  async recordForMember(cost) {
+    // Manager entered it — it's the member's cost, approved on entry, and
+    // flagged so everyone can see it was recorded by the manager.
+    store.data.shoppingCosts.push({
+      ...cost,
+      id: nextId("shopcost"),
+      status: "approved",
+      addedByManager: true,
+      createdAt: new Date().toISOString(),
+    });
+    notifyUser(
+      cost.userId,
+      "Shopping cost recorded for you",
+      `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`
+    );
+    store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
   async decide(id, status) {
     const cost = store.data.shoppingCosts.find((c) => c.id === id);
     if (!cost) return;
     cost.status = status;
     store.emit(`shoppingCosts:${cost.hostelId}`);
+  },
+};
+
+const shoppingCostEdits: ShoppingCostEditRepository = {
+  async listByHostel(hostelId) {
+    return store.data.shoppingCostEditRequests.filter((r) => r.hostelId === hostelId);
+  },
+  async request(req) {
+    const created: ShoppingCostEditRequest = {
+      ...req,
+      id: nextId("shopedit"),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    store.data.shoppingCostEditRequests.push(created);
+    const targetName = store.data.users.find((u) => u.id === req.targetUserId)?.name ?? "a member";
+    store.data.announcements.push({
+      id: nextId("ann"),
+      hostelId: req.hostelId,
+      kind: "shopping-cost-edit-poll",
+      title: `Change ${targetName}’s shopping cost to ৳${req.newAmount}?`,
+      body:
+        `The manager wants to change ${targetName}’s recorded shopping cost from ৳${req.currentAmount} to ৳${req.newAmount}` +
+        `${req.reason ? `. Reason: ${req.reason}` : ""}. Vote yes to allow — it changes this month’s meal rate for everyone.`,
+      payload: { requestId: created.id, costId: req.costId, targetUserId: req.targetUserId },
+      createdAt: new Date().toISOString(),
+    });
+    store.emit(`shoppingCostEdits:${req.hostelId}`);
+    store.emit(`announcements:${req.hostelId}`);
+  },
+  async vote(requestId, userId, choice) {
+    const existing = store.data.shoppingCostEditVotes.find(
+      (v) => v.requestId === requestId && v.userId === userId
+    );
+    if (existing) {
+      existing.choice = choice;
+      existing.votedAt = new Date().toISOString();
+    } else {
+      store.data.shoppingCostEditVotes.push({ requestId, userId, choice, votedAt: new Date().toISOString() });
+    }
+
+    const request = store.data.shoppingCostEditRequests.find((r) => r.id === requestId);
+    if (!request || request.status !== "pending") return;
+
+    const boarders = store.data.users.filter(
+      (u) => u.hostelId === request.hostelId && u.role !== "cook" && u.role !== "owner"
+    );
+    const yesVotes = store.data.shoppingCostEditVotes.filter(
+      (v) => v.requestId === requestId && v.choice === "yes"
+    ).length;
+    if (boarders.length > 0 && yesVotes / boarders.length >= 0.5) {
+      request.status = "approved";
+      // Apply the approved change to the cost itself.
+      const cost = store.data.shoppingCosts.find((c) => c.id === request.costId);
+      if (cost) {
+        cost.amount = request.newAmount;
+        if (request.newItems !== undefined) cost.items = request.newItems;
+        store.emit(`shoppingCosts:${request.hostelId}`);
+      }
+      const ann = store.data.announcements.find(
+        (a) =>
+          a.kind === "shopping-cost-edit-poll" &&
+          (a.payload as { requestId?: string })?.requestId === requestId
+      );
+      if (ann) {
+        ann.kind = "shopping-cost-edit-resolved";
+        ann.title = "Shopping cost change approved";
+        ann.body = `Members approved the change — the cost is now ৳${request.newAmount}.`;
+      }
+      notifyUser(
+        request.targetUserId,
+        "Your shopping cost was changed",
+        `Members approved changing your recorded shopping cost to ৳${request.newAmount}.`
+      );
+    }
+    store.emit(`shoppingCostEdits:${request.hostelId}`);
+    store.emit(`announcements:${request.hostelId}`);
+  },
+  async listVotes(requestId) {
+    return store.data.shoppingCostEditVotes.filter((v) => v.requestId === requestId);
+  },
+  async withdraw(requestId) {
+    const request = store.data.shoppingCostEditRequests.find((r) => r.id === requestId);
+    if (!request) return;
+    store.data.shoppingCostEditRequests = store.data.shoppingCostEditRequests.filter(
+      (r) => r.id !== requestId
+    );
+    store.emit(`shoppingCostEdits:${request.hostelId}`);
+  },
+  subscribe(hostelId, cb) {
+    const fire = () => cb(store.data.shoppingCostEditRequests.filter((r) => r.hostelId === hostelId));
+    fire();
+    return store.on(`shoppingCostEdits:${hostelId}`, fire);
   },
 };
 
@@ -1501,6 +1631,11 @@ const bills: BillRepository = {
     return store.data.bills.find(
       (b) => b.hostelId === hostelId && b.userId === userId && b.month === month
     );
+  },
+  async getLatestForUser(hostelId, userId) {
+    return store.data.bills
+      .filter((b) => b.hostelId === hostelId && b.userId === userId)
+      .sort((a, b) => b.month.localeCompare(a.month))[0];
   },
   async listByHostel(hostelId, month) {
     return store.data.bills.filter((b) => b.hostelId === hostelId && b.month === month);
@@ -1705,14 +1840,21 @@ const bills: BillRepository = {
           };
         });
 
-    const prevDate = new Date(year, mon - 2, 1);
-    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-
     // The AUTOMATIC meal rate: this month's shopping spend ÷ meals eaten
     // (member + guest). Every member and guest meal is billed at this actual
     // per-meal cost — the sum of all meal charges equals the shopping spend.
     const { rate: mealRate } = actualMealRateFor(hostelId, month);
     const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    // What each member personally spent on approved shopping this month —
+    // credited against their own meal cost below (same set that feeds the
+    // rate), so a heavy shopper's meal cost nets to a credit.
+    const shoppingByUser = new Map<string, number>();
+    for (const c of store.data.shoppingCosts) {
+      if (c.hostelId !== hostelId || c.status !== "approved") continue;
+      if (!c.dates.some((d) => d.startsWith(month))) continue;
+      shoppingByUser.set(c.userId, (shoppingByUser.get(c.userId) ?? 0) + c.amount);
+    }
 
     // Which month the rent line covers (default: the bill's own month), and
     // whether the hostel charges a month's advance rent on a member's first bill.
@@ -1765,7 +1907,14 @@ const bills: BillRepository = {
           amount: round2(guestMeals * mealRate),
         });
       }
-      const mealCostTotal = round2((ownMeals + guestMeals) * mealRate);
+      // Credit the member's own shopping spend against their meal cost, so the
+      // bill nets to (meals − their spend) and matches the monthly report. Can
+      // go negative — a credit the hostel owes, which then carries forward.
+      const shoppingSpent = shoppingByUser.get(u.id) ?? 0;
+      if (shoppingSpent > 0) {
+        mealCostItems.push({ label: "Your shopping this month (credit)", amount: -round2(shoppingSpent) });
+      }
+      const mealCostTotal = round2((ownMeals + guestMeals) * mealRate - shoppingSpent);
 
       const serviceItems = expenseItemsFor(utilityExpenses, u.id);
       // Owner-set flat monthly service charge — not expense-backed, so it
@@ -1820,11 +1969,14 @@ const bills: BillRepository = {
           paid: paidFor("cookSalary"),
         },
       ];
-      const prevBill = store.data.bills.find(
-        (b) => b.hostelId === hostelId && b.userId === u.id && b.month === prevMonth
-      );
-      const previousBalance = prevBill ? Math.max(prevBill.grandTotal - prevBill.paid, 0) : 0;
-      const grandTotal = sections.reduce((sum, s) => sum + s.total, 0) + previousBalance;
+      // Carry the running balance from the member's MOST RECENT prior bill (not
+      // strictly last month, so a skipped month never drops it), keeping BOTH
+      // signs: a due (+) to collect or a credit (−) that reduces this bill.
+      const prevBill = store.data.bills
+        .filter((b) => b.hostelId === hostelId && b.userId === u.id && b.month < month)
+        .sort((a, b) => b.month.localeCompare(a.month))[0];
+      const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
+      const grandTotal = round2(sections.reduce((sum, s) => sum + s.total, 0) + previousBalance);
 
       return {
         id: existing?.id ?? nextId("bill"),
@@ -2144,6 +2296,9 @@ const notifications: NotificationRepository = {
       createdAt: new Date().toISOString(),
     });
     store.emit(`notifications:${n.userId}`);
+    setImmediate(() => {
+      void sendPushToUserMock(n.userId, { title: n.title, body: n.body }).catch(() => {});
+    });
   },
   async markRead(id) {
     const n = store.data.notifications.find((x) => x.id === id);
@@ -2160,6 +2315,36 @@ const notifications: NotificationRepository = {
       );
     fire();
     return store.on(`notifications:${userId}`, fire);
+  },
+};
+
+const pushSubscriptions: PushSubscriptionRepository = {
+  async getPublicKey() {
+    return getVapidPublicKey();
+  },
+  async save(sub) {
+    const userId = actingUser?.id;
+    if (!userId || !sub?.endpoint) return;
+    // Upsert by endpoint so the same browser never piles up duplicate rows.
+    const existing = store.data.pushSubscriptions.find((s) => s.endpoint === sub.endpoint);
+    if (existing) {
+      existing.userId = userId;
+      existing.p256dh = sub.p256dh;
+      existing.auth = sub.auth;
+    } else {
+      store.data.pushSubscriptions.push({
+        id: nextId("push"),
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.p256dh,
+        auth: sub.auth,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  },
+  async unsubscribe(endpoint) {
+    if (!endpoint) return;
+    store.data.pushSubscriptions = store.data.pushSubscriptions.filter((s) => s.endpoint !== endpoint);
   },
 };
 
@@ -2428,7 +2613,7 @@ const MIN_LEAVE_NOTICE_DAYS = 30;
  * sealing: runs on every read rather than needing a background job, and is
  * cheap since a hostel only ever has a handful of leave requests (not an
  * unbounded date range). */
-function processDueLeaveRequests(hostelId: string): void {
+async function processDueLeaveRequests(hostelId: string): Promise<void> {
   const due = store.data.leaveRequests.filter(
     (r) => r.hostelId === hostelId && r.status === "approved" && r.leaveDate <= today()
   );
@@ -2436,6 +2621,16 @@ function processDueLeaveRequests(hostelId: string): void {
     const idx = store.data.users.findIndex((u) => u.id === r.userId);
     if (idx === -1 || store.data.users[idx].banned) continue;
     const user = store.data.users[idx];
+    // Generate this member's FINAL bill for their leave month while they're
+    // still billable (generateBills skips banned members) and fold in any held
+    // advance rent, so their closing balance is captured before they leave the
+    // roster. Runs once — the ban below makes them skip this loop afterward.
+    try {
+      await bills.generateBills(hostelId, r.leaveDate.slice(0, 7));
+      await bills.applyAdvanceOnLeave(hostelId, user.id);
+    } catch {
+      // Never let a settlement hiccup block the ban.
+    }
     store.data.rooms.forEach((room) => {
       if (room.occupantIds.includes(user.id)) {
         room.occupantIds = room.occupantIds.filter((id) => id !== user.id);
@@ -2451,12 +2646,12 @@ function processDueLeaveRequests(hostelId: string): void {
 
 const leaveRequests: LeaveRequestRepository = {
   async listByHostel(hostelId) {
-    processDueLeaveRequests(hostelId);
+    await processDueLeaveRequests(hostelId);
     return store.data.leaveRequests.filter((r) => r.hostelId === hostelId);
   },
   async listByUser(userId) {
     const user = store.data.users.find((u) => u.id === userId);
-    if (user?.hostelId) processDueLeaveRequests(user.hostelId);
+    if (user?.hostelId) await processDueLeaveRequests(user.hostelId);
     return store.data.leaveRequests.filter((r) => r.userId === userId);
   },
   async request(req) {
@@ -3160,6 +3355,48 @@ const usedBooks: UsedBookRepository = {
   },
 };
 
+const promotions: PromotionRepository = {
+  async listAll() {
+    return [...store.data.promotions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async listActive(placement) {
+    return store.data.promotions
+      .filter((p) => p.placement === placement && p.active)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async add(promo) {
+    store.data.promotions.push({
+      ...promo,
+      id: nextId("promo"),
+      active: true,
+      createdAt: new Date().toISOString(),
+    });
+    store.emit("promotions");
+  },
+  async update(id, patch) {
+    const p = store.data.promotions.find((x) => x.id === id);
+    if (!p) return;
+    Object.assign(p, patch);
+    store.emit("promotions");
+  },
+  async toggleActive(id, active) {
+    const p = store.data.promotions.find((x) => x.id === id);
+    if (!p) return;
+    p.active = active;
+    store.emit("promotions");
+  },
+  async remove(id) {
+    store.data.promotions = store.data.promotions.filter((p) => p.id !== id);
+    store.emit("promotions");
+  },
+  subscribe(cb) {
+    const fire = () =>
+      cb([...store.data.promotions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    fire();
+    return store.on("promotions", fire);
+  },
+};
+
 export const mockRepositories: Repositories = {
   users,
   activity,
@@ -3172,6 +3409,7 @@ export const mockRepositories: Repositories = {
   duties,
   swaps,
   shoppingCosts,
+  shoppingCostEdits,
   shortages,
   bills,
   cookLeave,
@@ -3179,6 +3417,7 @@ export const mockRepositories: Repositories = {
   mealEdits,
   announcements,
   notifications,
+  pushSubscriptions,
   expenses,
   transfers,
   joinRequests,
@@ -3196,6 +3435,7 @@ export const mockRepositories: Repositories = {
   storeSettings,
   coupons,
   usedBooks,
+  promotions,
   studyAbroad,
   studyLeads,
   promoSettings,

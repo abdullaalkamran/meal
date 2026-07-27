@@ -41,11 +41,13 @@ import type {
   NewProduct,
   NewUsedBook,
   Notification,
+  PushSubscriptionInput,
   Order,
   CartItem,
   PaymentMethod,
   Payment,
   Product,
+  Promotion,
   ProductKind,
   Rating,
   NewServiceListing,
@@ -54,6 +56,8 @@ import type {
   ServiceKind,
   ServiceListing,
   ShoppingCost,
+  ShoppingCostEditRequest,
+  ShoppingCostEditVote,
   ShortageRequest,
   SignupInput,
   Stars,
@@ -311,9 +315,25 @@ export interface SwapRepository {
 
 export interface ShoppingCostRepository {
   listByHostel(hostelId: string): Promise<ShoppingCost[]>;
-  submit(cost: Omit<ShoppingCost, "id" | "createdAt" | "status">): Promise<void>;
+  submit(cost: Omit<ShoppingCost, "id" | "createdAt" | "status" | "addedByManager">): Promise<void>;
+  /** Manager records a cost on a member's behalf — counts as that member's
+   * shopping cost, approved on entry, and flagged so all members can see the
+   * manager entered it. */
+  recordForMember(cost: Omit<ShoppingCost, "id" | "createdAt" | "status" | "addedByManager">): Promise<void>;
   /** Manager approve/deny — only 'approved' spend counts toward the actual meal rate. */
   decide(id: string, status: "approved" | "denied"): Promise<void>;
+}
+
+export interface ShoppingCostEditRepository {
+  listByHostel(hostelId: string): Promise<ShoppingCostEditRequest[]>;
+  /** Creates the edit request and posts a hostel-wide vote-poll announcement. */
+  request(req: Omit<ShoppingCostEditRequest, "id" | "status" | "createdAt">): Promise<void>;
+  /** Records the vote; once yes votes reach half the hostel's boarders the
+   * proposed amount/items are applied to the cost automatically. */
+  vote(requestId: string, userId: string, choice: ShoppingCostEditVote["choice"]): Promise<void>;
+  listVotes(requestId: string): Promise<ShoppingCostEditVote[]>;
+  withdraw(requestId: string): Promise<void>;
+  subscribe(hostelId: string, cb: (list: ShoppingCostEditRequest[]) => void): Unsubscribe;
 }
 
 export interface ShortageRepository {
@@ -325,6 +345,9 @@ export interface ShortageRepository {
 
 export interface BillRepository {
   getBill(hostelId: string, userId: string, month: string): Promise<Bill | undefined>;
+  /** The member's most recent bill of any month — used to read a former
+   * member's closing balance for settlement. */
+  getLatestForUser(hostelId: string, userId: string): Promise<Bill | undefined>;
   listByHostel(hostelId: string, month: string): Promise<Bill[]>;
   listPayments(billId: string): Promise<Payment[]>;
   pay(payment: Omit<Payment, "id">): Promise<void>;
@@ -405,6 +428,19 @@ export interface AnnouncementRepository {
   post(a: Omit<Announcement, "id" | "createdAt">): Promise<Announcement>;
   update(id: string, patch: Partial<Announcement>): Promise<void>;
   subscribe(hostelId: string, cb: (list: Announcement[]) => void): Unsubscribe;
+}
+
+export interface PushSubscriptionRepository {
+  /** The VAPID public key the browser needs to create a subscription (empty
+   * when push isn't configured on the server). */
+  getPublicKey(): Promise<string>;
+  /** Store the current session user's browser push subscription (upsert by
+   * endpoint). The user is taken from the session, not a passed id. Named
+   * `save` (not `subscribe`) because the RPC layer reserves the `subscribe*`
+   * prefix for client-side polling subscriptions. */
+  save(sub: PushSubscriptionInput): Promise<void>;
+  /** Drop a subscription by endpoint (e.g. the user turned push off). */
+  unsubscribe(endpoint: string): Promise<void>;
 }
 
 export interface NotificationRepository {
@@ -597,6 +633,18 @@ export interface StudyLeadRepository {
   subscribe(cb: (list: StudyLead[]) => void): Unsubscribe;
 }
 
+export interface PromotionRepository {
+  /** Every promotion, for the Service dashboard. */
+  listAll(): Promise<Promotion[]>;
+  /** Active promotions for a placement, shown to members (hero or popup). */
+  listActive(placement: Promotion["placement"]): Promise<Promotion[]>;
+  add(promo: Omit<Promotion, "id" | "createdAt" | "active">): Promise<void>;
+  update(id: string, patch: Partial<Omit<Promotion, "id" | "createdAt">>): Promise<void>;
+  toggleActive(id: string, active: boolean): Promise<void>;
+  remove(id: string): Promise<void>;
+  subscribe(cb: (list: Promotion[]) => void): Unsubscribe;
+}
+
 export interface UsedBookRepository {
   listAll(): Promise<UsedBookListing[]>;
   add(book: NewUsedBook): Promise<void>;
@@ -624,6 +672,7 @@ export interface Repositories {
   duties: DutyRepository;
   swaps: SwapRepository;
   shoppingCosts: ShoppingCostRepository;
+  shoppingCostEdits: ShoppingCostEditRepository;
   shortages: ShortageRepository;
   bills: BillRepository;
   cookLeave: CookLeaveRepository;
@@ -631,6 +680,7 @@ export interface Repositories {
   mealEdits: MealEditRepository;
   announcements: AnnouncementRepository;
   notifications: NotificationRepository;
+  pushSubscriptions: PushSubscriptionRepository;
   expenses: ExpenseRepository;
   transfers: TransferRepository;
   joinRequests: JoinRequestRepository;
@@ -648,6 +698,7 @@ export interface Repositories {
   storeSettings: StoreSettingsRepository;
   coupons: CouponRepository;
   usedBooks: UsedBookRepository;
+  promotions: PromotionRepository;
   studyAbroad: StudyAbroadRepository;
   studyLeads: StudyLeadRepository;
   promoSettings: PromoSettingsRepository;
