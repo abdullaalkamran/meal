@@ -3,43 +3,50 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
-import { useActivePromotions } from "@/hooks/usePromotions";
+import { repo, type Promotion } from "@/lib/data";
 
-// One dismissal per popup per browser session — so a member sees it once after
-// signing in, not on every page they open.
-const seenKey = (id: string) => `promo-popup-seen:${id}`;
+// Shown at most once per browser session. A single flag (not one per id) also
+// lets us SKIP the fetch entirely once dismissed — important because this lives
+// in AppShell, so a live subscription here would re-pull promo images on every
+// data change, on every page.
+const SESSION_FLAG = "promo-popup-done";
 
 /** A square promotional card that pops up once after sign-in. The Service
  * Manager uploads these under Home page promotions. */
 export function LoginPromoPopup() {
-  const popups = useActivePromotions("popup");
-  const [shownId, setShownId] = useState<string | null>(null);
+  const [promo, setPromo] = useState<Promotion | null>(null);
 
   useEffect(() => {
-    if (shownId) return;
-    const next = popups.find((p) => {
-      try {
-        return sessionStorage.getItem(seenKey(p.id)) !== "1";
-      } catch {
-        return true;
-      }
-    });
-    // sessionStorage is client-only, so this decision can't be made during
-    // render (SSR) — it must live in an effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (next) setShownId(next.id);
-  }, [popups, shownId]);
+    let done = false;
+    try {
+      done = sessionStorage.getItem(SESSION_FLAG) === "1";
+    } catch {
+      // sessionStorage unavailable — just proceed to fetch once.
+    }
+    if (done) return;
+    let cancelled = false;
+    // One-time fetch (not a subscription): only pull the popup image when we
+    // might actually show it, never on every page/render.
+    repo.promotions
+      .listActive("popup")
+      .then((list) => {
+        if (!cancelled && list.length > 0) setPromo(list[0]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const promo = popups.find((p) => p.id === shownId);
   if (!promo) return null;
 
   const dismiss = () => {
     try {
-      sessionStorage.setItem(seenKey(promo.id), "1");
+      sessionStorage.setItem(SESSION_FLAG, "1");
     } catch {
-      // ignore storage failures — worst case it shows again next mount
+      // ignore storage failures — worst case it shows again next session mount
     }
-    setShownId(null);
+    setPromo(null);
   };
 
   const image = (
