@@ -49,13 +49,27 @@ export function JoinQrSheet({
   // window and triggers the browser print dialog — hang it on the door.
   const printPoster = async () => {
     if (!url) return;
-    const dataUrl = await QRCode.toDataURL(url, { width: 900, margin: 2 });
-    const name = hostelName ?? "our hostel";
+    // Open the window SYNCHRONOUSLY, inside the click, so the browser doesn't
+    // block it as a pop-up — generating the QR (async) first would break the
+    // user-gesture chain. Fill it in once the QR data URL is ready.
     const w = window.open("", "_blank", "width=720,height=900");
     if (!w) {
-      toast("Allow pop-ups to print the poster");
+      toast("Allow pop-ups for this site to print the poster");
       return;
     }
+    w.document.write("<!doctype html><title>Preparing poster…</title><body style='font-family:sans-serif;padding:40px'>Preparing poster…</body>");
+    const name = hostelName ?? "our hostel";
+    let dataUrl: string;
+    try {
+      dataUrl = await QRCode.toDataURL(url, { width: 900, margin: 2 });
+    } catch {
+      w.close();
+      toast("Could not generate the QR");
+      return;
+    }
+    w.document.open();
+    // Print fires from the poster window itself once the QR image has loaded,
+    // so it's never blank.
     w.document.write(`<!doctype html><html><head><title>${name} — join QR</title>
       <style>
         *{margin:0;box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,sans-serif}
@@ -70,13 +84,11 @@ export function JoinQrSheet({
         <div class="brand">MyDorm</div>
         <h1>${name}</h1>
         <p>Looking for a seat? Scan to see rooms &amp; join.</p>
-        <img src="${dataUrl}" alt="Join QR" />
+        <img src="${dataUrl}" alt="Join QR" onload="setTimeout(function(){window.focus();window.print();},200)" />
         <div class="cta">Scan to view &amp; request to join</div>
         <div class="sub">See free seats, rent &amp; rooms, then send a join request.</div>
       </body></html>`);
     w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 300);
   };
 
   return (
