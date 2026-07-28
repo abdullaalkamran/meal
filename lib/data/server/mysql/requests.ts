@@ -46,7 +46,8 @@ const now = () => fromIso(new Date().toISOString());
 
 interface JoinRow {
   id: string; hostel_id: string; user_id: string | null; name: string;
-  phone: string; status: JoinRequest["status"]; created_at: string;
+  phone: string; preferred_room_id: string | null; join_month: string | null;
+  status: JoinRequest["status"]; created_at: string;
 }
 
 const toJoin = (r: JoinRow): JoinRequest => ({
@@ -55,11 +56,13 @@ const toJoin = (r: JoinRow): JoinRequest => ({
   name: r.name,
   phone: r.phone,
   ...(r.user_id ? { userId: r.user_id } : {}),
+  ...(r.preferred_room_id ? { preferredRoomId: r.preferred_room_id } : {}),
+  ...(r.join_month ? { joinMonth: r.join_month } : {}),
   status: r.status,
   createdAt: toIso(r.created_at),
 });
 
-const JOIN_COLS = "id, hostel_id, user_id, name, phone, status, created_at";
+const JOIN_COLS = "id, hostel_id, user_id, name, phone, preferred_room_id, join_month, status, created_at";
 
 export const joinRequests: JoinRequestRepository = {
   async listByHostel(hostelId) {
@@ -93,8 +96,9 @@ export const joinRequests: JoinRequestRepository = {
         );
       }
       await run(
-        "INSERT INTO join_requests (id, hostel_id, user_id, name, phone, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-        [newId("join"), req.hostelId, req.userId, req.name, req.phone, now()],
+        `INSERT INTO join_requests (id, hostel_id, user_id, name, phone, preferred_room_id, join_month, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [newId("join"), req.hostelId, req.userId, req.name, req.phone, req.preferredRoomId ?? null, req.joinMonth ?? null, now()],
         tx
       );
       await notifyHostelStaff(

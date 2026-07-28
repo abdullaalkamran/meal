@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/Button";
 import { QrScannerSheet } from "@/components/ui/QrScannerSheet";
 import { MyQrSheet } from "@/components/student/MyQrSheet";
 import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
+import { JoinRequestSheet } from "@/components/student/JoinRequestSheet";
 import { parseHostelCode } from "@/lib/utils/qr";
 import { repo, type Hostel, type JoinRequest, type Room } from "@/lib/data";
+import type { PublicRoomView } from "@/lib/types/publicHostel";
 
 function FindHostelInner() {
   const { user } = useSession();
@@ -28,6 +30,8 @@ function FindHostelInner() {
   const [myQrOpen, setMyQrOpen] = useState(false);
   const [scannedHostel, setScannedHostel] = useState<Hostel | null>(null);
   const [detailHostel, setDetailHostel] = useState<Hostel | null>(null);
+  const [joinHostel, setJoinHostel] = useState<{ id: string; name: string } | null>(null);
+  const [joinRooms, setJoinRooms] = useState<PublicRoomView[]>([]);
 
   const load = async () => {
     const all = (await repo.hostels.listAll()).filter((h) => !h.suspended);
@@ -52,20 +56,15 @@ function FindHostelInner() {
     myRequests.find((r) => r.hostelId === hostelId && r.status === "pending");
   const hasPendingAnywhere = myRequests.some((r) => r.status === "pending");
 
-  const sendRequest = async (h: Hostel) => {
-    if (!user) return;
-    try {
-      await repo.joinRequests.create({
-        hostelId: h.id,
-        userId: user.id,
-        name: user.name,
-        phone: user.phone,
-      });
-      toast(`Join request sent to ${h.name}`);
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not send the request");
-    }
-    await load();
+  // Open the join sheet (preferred room + move-in month) for a hostel, pulling
+  // its room availability from the same public endpoint the door-QR page uses.
+  const openJoin = async (h: Hostel) => {
+    setJoinHostel({ id: h.id, name: h.name });
+    setJoinRooms([]);
+    const view = await fetch(`/api/public/hostel/${h.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (view?.rooms) setJoinRooms(view.rooms as PublicRoomView[]);
   };
 
   // Student scanned a hostel's invite QR with the in-app scanner: pull the
@@ -156,7 +155,7 @@ function FindHostelInner() {
               Request pending…
             </div>
           ) : (
-            <Button fullWidth onClick={() => sendRequest(scannedHostel)}>
+            <Button fullWidth onClick={() => void openJoin(scannedHostel)}>
               Send join request to {scannedHostel.name}
             </Button>
           )}
@@ -219,7 +218,7 @@ function FindHostelInner() {
                   Request pending…
                 </div>
               ) : (
-                <Button fullWidth onClick={() => sendRequest(h)}>
+                <Button fullWidth onClick={() => void openJoin(h)}>
                   Send join request
                 </Button>
               )}
@@ -242,9 +241,17 @@ function FindHostelInner() {
         hostel={detailHostel}
         pending={!!(detailHostel && requestFor(detailHostel.id))}
         onSendRequest={(h) => {
-          void sendRequest(h);
+          void openJoin(h);
           setDetailHostel(null);
         }}
+      />
+      <JoinRequestSheet
+        open={!!joinHostel}
+        onClose={() => setJoinHostel(null)}
+        hostelId={joinHostel?.id ?? ""}
+        hostelName={joinHostel?.name ?? ""}
+        rooms={joinRooms}
+        onSent={() => void load()}
       />
     </div>
   );

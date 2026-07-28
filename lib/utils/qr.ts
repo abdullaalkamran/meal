@@ -1,6 +1,7 @@
-// Decoding helpers for the two QR payloads the app issues:
-// - Hostel invite (JoinQrSheet): <origin>/student/find-hostel?hostel=<id>
-// - Member code (MyQrSheet):     <origin>/manager/members?assign=<userId>
+// Decoding helpers for the QR payloads the app issues:
+// - Door QR (JoinQrSheet):   <origin>/h/<hostelId>   (also legacy
+//   /student/find-hostel?hostel=<id>)
+// - Member code (MyQrSheet): <origin>/manager/members?assign=<userId>
 // Both parsers also accept a bare id, so codes survive being copy-pasted.
 
 function paramFromUrl(text: string, param: string): string | null {
@@ -17,8 +18,15 @@ const bareToken = (text: string): string | null => {
   return /^[A-Za-z0-9_-]+$/.test(t) ? t : null;
 };
 
-/** Extracts a hostel id from a scanned hostel-invite QR (or pasted link). */
+/** Extracts a hostel id from a scanned door QR (or pasted link) — the new
+ * `/h/<id>` path, the legacy `?hostel=<id>` link, or a bare id. */
 export function parseHostelCode(text: string): string | null {
+  try {
+    const path = new URL(text.trim()).pathname.match(/\/h\/([A-Za-z0-9_-]+)/);
+    if (path) return path[1];
+  } catch {
+    // not a URL — fall through
+  }
   return paramFromUrl(text, "hostel") ?? bareToken(text);
 }
 

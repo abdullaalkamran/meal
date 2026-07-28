@@ -18,7 +18,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { repo, type Bill, type BillTarget, type Payment, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth } from "@/lib/utils/date";
+import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 
@@ -134,6 +134,15 @@ function ManagerApprovalsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[12px] font-extrabold">{r.name}</div>
                     <div className="text-[10px] font-semibold text-text-secondary">{r.phone}</div>
+                    {(r.preferredRoomId || r.joinMonth) && (
+                      <div className="mt-0.5 text-[9.5px] font-bold text-primary">
+                        {r.preferredRoomId
+                          ? `Wants Room ${rooms.find((x) => x.id === r.preferredRoomId)?.number ?? "?"}`
+                          : ""}
+                        {r.preferredRoomId && r.joinMonth ? " · " : ""}
+                        {r.joinMonth ? `from ${formatMonthLabel(r.joinMonth)}` : ""}
+                      </div>
+                    )}
                   </div>
                   <Chip tone="orange" active>
                     Pending
@@ -146,16 +155,25 @@ function ManagerApprovalsPage() {
                         No free rooms — add or free a seat first.
                       </div>
                     )}
-                    {emptyRooms.map((room) => (
-                      <button
-                        key={room.id}
-                        type="button"
-                        onClick={() => approveJoin(r.id, room.id)}
-                        className="rounded-pill bg-primary-soft px-3 py-1.5 text-[10.5px] font-extrabold text-primary"
-                      >
-                        Room {room.number}
-                      </button>
-                    ))}
+                    {/* Preferred room (if it currently has a free seat) floats first. */}
+                    {[...emptyRooms]
+                      .sort((a, b) => Number(b.id === r.preferredRoomId) - Number(a.id === r.preferredRoomId))
+                      .map((room) => {
+                        const preferred = room.id === r.preferredRoomId;
+                        return (
+                          <button
+                            key={room.id}
+                            type="button"
+                            onClick={() => approveJoin(r.id, room.id)}
+                            className={`rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold ${
+                              preferred ? "bg-primary text-white" : "bg-primary-soft text-primary"
+                            }`}
+                          >
+                            Room {room.number}
+                            {preferred ? " · preferred" : ""}
+                          </button>
+                        );
+                      })}
                   </div>
                 ) : (
                   <div className="flex gap-2">

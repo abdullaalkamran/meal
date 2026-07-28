@@ -645,6 +645,13 @@ export interface JoinRequest {
    * find-hostel / QR flow) — approval then attaches THAT user to the hostel
    * instead of creating a new one. Absent for walk-ins the manager adds. */
   userId?: string;
+  /** The room the requester would like — a currently-free seat, or one that a
+   * member's approved leave notice will free. The manager sees it as a
+   * preference and can honour it (or pick another) on approval. */
+  preferredRoomId?: string;
+  /** The month (YYYY-MM) the requester wants to move in — e.g. when a
+   * leave-freed seat opens up. */
+  joinMonth?: string;
   status: "pending" | "approved" | "denied";
   createdAt: string;
 }

@@ -15,6 +15,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { SCHEMA_VERSION } from "../schema";
 import { normalizePhone } from "../../utils/phone";
+import { hostelAvailability } from "../../utils/rooms";
+import type { PublicHostelView } from "../../types/publicHostel";
 import type { User } from "../types";
 import { store, type Tables } from "../mock/store";
 import { buildSeed } from "../mock/seed";
@@ -221,6 +223,50 @@ export async function getUserByEmail(email: string): Promise<User | undefined> {
   }
   ensureFresh();
   return store.data.users.find(match);
+}
+
+/** Builds the public hostel view for /api/public/hostel/[id]. Returns null for
+ * an unknown or suspended hostel. */
+export async function getPublicHostelView(id: string): Promise<PublicHostelView | null> {
+  const repos = usingMysql ? mysqlRepositories : mockRepositories;
+  if (usingMysql) await mysqlReady();
+  else ensureFresh();
+
+  const hostel = await repos.hostels.getHostel(id);
+  if (!hostel || hostel.suspended) return null;
+  const [rooms, leaves] = await Promise.all([
+    repos.rooms.listByHostel(id),
+    repos.leaveRequests.listByHostel(id),
+  ]);
+  const availability = hostelAvailability(rooms, leaves);
+  const availById = new Map(availability.map((a) => [a.roomId, a]));
+  const manager = hostel.managerId ? await repos.users.getUser(hostel.managerId) : undefined;
+  const owner = hostel.ownerId ? await repos.users.getUser(hostel.ownerId) : undefined;
+  const seatRents = rooms.map((r) => r.seatRent).filter((n) => n > 0);
+
+  return {
+    id: hostel.id,
+    name: hostel.name,
+    area: hostel.area,
+    street: hostel.street,
+    verified: !!hostel.verified,
+    seatRentFrom: seatRents.length ? Math.min(...seatRents) : undefined,
+    facilities: [...new Set(rooms.flatMap((r) => r.facilities ?? []))],
+    manager: manager ? { name: manager.name, phone: manager.phone } : undefined,
+    owner: owner ? { name: owner.name, phone: owner.phone } : undefined,
+    rooms: rooms.map((r) => {
+      const a = availById.get(r.id);
+      return {
+        roomId: r.id,
+        number: r.number,
+        capacity: r.capacity,
+        seatRent: r.seatRent,
+        facilities: r.facilities,
+        freeNow: a?.freeNow ?? Math.max(r.capacity - r.occupantIds.length, 0),
+        upcoming: a?.upcoming ?? [],
+      };
+    }),
+  };
 }
 
 /** Verifies phone+password for /api/auth. Never exposed over /api/rpc — see

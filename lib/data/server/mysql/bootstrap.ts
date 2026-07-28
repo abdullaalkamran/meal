@@ -326,6 +326,16 @@ async function seedPlatformTeam(): Promise<void> {
   }
 }
 
+/** Adds preferred-room + join-month to join_requests on databases that predate them. */
+async function ensureJoinRequestColumns(): Promise<void> {
+  if (!(await columnExists("join_requests", "preferred_room_id"))) {
+    await run("ALTER TABLE join_requests ADD COLUMN preferred_room_id VARCHAR(64) NULL AFTER phone");
+  }
+  if (!(await columnExists("join_requests", "join_month"))) {
+    await run("ALTER TABLE join_requests ADD COLUMN join_month VARCHAR(7) NULL AFTER preferred_room_id");
+  }
+}
+
 /** Creates promotions (home banners + login popups) on databases that predate it. */
 async function ensurePromotionsTable(): Promise<void> {
   if (await tableExists("promotions")) return;
@@ -473,6 +483,7 @@ export function ensureReady(): Promise<void> {
       await ensureCouponsTable();
       await ensureStoreSettingsTable();
       await ensurePushSubscriptionsTable();
+      await ensureJoinRequestColumns();
       await ensurePromotionsTable();
       await ensureEmailTables();
       await ensurePromoSettings();

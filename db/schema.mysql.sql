@@ -646,6 +646,10 @@ CREATE TABLE join_requests (
   user_id    VARCHAR(64) NULL,
   name       VARCHAR(191) NOT NULL,
   phone      VARCHAR(32)  NOT NULL,
+  -- Preferred room + intended move-in month (the QR / find-hostel flow). The
+  -- room may be a currently-free seat or one a member's leave notice frees.
+  preferred_room_id VARCHAR(64) NULL,
+  join_month VARCHAR(7)  NULL,
   status     ENUM('pending','approved','denied') NOT NULL DEFAULT 'pending',
   created_at DATETIME(3) NOT NULL,
   INDEX idx_join_hostel (hostel_id),
