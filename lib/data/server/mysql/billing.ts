@@ -24,7 +24,7 @@ import type {
   ShoppingCostRepository,
   ShortageRepository,
 } from "../../repository";
-import { currentMonth, formatMonthLabel, formatShortDate } from "../../../utils/date";
+import { currentMonth, formatMonthLabel, formatShortDate, monthRange } from "../../../utils/date";
 import { isServiceChargeCategory } from "../../../utils/expenseCategories";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
 import { logActivity, notify, notifyHostelStaff } from "./context";
@@ -658,9 +658,9 @@ export const bills: BillRepository = {
            FROM shopping_costs c
           WHERE c.hostel_id = ? AND c.status = 'approved'
             AND EXISTS (SELECT 1 FROM shopping_cost_dates d
-                         WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)
+                         WHERE d.cost_id = c.id AND d.day >= ? AND d.day <= ?)
           GROUP BY c.user_id`,
-        [hostelId, month],
+        [hostelId, from, to],
         tx
       );
       const shoppingByUser = new Map(shopTotals.map((s) => [s.user_id, Number(s.spent ?? 0)]));
@@ -845,12 +845,13 @@ export const bills: BillRepository = {
 
 /** Same computation as meals.getActualMealRate, usable inside a transaction. */
 async function mealRateFor(hostelId: string, month: string, tx: Queryable) {
+  const [mFrom, mTo] = monthRange(month);
   const spend = await one<{ total: number | null }>(
     `SELECT SUM(c.amount) AS total FROM shopping_costs c
       WHERE c.hostel_id = ? AND c.status = 'approved'
         AND EXISTS (SELECT 1 FROM shopping_cost_dates d
-                     WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)`,
-    [hostelId, month],
+                     WHERE d.cost_id = c.id AND d.day >= ? AND d.day < ?)`,
+    [hostelId, mFrom, mTo],
     tx
   );
   const totalShopping = Number(spend?.total ?? 0);
@@ -860,7 +861,7 @@ async function mealRateFor(hostelId: string, month: string, tx: Queryable) {
   const totals = await one<{ own: number | null; guests: number | null }>(
     `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
        FROM meal_entries e JOIN users u ON u.id = e.user_id
-      WHERE e.hostel_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+      WHERE e.hostel_id = ? AND e.day >= ? AND e.day < ?
         AND u.hostel_id = ? AND u.banned = 0
         AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
         AND (u.joined_at IS NULL OR u.joined_at <= e.day)
@@ -869,7 +870,7 @@ async function mealRateFor(hostelId: string, month: string, tx: Queryable) {
            WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
              AND r.status = 'resolved_cooked'
         )`,
-    [hostelId, month, hostelId],
+    [hostelId, mFrom, mTo, hostelId],
     tx
   );
   const totalMeals = Number(totals?.own ?? 0) + Number(totals?.guests ?? 0);

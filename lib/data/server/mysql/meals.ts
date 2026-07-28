@@ -26,7 +26,7 @@ import type {
   MenuRepository,
   RatingRepository,
 } from "../../repository";
-import { addDays, today } from "../../../utils/date";
+import { addDays, monthRange, today } from "../../../utils/date";
 import { canToggleMeal } from "../../../utils/mealPolicy";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
 import { notify } from "./context";
@@ -303,6 +303,7 @@ export const meals: MealRepository = {
   async getActualMealRate(hostelId, month) {
     // Seal the month first so days nobody touched still contribute the meals
     // that were actually eaten.
+    const [mFrom, mTo] = monthRange(month);
     await sealDays(hostelId, `${month}-01`, `${month}-31`);
     // Only APPROVED shopping counts — the same condition generateBills uses
     // (billing.ts mealRateFor), so the rate members see matches the rate they
@@ -311,8 +312,8 @@ export const meals: MealRepository = {
       `SELECT SUM(c.amount) AS total FROM shopping_costs c
         WHERE c.hostel_id = ? AND c.status = 'approved'
           AND EXISTS (SELECT 1 FROM shopping_cost_dates d
-                       WHERE d.cost_id = c.id AND DATE_FORMAT(d.day, '%Y-%m') = ?)`,
-      [hostelId, month]
+                       WHERE d.cost_id = c.id AND d.day >= ? AND d.day < ?)`,
+      [hostelId, mFrom, mTo]
     );
     const totalShopping = Number(spend?.total ?? 0);
 
@@ -325,7 +326,7 @@ export const meals: MealRepository = {
          FROM meal_entries e
          JOIN users u ON u.id = e.user_id
         WHERE e.hostel_id = ?
-          AND DATE_FORMAT(e.day, '%Y-%m') = ?
+          AND e.day >= ? AND e.day < ?
           AND u.hostel_id = ?
           AND u.banned = 0
           AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
@@ -335,13 +336,14 @@ export const meals: MealRepository = {
              WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
                AND r.status = 'resolved_cooked'
           )`,
-      [hostelId, month, hostelId]
+      [hostelId, mFrom, mTo, hostelId]
     );
     const totalMeals = Number(meals?.own ?? 0) + Number(meals?.guests ?? 0);
     return { rate: totalMeals > 0 ? totalShopping / totalMeals : 0, totalShopping, totalMeals };
   },
 
   async getMemberMealSummary(hostelId, userId, month) {
+    const [mFrom, mTo] = monthRange(month);
     await sealDays(hostelId, `${month}-01`, `${month}-31`);
     // Everything this member has ON so far this month, from their join date up
     // to TODAY — meals that have actually happened. Future days they've toggled
@@ -349,10 +351,10 @@ export const meals: MealRepository = {
     const on = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e JOIN users u ON u.id = e.user_id
-        WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+        WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.day < ?
           AND e.day <= ?
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)`,
-      [hostelId, userId, month, today()]
+      [hostelId, userId, mFrom, mTo, today()]
     );
     const mealsOn = Number(on?.own ?? 0) + Number(on?.guests ?? 0);
     // Of those, only the (day, meal) slots a manager confirmed cooked get
@@ -360,14 +362,14 @@ export const meals: MealRepository = {
     const billed = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e JOIN users u ON u.id = e.user_id
-        WHERE e.hostel_id = ? AND e.user_id = ? AND DATE_FORMAT(e.day, '%Y-%m') = ?
+        WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.day < ?
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)
           AND EXISTS (
             SELECT 1 FROM cook_attendance_reports r
              WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
                AND r.status = 'resolved_cooked'
           )`,
-      [hostelId, userId, month]
+      [hostelId, userId, mFrom, mTo]
     );
     const billedMeals = Number(billed?.own ?? 0) + Number(billed?.guests ?? 0);
     const { rate } = await meals.getActualMealRate(hostelId, month);

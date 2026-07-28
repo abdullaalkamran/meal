@@ -63,6 +63,14 @@ export function lastDayOfMonth(monthStr: string): string {
   return `${monthStr}-${String(last).padStart(2, "0")}`;
 }
 
+/** [inclusive first day, EXCLUSIVE first-of-next-month] for a YYYY-MM month.
+ * Use for index-friendly SQL date ranges — `day >= from AND day < to` lets
+ * MySQL use the (hostel_id, day) index, unlike DATE_FORMAT(day,'%Y-%m') = ?
+ * which is a function on the column and forces a full scan. */
+export function monthRange(monthStr: string): [string, string] {
+  return [`${monthStr}-01`, `${addMonths(monthStr, 1)}-01`];
+}
+
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH = [
   "Jan",
