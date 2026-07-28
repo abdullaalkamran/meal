@@ -46,7 +46,10 @@ export function HomeHero({
    * a bill exists. Falls back to the bill's count. */
   mealsOn?: number | null;
 }) {
-  const [mode, setMode] = useState<"promos" | "bill">("promos");
+  // Open on the bill card first; after a peek it flips to the promo carousel,
+  // which then auto-advances one card at a time. Tapping "My bill & credit"
+  // returns to the bill and repeats the same flip-out.
+  const [mode, setMode] = useState<"promos" | "bill">("bill");
   const trackRef = useRef<HTMLDivElement>(null);
   const pausedUntil = useRef(0);
   const [index, setIndex] = useState(0);
@@ -160,8 +163,8 @@ export function HomeHero({
         </button>
       </div>
 
-      {/* key={mode} re-mounts on toggle so the swap animates instead of snapping */}
-      <div key={mode} style={{ animation: "heroSwap 0.3s ease" }}>
+      {/* key={mode} re-mounts on toggle so each switch plays a 3D card flip */}
+      <div key={mode} style={{ animation: "heroFlip 0.5s ease" }}>
       {mode === "promos" ? (
         <div>
           <div
@@ -179,7 +182,7 @@ export function HomeHero({
               <div key={s.id} className="w-full shrink-0 snap-center">
                 <Link href={s.href}>
                   <div
-                    className="relative overflow-hidden rounded-card shadow-soft"
+                    className="relative overflow-hidden rounded-card"
                     style={{ height: settings.photoHeightPx }}
                   >
                     {s.image ? (
