@@ -1,11 +1,11 @@
 // Step 1 of "forgot password": email a reset code to the account's address.
-//   POST { phone }
+//   POST { email }
 // No session required (the user is locked out). To limit account enumeration,
-// an unknown number returns the same generic success as a known one.
+// an unknown address returns the same generic success as a known one.
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { createResetOtp, getUserByPhone } from "@/lib/data/server/db";
+import { createResetOtp, getUserByEmail } from "@/lib/data/server/db";
 import { sendResetEmail } from "@/lib/data/server/mailer";
 
 export const dynamic = "force-dynamic";
@@ -19,27 +19,19 @@ function maskEmail(email: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { phone?: string };
+  let body: { email?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
-  const phone = (body.phone ?? "").trim();
-  if (!phone) return NextResponse.json({ error: "Enter your phone number." }, { status: 400 });
+  const email = (body.email ?? "").trim();
+  if (!email) return NextResponse.json({ error: "Enter your email address." }, { status: 400 });
 
-  const generic = { ok: true, message: "If an account with that number has an email on file, a reset code has been sent." };
-  const user = await getUserByPhone(phone);
-  if (!user) return NextResponse.json(generic);
-
-  if (!user.email) {
-    // Found, but nothing to email — point them at an admin reset instead.
-    return NextResponse.json({
-      ok: true,
-      noEmail: true,
-      message: "This account has no email on file. Ask your hostel manager or owner to reset your password.",
-    });
-  }
+  const generic = { ok: true, message: "If an account uses that email, a reset code has been sent to it." };
+  const user = await getUserByEmail(email);
+  // Unknown email → generic success, so this can't probe which addresses exist.
+  if (!user || !user.email) return NextResponse.json(generic);
 
   const created = await createResetOtp(user.id);
   if (created.error) return NextResponse.json({ error: created.error }, { status: 429 });

@@ -207,6 +207,22 @@ export async function getUserByPhone(phone: string): Promise<User | undefined> {
   return store.data.users.find((u) => normalizePhone(u.phone) === target);
 }
 
+/** Looks up an account by its email (case-insensitive) — used by the
+ * forgot-password flow, which identifies the user by the address the reset
+ * code will be sent to. */
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const target = email.trim().toLowerCase();
+  if (!target) return undefined;
+  const match = (u: User) => (u.email ?? "").trim().toLowerCase() === target;
+  if (usingMysql) {
+    await mysqlReady();
+    const all = await mysqlRepositories.users.listAll();
+    return all.find(match);
+  }
+  ensureFresh();
+  return store.data.users.find(match);
+}
+
 /** Verifies phone+password for /api/auth. Never exposed over /api/rpc — see
  * the comment on verifyUserPassword/verifyPassword in each backend. */
 export async function verifyPassword(phone: string, password: string): Promise<User | undefined> {

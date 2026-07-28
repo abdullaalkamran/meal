@@ -65,15 +65,15 @@ export async function changePassword(
   }
 }
 
-/** Forgot-password step 1: request an emailed reset code by phone. */
+/** Forgot-password step 1: request a reset code emailed to that address. */
 export async function requestPasswordReset(
-  phone: string
+  email: string
 ): Promise<{ ok: boolean; message?: string; sentTo?: string; noEmail?: boolean; devCode?: string; error?: string }> {
   try {
     const res = await fetch("/api/auth/reset/request", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ email }),
     });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) return { ok: false, error: (data.error as string) ?? "Could not send a code." };
@@ -85,7 +85,7 @@ export async function requestPasswordReset(
 
 /** Forgot-password step 2: verify the code and set a new password. */
 export async function submitPasswordReset(
-  phone: string,
+  email: string,
   code: string,
   newPassword: string
 ): Promise<{ ok: boolean; error?: string }> {
@@ -93,7 +93,7 @@ export async function submitPasswordReset(
     const res = await fetch("/api/auth/reset/verify", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone, code, newPassword }),
+      body: JSON.stringify({ email, code, newPassword }),
     });
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     return res.ok ? { ok: true } : { ok: false, error: data.error ?? "Could not reset the password." };

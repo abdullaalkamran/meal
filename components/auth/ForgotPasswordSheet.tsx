@@ -11,21 +11,20 @@ const inputClass =
 const labelClass =
   "mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary";
 
-/** Two-step forgot-password: enter phone → a code is emailed → enter code +
- * new password. Accounts with no email on file are told to ask their manager
- * or owner (who can reset it directly). */
+/** Two-step forgot-password: enter email → a code is emailed → enter code +
+ * new password. */
 export function ForgotPasswordSheet({
   open,
   onClose,
-  initialPhone,
+  initialEmail,
 }: {
   open: boolean;
   onClose: () => void;
-  initialPhone?: string;
+  initialEmail?: string;
 }) {
   const { toast } = useToast();
-  const [step, setStep] = useState<"phone" | "code">("phone");
-  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [email, setEmail] = useState("");
   const [info, setInfo] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -36,29 +35,29 @@ export function ForgotPasswordSheet({
   useEffect(() => {
     if (open)
       queueMicrotask(() => {
-        setStep("phone");
-        setPhone(initialPhone ?? "");
+        setStep("email");
+        setEmail(initialEmail ?? "");
         setInfo("");
         setCode("");
         setNewPassword("");
         setConfirm("");
         setError("");
       });
-  }, [open, initialPhone]);
+  }, [open, initialEmail]);
 
   const requestCode = async () => {
-    if (busy || !phone.trim()) return;
+    if (busy || !email.trim()) return;
     setBusy(true);
     setError("");
-    const res = await requestPasswordReset(phone.trim());
+    const res = await requestPasswordReset(email.trim());
     setBusy(false);
     if (!res.ok) {
       setError(res.error ?? "Could not send a code.");
       return;
     }
     if (res.noEmail) {
-      // No email on file — can't self-serve; the admin reset covers this.
-      setError(res.message ?? "This account has no email on file.");
+      // Email isn't set up for the app yet — point them at an admin reset.
+      setError(res.message ?? "Email isn't set up yet — ask your manager or owner.");
       return;
     }
     // In dev (no SMTP), the API returns the code so the flow is testable.
@@ -79,7 +78,7 @@ export function ForgotPasswordSheet({
     }
     setBusy(true);
     setError("");
-    const res = await submitPasswordReset(phone.trim(), code.trim(), newPassword);
+    const res = await submitPasswordReset(email.trim(), code.trim(), newPassword);
     setBusy(false);
     if (!res.ok) {
       setError(res.error ?? "Could not reset the password.");
@@ -91,19 +90,19 @@ export function ForgotPasswordSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Reset password">
-      {step === "phone" ? (
+      {step === "email" ? (
         <>
           <div className="mb-3 text-[11px] font-semibold text-text-secondary">
-            Enter your phone number and we&rsquo;ll email a reset code to the address on your
-            account.
+            Enter the email on your account and we&rsquo;ll send a reset code to it.
           </div>
-          <div className={labelClass}>Phone number</div>
+          <div className={labelClass}>Email address</div>
           <input
-            value={phone}
-            inputMode="tel"
-            onChange={(e) => setPhone(e.target.value)}
+            value={email}
+            inputMode="email"
+            autoComplete="email"
+            onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && requestCode()}
-            placeholder="01711-000006"
+            placeholder="you@example.com"
             className={`${inputClass} mb-3`}
           />
           {error && (
@@ -111,7 +110,7 @@ export function ForgotPasswordSheet({
               {error}
             </div>
           )}
-          <Button fullWidth onClick={requestCode} disabled={busy || !phone.trim()}>
+          <Button fullWidth onClick={requestCode} disabled={busy || !email.trim()}>
             {busy ? "Sending…" : "Send reset code"}
           </Button>
         </>
@@ -157,10 +156,10 @@ export function ForgotPasswordSheet({
           </Button>
           <button
             type="button"
-            onClick={() => setStep("phone")}
+            onClick={() => setStep("email")}
             className="mt-2 min-h-10 w-full text-[10.5px] font-extrabold text-text-secondary"
           >
-            Use a different number
+            Use a different email
           </button>
         </>
       )}

@@ -99,11 +99,7 @@ export default function LoginPage() {
         New here? Create an account
       </Link>
 
-      <ForgotPasswordSheet
-        open={forgotOpen}
-        onClose={() => setForgotOpen(false)}
-        initialPhone={phone}
-      />
+      <ForgotPasswordSheet open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
   );
 }
