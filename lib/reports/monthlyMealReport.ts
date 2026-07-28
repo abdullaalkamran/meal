@@ -11,18 +11,15 @@
 // credit. Rent / service charge / cook salary / previous balance come from
 // the month's generated bill when one exists.
 
-import { repo, type MealSlot } from "@/lib/data";
-import { lastDayOfMonth } from "@/lib/utils/date";
+import { repo } from "@/lib/data";
 import type { ReportTable } from "./ownerReports";
-
-const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
 export interface MemberMonthlyReport {
   userId: string;
   name: string;
   isManager: boolean;
   room: string;
-  totalMeals: number; // own + guest meals eaten this month
+  totalMeals: number; // confirmed-cooked meals (own + guest) billed this month
   mealCost: number; // avgMealRate × totalMeals
   shoppingSpent: number; // what they personally spent on duty shopping
   mealBalance: number; // shoppingSpent − mealCost (+credit / −due)
@@ -61,45 +58,41 @@ export async function buildMonthlyMealReport(
   const hostel = await repo.hostels.getHostel(hostelId);
   if (!hostel) return null;
 
-  const from = `${month}-01`;
-  const to = lastDayOfMonth(month);
-  const [users, rooms, mealDays, shoppingCosts, bills] = await Promise.all([
+  const [users, rooms, shoppingCosts, bills, rateInfo] = await Promise.all([
     repo.users.listByHostel(hostelId),
     repo.rooms.listByHostel(hostelId),
-    repo.meals.listMealDays(hostelId, { from, to }),
     repo.shoppingCosts.listByHostel(hostelId),
     repo.bills.listByHostel(hostelId, month),
+    repo.meals.getActualMealRate(hostelId, month),
   ]);
 
   // Boarders eat meals; cooks are staff.
   const boarders = users.filter((u) => u.role !== "cook" && !u.banned);
   const inMonth = (date: string) => date.startsWith(month);
-  const monthCosts = shoppingCosts.filter((c) => c.dates.some(inMonth));
+  // Only APPROVED shopping counts toward the rate/spend — the same money the
+  // bills use. Pending/denied costs are excluded until the manager approves.
+  const monthCosts = shoppingCosts.filter((c) => c.status === "approved" && c.dates.some(inMonth));
 
-  // Count only current boarders' meals — entries left behind by banned or
-  // removed users would otherwise inflate totals that member rows exclude,
-  // and the settlement would stop reconciling.
-  const boarderIds = new Set(boarders.map((u) => u.id));
-  const mealsBy: Record<string, number> = {};
-  let totalMeals = 0;
-  for (const day of mealDays) {
-    for (const [userId, entry] of Object.entries(day.entries)) {
-      if (!boarderIds.has(userId)) continue;
-      for (const slot of SLOTS) {
-        // Guests count even when the host's own meal is off.
-        const eaten = (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
-        mealsBy[userId] = (mealsBy[userId] ?? 0) + eaten;
-        totalMeals += eaten;
-      }
-    }
-  }
+  // Hostel-wide rate/spend/meals straight from the billing source of truth:
+  // total = approved shopping ÷ CONFIRMED-COOKED meals (own + guest).
+  const { rate: avgMealRate, totalShopping, totalMeals } = rateInfo;
 
-  const totalShopping = monthCosts.reduce((sum, c) => sum + c.amount, 0);
-  const avgMealRate = totalMeals > 0 ? totalShopping / totalMeals : 0;
+  // Per-member "eaten" = only meals the manager confirmed were cooked, from the
+  // member's join date — exactly what the bill charges, NOT every toggled-on
+  // slot (which would count uncooked, pre-join and future days). Reusing the
+  // same summary the bill uses keeps the report reconciled with bills.
+  const summaries = new Map(
+    await Promise.all(
+      boarders.map((u) =>
+        repo.meals.getMemberMealSummary(hostelId, u.id, month).then((s) => [u.id, s] as const)
+      )
+    )
+  );
 
   const members: MemberMonthlyReport[] = boarders.map((u) => {
-    const memberMeals = mealsBy[u.id] ?? 0;
-    const mealCost = avgMealRate * memberMeals;
+    const summary = summaries.get(u.id);
+    const memberMeals = summary?.billedMeals ?? 0;
+    const mealCost = summary?.cost ?? 0;
     const shoppingSpent = monthCosts
       .filter((c) => c.userId === u.id)
       .reduce((sum, c) => sum + c.amount, 0);
