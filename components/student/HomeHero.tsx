@@ -163,8 +163,8 @@ export function HomeHero({
         </button>
       </div>
 
-      {/* key={mode} re-mounts on toggle so each switch plays a 3D card flip */}
-      <div key={mode} style={{ animation: "heroFlip 0.5s ease" }}>
+      {/* key={mode} re-mounts on toggle so each switch slides the new card in */}
+      <div key={mode} style={{ animation: "heroMove 0.4s ease" }}>
       {mode === "promos" ? (
         <div>
           <div

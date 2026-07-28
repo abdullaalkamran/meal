@@ -107,18 +107,15 @@
   }
 }
 
-/* 3D card flip used when the hero switches between the bill card and the
-   promo carousel. */
-@keyframes heroFlip {
+/* Horizontal slide used when the hero switches between the bill card and the
+   promo carousel — the new card moves in from the side. */
+@keyframes heroMove {
   from {
-    transform: perspective(1200px) rotateY(90deg);
+    transform: translateX(32px);
     opacity: 0;
   }
-  60% {
-    opacity: 1;
-  }
   to {
-    transform: perspective(1200px) rotateY(0deg);
+    transform: translateX(0);
     opacity: 1;
   }
 }
