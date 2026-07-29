@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChefHat, ChevronRight, Phone, QrCode, RefreshCw, Star } from "lucide-react";
+import { ChefHat, ChevronRight, Phone, QrCode, RefreshCw, ScrollText, Star } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useRooms } from "@/hooks/useRooms";
@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { AddMemberSheet } from "@/components/manager/AddMemberSheet";
 import { JoinQrSheet } from "@/components/hostel/JoinQrSheet";
+import { EditHostelRulesSheet } from "@/components/hostel/EditHostelRulesSheet";
 import { AssignStaffSheet } from "@/components/owner/AssignStaffSheet";
 import { repo, type Bill } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -35,6 +36,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [assignUserId, setAssignUserId] = useState<string | undefined>(undefined);
   const [qrOpen, setQrOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [assignCookOpen, setAssignCookOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [billsByUser, setBillsByUser] = useState<Record<string, Bill>>({});
@@ -124,6 +126,14 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
           <div className="text-[10.5px] font-semibold text-text-secondary">{hostel?.name}</div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRulesOpen(true)}
+            aria-label="Hostel rules"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-pill border border-border bg-card shadow-chip"
+          >
+            <Icon icon={ScrollText} size={16} className="text-text-secondary" />
+          </button>
           <button
             type="button"
             onClick={() => setQrOpen(true)}
@@ -401,6 +411,12 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
         onClose={() => setQrOpen(false)}
         hostelId={activeHostelId}
         hostelName={hostel?.name}
+      />
+      <EditHostelRulesSheet
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        hostelId={activeHostelId}
+        onSaved={() => toast("Hostel rules saved")}
       />
       <AssignStaffSheet
         open={assignCookOpen}

@@ -135,6 +135,25 @@ export default function PublicHostelPage() {
         </div>
       </div>
 
+      {/* House rules */}
+      {view.rules?.trim() && (
+        <div>
+          <div className="mb-2 text-[13px] font-extrabold">House rules</div>
+          <Card className="flex flex-col gap-2">
+            {view.rules
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean)
+              .map((rule, i) => (
+                <div key={i} className="flex gap-2">
+                  <span className="text-[11.5px] font-extrabold text-primary">{i + 1}.</span>
+                  <span className="text-[11.5px] font-semibold text-text">{rule}</span>
+                </div>
+              ))}
+          </Card>
+        </div>
+      )}
+
       {/* Contacts */}
       {(view.manager || view.owner) && (
         <Card className="flex flex-col gap-2">

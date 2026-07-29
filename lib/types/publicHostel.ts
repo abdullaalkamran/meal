@@ -23,6 +23,8 @@ export interface PublicHostelView {
   /** Whether this is a boys' or girls' hostel; undefined for legacy records. */
   gender?: "boys" | "girls";
   verified: boolean;
+  /** House rules, one per line; empty/undefined when none are set. */
+  rules?: string;
   seatRentFrom?: number;
   facilities: string[];
   manager?: { name: string; phone: string };

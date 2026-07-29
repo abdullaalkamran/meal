@@ -176,6 +176,27 @@ export function HostelDetailSheet({
         </a>
       </div>
 
+      {/* House rules */}
+      {hostel.rules?.trim() && (
+        <>
+          <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            House rules
+          </div>
+          <div className="mb-4 flex flex-col gap-1.5">
+            {hostel.rules
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean)
+              .map((rule, i) => (
+                <div key={i} className="flex gap-2 rounded-btn bg-bg px-3 py-2">
+                  <span className="text-[11px] font-extrabold text-primary">{i + 1}.</span>
+                  <span className="text-[11px] font-semibold text-text">{rule}</span>
+                </div>
+              ))}
+          </div>
+        </>
+      )}
+
       {ownHostel ? (
         <div className="rounded-btn bg-primary-soft px-3 py-2.5 text-center text-[11px] font-extrabold text-primary">
           You&rsquo;re a member of this hostel

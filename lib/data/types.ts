@@ -244,6 +244,10 @@ export interface Hostel {
   /** The platform's Service Manager has verified this hostel (its details are
    * genuine) — shows a "Verified" badge to people browsing hostels to join. */
   verified?: boolean;
+  /** House rules the owner/manager set — one rule per line (free text). Shown
+   * on the hostel detail sheet and the public door-QR page so prospective
+   * boarders see them before requesting to join. Empty/undefined = none set. */
+  rules?: string;
 }
 
 export type NewHostel = Omit<Hostel, "id">;

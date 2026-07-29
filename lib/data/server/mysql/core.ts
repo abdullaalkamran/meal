@@ -87,7 +87,7 @@ interface HostelRow {
   shopping_rotation_policy: "spin-wheel" | "manual"; service_charge_monthly: number;
   street: string | null; advance_rent_required: number;
   offers_breakfast: number; offers_lunch: number; offers_dinner: number;
-  meal_toggle_cutoff: string; verified: number;
+  meal_toggle_cutoff: string; verified: number; rules: string | null;
 }
 
 interface RoomRow {
@@ -207,6 +207,7 @@ async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
     settings,
     suspended: toBool(r.suspended) || undefined,
     verified: toBool(r.verified) || undefined,
+    rules: r.rules ?? undefined,
   }) as Hostel;
 }
 
@@ -602,7 +603,7 @@ export const rooms: RoomRepository = {
 // ── Hostels ────────────────────────────────────────────────────────────────
 
 const HOSTEL_COLS =
-  "id, name, area, gender, division, district, thana, street, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff, verified";
+  "id, name, area, gender, division, district, thana, street, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff, verified, rules";
 
 async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
   if (settings.mealCutoff) {
@@ -676,15 +677,15 @@ export const hostels: HostelRepository = {
     await transaction(async (tx) => {
       await run(
         `INSERT INTO hostels (id, name, area, gender, division, district, thana, street, owner_id, manager_id, cook_id,
-                              meal_rate, kitchen_location, cook_monthly_salary, suspended)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              meal_rate, kitchen_location, cook_monthly_salary, suspended, rules)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id, hostel.name, hostel.area ?? "", hostel.gender ?? null,
           hostel.address?.division ?? null, hostel.address?.district ?? null, hostel.address?.thana ?? null,
           hostel.street ?? null,
           hostel.ownerId, hostel.managerId || null, hostel.cookId ?? null,
           hostel.mealRate ?? 0, hostel.kitchenLocation ?? null, hostel.cookMonthlySalary ?? null,
-          hostel.suspended ? 1 : 0,
+          hostel.suspended ? 1 : 0, hostel.rules ?? null,
         ],
         tx
       );
@@ -714,6 +715,7 @@ export const hostels: HostelRepository = {
         put("thana", patch.address?.thana ?? null);
       }
       if (patch.street !== undefined) put("street", patch.street ?? null);
+      if (patch.rules !== undefined) put("rules", patch.rules ?? null);
       if (sets.length) {
         params.push(hostelId);
         await run(`UPDATE hostels SET ${sets.join(", ")} WHERE id = ?`, params, tx);

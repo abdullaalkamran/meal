@@ -66,6 +66,8 @@ CREATE TABLE hostels (
   meal_toggle_cutoff   TIME NOT NULL DEFAULT '22:00:00',
   -- The platform's Service Manager verified this hostel's details are genuine.
   verified             BOOLEAN NOT NULL DEFAULT FALSE,
+  -- House rules (Hostel.rules), one per line; shown on the detail + door pages.
+  rules                TEXT NULL,
   created_at           DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   INDEX idx_hostels_owner (owner_id),
   INDEX idx_hostels_area (division, district, thana)

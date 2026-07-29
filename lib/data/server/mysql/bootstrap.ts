@@ -227,6 +227,12 @@ async function ensureGenderColumns(): Promise<void> {
   }
 }
 
+/** Adds the house-rules text column to hostels on databases that predate it. */
+async function ensureHostelRulesColumn(): Promise<void> {
+  if (await columnExists("hostels", "rules")) return;
+  await run("ALTER TABLE hostels ADD COLUMN rules TEXT NULL AFTER verified");
+}
+
 /** Replaces the old single meals_default_off flag with three per-meal
  * switches (User.futureMealsOff[meal]). On a database that still has the old
  * column, existing members who had it on get all three new switches on too —
@@ -487,6 +493,7 @@ export function ensureReady(): Promise<void> {
       await ensureDutyGroupSizeColumn();
       await ensureHostelVerifiedColumn();
       await ensureGenderColumns();
+      await ensureHostelRulesColumn();
       await ensureMealsDefaultOffColumn();
       await ensureHostelStreetColumn();
       await ensureServicePermissionColumn();
