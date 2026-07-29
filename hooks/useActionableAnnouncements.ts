@@ -125,8 +125,11 @@ export function useActionableAnnouncements(
         return !(s && s.status === "resolved");
       }
       case "swap-request": {
+        // Only while the swap is still pending. Cancelled/denied/accepted — or
+        // a swap whose plan was replaced (so the row is gone) — all drop it,
+        // instead of lingering because the resolved/missing swap wasn't "found".
         const s = swaps.find((x) => x.id === payload?.swapId);
-        return !(s && s.status !== "pending");
+        return s?.status === "pending";
       }
       case "spin-wheel-cta": {
         // Drop once this member has spun that rotation — or if the rotation is

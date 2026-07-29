@@ -4,7 +4,7 @@
 
 import type { Bill, Menu, SwapRequest } from "../../types";
 import type { Repositories } from "../../repository";
-import { all, one, run, toDay } from "./connection";
+import { all, one, run, toDay, toIso } from "./connection";
 import { hostels, rooms, users, verifyUserPassword, verifyUserPasswordById, setUserPassword } from "./core";
 import { comments, meals, menus, ratings } from "./meals";
 import { bills, expenses, shoppingCosts, shortages } from "./billing";
@@ -78,13 +78,25 @@ export const mysqlSystemQueries = {
     return out;
   },
   async swapsByHostel(hostelId: string): Promise<SwapRequest[]> {
-    const planIds = await all<{ plan_id: string }>(
-      "SELECT DISTINCT plan_id FROM swap_requests WHERE hostel_id = ?",
+    // One indexed query (idx_swaps_hostel) — not a query-per-plan, which was
+    // slow on hostels with several rotations and made the home announcement
+    // section wait.
+    const rows = await all<{
+      id: string; hostel_id: string; plan_id: string; from_user_id: string;
+      to_user_id: string; status: SwapRequest["status"]; created_at: string;
+    }>(
+      "SELECT id, hostel_id, plan_id, from_user_id, to_user_id, status, created_at FROM swap_requests WHERE hostel_id = ?",
       [hostelId]
     );
-    const out: SwapRequest[] = [];
-    for (const p of planIds) out.push(...(await swaps.listByPlan(p.plan_id)));
-    return out;
+    return rows.map((r) => ({
+      id: r.id,
+      hostelId: r.hostel_id,
+      planId: r.plan_id,
+      fromUserId: r.from_user_id,
+      toUserId: r.to_user_id,
+      status: r.status,
+      createdAt: toIso(r.created_at),
+    }));
   },
   async billByUser(userId: string): Promise<Bill | null> {
     const row = await one<{ hostel_id: string; month: string }>(
