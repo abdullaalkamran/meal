@@ -201,18 +201,18 @@ export default function StudentHomePage() {
       {/* Today's meals — redesigned */}
       <div>
         {/* Header */}
-        <div className="mb-3 flex items-end justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-[17px] font-extrabold tracking-tight">Today&rsquo;s meals</div>
+            <div className="text-[19px] font-extrabold tracking-tight">Today&rsquo;s meals</div>
             <div className="text-[10.5px] font-semibold text-text-secondary">{formatDayMonth(today())}</div>
           </div>
           <Link
             href="/student/meals"
-            className="flex items-center gap-1.5 rounded-pill border border-border bg-card px-3 py-2 text-[11px] font-extrabold text-primary shadow-chip"
+            className="flex items-center gap-1.5 rounded-pill bg-card px-3.5 py-2.5 text-[11.5px] font-extrabold text-primary shadow-soft"
           >
-            <Icon icon={CalendarDays} size={14} />
+            <Icon icon={CalendarDays} size={15} />
             Calendar
-            <Icon icon={ChevronRight} size={13} />
+            <Icon icon={ChevronRight} size={14} className="text-text-secondary" />
           </Link>
         </div>
 
@@ -221,43 +221,46 @@ export default function StudentHomePage() {
           {mealSlots.map((meal) => {
             const on = myEntry?.[meal].on ?? true;
             const items = menu?.dishes[meal]?.length ?? 0;
-            const c = MEAL_COLORS[meal];
+            // The design keeps breakfast/dinner in the teal accent and lunch in
+            // amber; the ON meal gets a solid teal icon + highlighted card.
+            const soft = meal === "lunch" ? "bg-orange-soft text-orange" : "bg-primary-soft text-primary";
+            const Ic = MEAL_COLORS[meal].icon;
             return (
               <Link
                 key={meal}
                 href="/student/meals"
-                className={`flex flex-col rounded-card border p-3 shadow-chip ${
-                  on ? "border-primary/50 bg-primary-soft" : "border-border bg-card"
+                className={`flex flex-col rounded-card border p-3.5 shadow-soft ${
+                  on ? "border-2 border-primary bg-primary-soft" : "border border-border bg-card"
                 }`}
               >
                 <div
-                  className={`mb-2.5 flex h-11 w-11 items-center justify-center rounded-full ${
-                    on ? "bg-primary text-white" : `${c.bg} ${c.text}`
+                  className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
+                    on ? "bg-primary text-white" : soft
                   }`}
                 >
-                  <Icon icon={c.icon} size={20} />
+                  <Icon icon={Ic} size={22} />
                 </div>
-                <div className="text-[13px] font-extrabold">{MEAL_LABEL[meal]}</div>
-                <div className="mt-1 flex items-center gap-1.5">
-                  <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-[#16A34A]" : "bg-text-secondary/40"}`} />
+                <div className="text-[15px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${on ? "bg-[#16A34A]" : "bg-text-secondary/40"}`} />
                   <span
-                    className={`text-[9.5px] font-extrabold uppercase tracking-wide ${
+                    className={`text-[10px] font-extrabold uppercase tracking-wide ${
                       on ? "text-[#16A34A]" : "text-text-secondary"
                     }`}
                   >
                     {on ? "On" : "Off"}
                   </span>
                 </div>
-                <div className="mt-3.5 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-text-secondary">
+                <div className="mt-3 flex items-center justify-between border-t border-black/[0.06] pt-2.5">
+                  <span className="text-[10.5px] font-semibold text-text-secondary">
                     {items} item{items === 1 ? "" : "s"}
                   </span>
                   <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                      on ? "bg-primary text-white" : "border border-border text-text-secondary"
+                    className={`flex h-7 w-7 items-center justify-center rounded-full ${
+                      on ? "bg-primary text-white" : "bg-bg text-text-secondary"
                     }`}
                   >
-                    <Icon icon={ChevronRight} size={13} />
+                    <Icon icon={ChevronRight} size={14} />
                   </span>
                 </div>
               </Link>
@@ -268,47 +271,45 @@ export default function StudentHomePage() {
         {/* Menu overview */}
         <Card className="mt-3">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-[12.5px] font-extrabold">Menu overview</div>
-            <Link href="/student/menu" className="flex items-center gap-0.5 text-[11px] font-extrabold text-primary">
+            <div className="text-[13px] font-extrabold">Menu overview</div>
+            <Link href="/student/menu" className="flex items-center gap-0.5 text-[11.5px] font-extrabold text-primary">
               View menu
               <Icon icon={ChevronRight} size={13} />
             </Link>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3.5">
             {mealSlots.map((meal) => {
               const dishes = menu?.dishes[meal] ?? [];
               const c = MEAL_COLORS[meal];
               return (
                 <Link key={meal} href="/student/menu" className="flex items-center gap-3">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg} ${c.text}`}>
-                    <Icon icon={c.icon} size={16} />
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-btn ${c.bg} ${c.text}`}>
+                    <Icon icon={Utensils} size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                    <div className="text-[12.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
                     <div className="text-[9.5px] font-semibold text-text-secondary">
                       {dishes.length ? `${dishes.length} item${dishes.length === 1 ? "" : "s"} planned` : "No menu planned"}
                     </div>
                   </div>
                   {dishes.length === 0 ? (
-                    <span className="text-[13px] font-bold text-text-secondary">&mdash;</span>
+                    <span className="text-[14px] font-bold text-text-secondary">&mdash;</span>
                   ) : (
-                    <>
-                      <div className="flex items-center -space-x-1.5">
-                        {dishes.slice(0, 3).map((_, i) => (
-                          <span key={i} className={`h-6 w-6 rounded-full border-2 border-card ${c.dot}`} />
-                        ))}
-                        {dishes.length > 3 && (
-                          <span className="flex h-6 items-center rounded-pill bg-bg px-1.5 text-[9px] font-extrabold text-text-secondary">
-                            +{dishes.length - 3}
-                          </span>
-                        )}
-                      </div>
-                      <span className="flex shrink-0 items-center gap-1 rounded-pill bg-primary-soft px-2.5 py-1 text-[10px] font-extrabold text-primary">
-                        {dishes.length} items
-                        <Icon icon={ChevronRight} size={12} />
-                      </span>
-                    </>
+                    <div className="flex items-center -space-x-1.5">
+                      {dishes.slice(0, 3).map((_, i) => (
+                        <span key={i} className={`h-6 w-6 rounded-full border-2 border-card ${c.dot}`} />
+                      ))}
+                      {dishes.length > 3 && (
+                        <span className="flex h-6 items-center rounded-pill bg-bg px-1.5 text-[9px] font-extrabold text-text-secondary">
+                          +{dishes.length - 3}
+                        </span>
+                      )}
+                    </div>
                   )}
+                  <span className="flex shrink-0 items-center gap-1 rounded-pill bg-bg px-2.5 py-1.5 text-[10px] font-extrabold text-text-secondary">
+                    {dishes.length} items
+                    <Icon icon={ChevronRight} size={12} />
+                  </span>
                 </Link>
               );
             })}
@@ -317,22 +318,27 @@ export default function StudentHomePage() {
 
         {/* Stat strip */}
         <Card className="mt-3">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4">
             {[
               { icon: Utensils, label: "Total meals today", value: String(totalMealsToday), tone: "text-primary" },
-              { icon: Users, label: "Total members", value: String(memberCount), tone: "text-blue" },
+              { icon: Users, label: "Total members", value: String(memberCount), tone: "text-[#7C6CF6]" },
               { icon: BarChart3, label: "Avg. cost per meal", value: formatBDT(actualRate.rate), tone: "text-orange" },
               {
                 icon: Leaf,
                 label: "Meals status",
                 value: anyMealOn ? "Healthy" : "All off",
-                tone: anyMealOn ? "text-primary" : "text-text-secondary",
+                tone: "text-[#16A34A]",
+                valueGreen: anyMealOn,
               },
-            ].map((s) => (
-              <div key={s.label} className="flex flex-col items-center gap-1 text-center">
-                <Icon icon={s.icon} size={16} className={s.tone} />
-                <div className={`text-[13.5px] font-extrabold ${s.tone}`}>{s.value}</div>
-                <div className="text-[8.5px] font-bold leading-tight text-text-secondary">{s.label}</div>
+            ].map((s, i) => (
+              <div key={s.label} className={`flex items-center gap-2 px-2 ${i > 0 ? "border-l border-border" : ""}`}>
+                <Icon icon={s.icon} size={17} className={`shrink-0 ${s.tone}`} />
+                <div className="min-w-0">
+                  <div className="truncate text-[8.5px] font-bold text-text-secondary">{s.label}</div>
+                  <div className={`text-[13.5px] font-extrabold ${s.valueGreen ? "text-[#16A34A]" : ""}`}>
+                    {s.value}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
