@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Droplet,
   Flame,
+  HelpCircle,
   Lock,
   Package,
   ShoppingCart,
@@ -30,6 +31,7 @@ import { AddExpenseSheet } from "@/components/manager/AddExpenseSheet";
 import { RecordShoppingCostSheet } from "@/components/manager/RecordShoppingCostSheet";
 import { EditShoppingCostSheet } from "@/components/manager/EditShoppingCostSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
+import { BillingInstructionsSheet } from "@/components/manager/BillingInstructionsSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests";
@@ -95,6 +97,7 @@ function ManagerFinancePage() {
   const [settleFormer, setSettleFormer] = useState<{ bill: Bill; name: string } | null>(null);
   const [payFormer, setPayFormer] = useState<Bill | null>(null);
   const [generateSheetOpen, setGenerateSheetOpen] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<BillSection["label"] | null>(null);
@@ -198,6 +201,14 @@ function ManagerFinancePage() {
       <div className="flex items-center justify-between gap-2">
         <div className="text-[17.5px] font-extrabold tracking-tight">Finance</div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setInstructionsOpen(true)}
+            aria-label="Billing instructions"
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full bg-bg text-text-secondary"
+          >
+            <Icon icon={HelpCircle} size={17} />
+          </button>
           <button
             type="button"
             onClick={() => setShoppingCostSheetOpen(true)}
@@ -666,6 +677,7 @@ function ManagerFinancePage() {
         )}
       </div>
 
+      <BillingInstructionsSheet open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
       <AddExpenseSheet
         open={expenseSheetOpen}
         onClose={() => setExpenseSheetOpen(false)}
