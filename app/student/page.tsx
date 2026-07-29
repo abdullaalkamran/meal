@@ -4,18 +4,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Ban,
-  BarChart3,
   BedDouble,
   Bell,
   BookOpen,
   Briefcase,
-  CalendarDays,
   ChefHat,
   ChevronRight,
   CreditCard,
   DoorOpen,
   GraduationCap,
-  Leaf,
   Megaphone,
   MessagesSquare,
   Plane,
@@ -24,8 +21,6 @@ import {
   Tag,
   TrendingUp,
   UserPlus,
-  Users,
-  Utensils,
 } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
@@ -47,7 +42,6 @@ import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSh
 import { HomeHero } from "@/components/student/HomeHero";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
-import { formatBDT } from "@/lib/utils/currency";
 import { repo, type MealSlot } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 
@@ -111,20 +105,6 @@ export default function StudentHomePage() {
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
   const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
-
-  // Display-only stats for the Today's-meals strip — all derived from data
-  // already loaded above (no extra fetches, no rule changes).
-  const mealSlots: MealSlot[] = ["breakfast", "lunch", "dinner"];
-  const anyMealOn = mealSlots.some((m) => myEntry?.[m].on ?? true);
-  const totalMealsToday = day
-    ? Object.values(day.entries).reduce(
-        (sum, e) =>
-          sum +
-          mealSlots.reduce((s, m) => s + (e[m].on ? 1 : 0) + e[m].guestCount, 0),
-        0
-      )
-    : 0;
-  const memberCount = rooms.reduce((s, r) => s + r.occupantIds.length, 0);
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -198,152 +178,69 @@ export default function StudentHomePage() {
         </div>
       )}
 
-      {/* Today's meals — redesigned */}
-      <div>
-        {/* Header */}
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="text-[19px] font-extrabold tracking-tight">Today&rsquo;s meals</div>
-            <div className="text-[10.5px] font-semibold text-text-secondary">{formatDayMonth(today())}</div>
-          </div>
-          <Link
-            href="/student/meals"
-            className="flex items-center gap-1.5 rounded-pill bg-card px-3.5 py-2.5 text-[11.5px] font-extrabold text-primary shadow-soft"
-          >
-            <Icon icon={CalendarDays} size={15} />
+      {/* Today's meals + menu */}
+      <Card>
+        <div className="mb-0.5 flex items-center justify-between">
+          <div className="text-[13.5px] font-extrabold">Today&rsquo;s meals</div>
+          <Link href="/student/meals" className="flex items-center gap-0.5 text-[11px] font-extrabold text-primary">
             Calendar
-            <Icon icon={ChevronRight} size={14} className="text-text-secondary" />
+            <Icon icon={ChevronRight} size={14} />
           </Link>
         </div>
+        <div className="mb-3 text-[10.5px] font-semibold text-text-secondary">
+          {formatDayMonth(today())}
+        </div>
 
-        {/* Meal cards */}
-        <div className="grid grid-cols-3 gap-2.5">
-          {mealSlots.map((meal) => {
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
             const on = myEntry?.[meal].on ?? true;
-            const items = menu?.dishes[meal]?.length ?? 0;
-            // The design keeps breakfast/dinner in the teal accent and lunch in
-            // amber; the ON meal gets a solid teal icon + highlighted card.
-            const soft = meal === "lunch" ? "bg-orange-soft text-orange" : "bg-primary-soft text-primary";
-            const Ic = MEAL_COLORS[meal].icon;
+            const c = MEAL_COLORS[meal];
             return (
-              <Link
+              <div
                 key={meal}
-                href="/student/meals"
-                className={`flex flex-col rounded-card border p-3.5 shadow-soft ${
-                  on ? "border-2 border-primary bg-primary-soft" : "border border-border bg-card"
+                className={`flex flex-col items-center gap-2 rounded-btn py-3.5 ${
+                  on ? "bg-bg" : "bg-bg/50"
                 }`}
               >
                 <div
-                  className={`mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
-                    on ? "bg-primary text-white" : soft
+                  className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                    on ? "bg-text" : "border border-border bg-card"
                   }`}
                 >
-                  <Icon icon={Ic} size={22} />
+                  <Icon icon={c.icon} size={18} className={on ? "text-card" : "text-text-secondary"} />
                 </div>
-                <div className="text-[15px] font-extrabold">{MEAL_LABEL[meal]}</div>
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <span className={`h-2 w-2 rounded-full ${on ? "bg-[#16A34A]" : "bg-text-secondary/40"}`} />
-                  <span
-                    className={`text-[10px] font-extrabold uppercase tracking-wide ${
-                      on ? "text-[#16A34A]" : "text-text-secondary"
-                    }`}
-                  >
-                    {on ? "On" : "Off"}
-                  </span>
+                <div className="text-[10.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                <div
+                  className={`text-[9px] font-extrabold uppercase tracking-wide ${
+                    on ? "text-text" : "text-text-secondary"
+                  }`}
+                >
+                  {on ? "On" : "Off"}
                 </div>
-                <div className="mt-3 flex items-center justify-between border-t border-black/[0.06] pt-2.5">
-                  <span className="text-[10.5px] font-semibold text-text-secondary">
-                    {items} item{items === 1 ? "" : "s"}
-                  </span>
-                  <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-full ${
-                      on ? "bg-primary text-white" : "bg-bg text-text-secondary"
-                    }`}
-                  >
-                    <Icon icon={ChevronRight} size={14} />
-                  </span>
-                </div>
-              </Link>
+              </div>
             );
           })}
         </div>
 
-        {/* Menu overview */}
-        <Card className="mt-3">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-[13px] font-extrabold">Menu overview</div>
-            <Link href="/student/menu" className="flex items-center gap-0.5 text-[11.5px] font-extrabold text-primary">
-              View menu
-              <Icon icon={ChevronRight} size={13} />
-            </Link>
-          </div>
-          <div className="flex flex-col gap-3.5">
-            {mealSlots.map((meal) => {
-              const dishes = menu?.dishes[meal] ?? [];
-              const c = MEAL_COLORS[meal];
-              return (
-                <Link key={meal} href="/student/menu" className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-btn ${c.bg} ${c.text}`}>
-                    <Icon icon={Utensils} size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
-                    <div className="text-[9.5px] font-semibold text-text-secondary">
-                      {dishes.length ? `${dishes.length} item${dishes.length === 1 ? "" : "s"} planned` : "No menu planned"}
-                    </div>
-                  </div>
-                  {dishes.length === 0 ? (
-                    <span className="text-[14px] font-bold text-text-secondary">&mdash;</span>
-                  ) : (
-                    <div className="flex items-center -space-x-1.5">
-                      {dishes.slice(0, 3).map((_, i) => (
-                        <span key={i} className={`h-6 w-6 rounded-full border-2 border-card ${c.dot}`} />
-                      ))}
-                      {dishes.length > 3 && (
-                        <span className="flex h-6 items-center rounded-pill bg-bg px-1.5 text-[9px] font-extrabold text-text-secondary">
-                          +{dishes.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <span className="flex shrink-0 items-center gap-1 rounded-pill bg-bg px-2.5 py-1.5 text-[10px] font-extrabold text-text-secondary">
-                    {dishes.length} items
-                    <Icon icon={ChevronRight} size={12} />
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Stat strip */}
-        <Card className="mt-3">
-          <div className="grid grid-cols-4">
-            {[
-              { icon: Utensils, label: "Total meals today", value: String(totalMealsToday), tone: "text-primary" },
-              { icon: Users, label: "Total members", value: String(memberCount), tone: "text-[#7C6CF6]" },
-              { icon: BarChart3, label: "Avg. cost per meal", value: formatBDT(actualRate.rate), tone: "text-orange" },
-              {
-                icon: Leaf,
-                label: "Meals status",
-                value: anyMealOn ? "Healthy" : "All off",
-                tone: "text-[#16A34A]",
-                valueGreen: anyMealOn,
-              },
-            ].map((s, i) => (
-              <div key={s.label} className={`flex items-center gap-2 px-2 ${i > 0 ? "border-l border-border" : ""}`}>
-                <Icon icon={s.icon} size={17} className={`shrink-0 ${s.tone}`} />
-                <div className="min-w-0">
-                  <div className="truncate text-[8.5px] font-bold text-text-secondary">{s.label}</div>
-                  <div className={`text-[13.5px] font-extrabold ${s.valueGreen ? "text-[#16A34A]" : ""}`}>
-                    {s.value}
-                  </div>
-                </div>
+        <div className="mb-2 flex items-center justify-between border-t border-border pt-3">
+          <div className="text-[10px] font-bold text-text-secondary">Menu</div>
+          <Link href="/student/menu" className="text-[11px] font-extrabold text-primary">
+            View Menu
+          </Link>
+        </div>
+        <div className="flex flex-col gap-1">
+          {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => (
+            <div key={meal} className="flex gap-2 text-[11px]">
+              <div className={`w-16 shrink-0 font-extrabold ${MEAL_COLORS[meal].text}`}>
+                {MEAL_LABEL[meal]}
               </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+              <div className="font-semibold text-text-secondary">
+                {menu?.dishes[meal]?.join(" · ") || "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* Quick actions */}
       <div>
