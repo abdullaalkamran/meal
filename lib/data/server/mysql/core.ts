@@ -9,10 +9,12 @@
 
 import type {
   Hostel,
+  HostelGender,
   HostelSettings,
   ManagerPermissions,
   MealSlot,
   NewHostel,
+  PersonGender,
   Role,
   Room,
   ServiceKind,
@@ -63,6 +65,7 @@ const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
 interface UserRow {
   id: string; role: Role; name: string; phone: string; email: string | null;
+  gender: string | null;
   avatar_seed: string; hostel_id: string | null; room_id: string | null;
   student_id: string | null; department: string | null;
   division: string | null; district: string | null; thana: string | null;
@@ -76,7 +79,7 @@ interface UserRow {
 }
 
 interface HostelRow {
-  id: string; name: string; area: string;
+  id: string; name: string; area: string; gender: string | null;
   division: string | null; district: string | null; thana: string | null;
   owner_id: string; manager_id: string | null; cook_id: string | null;
   meal_rate: number; kitchen_location: string | null; cook_monthly_salary: number | null;
@@ -101,6 +104,7 @@ function toUser(r: UserRow): User {
     phone: r.phone,
     email: r.email ?? undefined,
     role: r.role,
+    gender: (r.gender as PersonGender | null) ?? undefined,
     roomId: r.room_id ?? undefined,
     avatarSeed: r.avatar_seed,
     studentId: r.student_id ?? undefined,
@@ -189,6 +193,7 @@ async function toHostel(r: HostelRow, on?: Queryable): Promise<Hostel> {
     id: r.id,
     name: r.name,
     area: r.area,
+    gender: (r.gender as HostelGender | null) ?? undefined,
     address: r.division && r.district && r.thana
       ? { division: r.division, district: r.district, thana: r.thana }
       : undefined,
@@ -222,7 +227,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, future_breakfast_off, future_lunch_off, future_dinner_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
+  "id, role, name, phone, email, gender, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, future_breakfast_off, future_lunch_off, future_dinner_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
@@ -265,6 +270,9 @@ export const users: UserRepository = {
     const password = input.password ?? "";
     if (!name || !phone) throw new Error("Name and phone number are required.");
     if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+    if (input.gender !== "male" && input.gender !== "female") {
+      throw new Error("Please select your gender.");
+    }
     const normalized = normalizePhone(phone);
     if (!(await users.phoneAvailable(phone))) throw new Error(PHONE_TAKEN_MESSAGE);
     // Whitelisted: this runs unauthenticated, so it may only ever produce a
@@ -273,10 +281,11 @@ export const users: UserRepository = {
     const id = newId("user");
     try {
       await run(
-        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, avatar_seed, student_id, department, division, district, thana)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, gender, avatar_seed, student_id, department, division, district, thana)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id, role, name, phone, normalized, hashPassword(password), input.email?.trim() || null,
+          input.gender,
           input.avatarSeed || name,
           role === "student" ? input.studentId?.trim() || null : null,
           role === "student" ? input.department?.trim() || null : null,
@@ -300,14 +309,15 @@ export const users: UserRepository = {
     const id = newId("user");
     try {
       await run(
-        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, avatar_seed, hostel_id, room_id, student_id, department,
+        `INSERT INTO users (id, role, name, phone, phone_normalized, password_hash, email, gender, avatar_seed, hostel_id, room_id, student_id, department,
                             division, district, thana, meals_suspended, banned, joined_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           // Staff-created accounts (owner adding a manager/cook) start with
           // their own phone number as their password — the same rule an
           // account migrated from before passwords existed gets.
           id, user.role, user.name, user.phone, normalized, hashPassword(normalized), user.email ?? null,
+          user.gender ?? null,
           user.avatarSeed ?? user.name,
           user.hostelId || null, user.roomId ?? null, user.studentId ?? null, user.department ?? null,
           user.address?.division ?? null, user.address?.district ?? null, user.address?.thana ?? null,
@@ -348,6 +358,7 @@ export const users: UserRepository = {
       put("phone_normalized", normalized);
     }
     if (patch.email !== undefined) put("email", patch.email ?? null);
+    if (patch.gender !== undefined) put("gender", patch.gender ?? null);
     if (patch.avatarSeed !== undefined) put("avatar_seed", patch.avatarSeed);
     if (patch.studentId !== undefined) put("student_id", patch.studentId ?? null);
     if (patch.department !== undefined) put("department", patch.department ?? null);
@@ -591,7 +602,7 @@ export const rooms: RoomRepository = {
 // ── Hostels ────────────────────────────────────────────────────────────────
 
 const HOSTEL_COLS =
-  "id, name, area, division, district, thana, street, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff, verified";
+  "id, name, area, gender, division, district, thana, street, owner_id, manager_id, cook_id, meal_rate, kitchen_location, cook_monthly_salary, suspended, guest_meal_price, meal_stop_requires_approval, shopping_rotation_policy, service_charge_monthly, advance_rent_required, offers_breakfast, offers_lunch, offers_dinner, meal_toggle_cutoff, verified";
 
 async function writeSettings(hostelId: string, settings: Partial<HostelSettings>, tx: Queryable) {
   if (settings.mealCutoff) {
@@ -664,11 +675,11 @@ export const hostels: HostelRepository = {
     const id = newId("hostel");
     await transaction(async (tx) => {
       await run(
-        `INSERT INTO hostels (id, name, area, division, district, thana, street, owner_id, manager_id, cook_id,
+        `INSERT INTO hostels (id, name, area, gender, division, district, thana, street, owner_id, manager_id, cook_id,
                               meal_rate, kitchen_location, cook_monthly_salary, suspended)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, hostel.name, hostel.area ?? "",
+          id, hostel.name, hostel.area ?? "", hostel.gender ?? null,
           hostel.address?.division ?? null, hostel.address?.district ?? null, hostel.address?.thana ?? null,
           hostel.street ?? null,
           hostel.ownerId, hostel.managerId || null, hostel.cookId ?? null,
@@ -689,6 +700,7 @@ export const hostels: HostelRepository = {
       const put = (col: string, v: unknown) => { sets.push(`${col} = ?`); params.push(v); };
       if (patch.name !== undefined) put("name", patch.name);
       if (patch.area !== undefined) put("area", patch.area);
+      if (patch.gender !== undefined) put("gender", patch.gender ?? null);
       if (patch.ownerId !== undefined) put("owner_id", patch.ownerId);
       if (patch.managerId !== undefined) put("manager_id", patch.managerId || null);
       if (patch.cookId !== undefined) put("cook_id", patch.cookId ?? null);

@@ -358,6 +358,9 @@ const users: UserRepository = {
     const password = input.password ?? "";
     if (!name || !phone) throw new Error("Name and phone number are required.");
     if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+    if (input.gender !== "male" && input.gender !== "female") {
+      throw new Error("Please select your gender.");
+    }
     const target = normalizePhone(phone);
     if (store.data.users.some((u) => normalizePhone(u.phone) === target)) {
       throw new Error(PHONE_TAKEN_MESSAGE);
@@ -373,6 +376,7 @@ const users: UserRepository = {
       phone,
       email: input.email?.trim() || undefined,
       role,
+      gender: input.gender,
       avatarSeed: input.avatarSeed || name,
       address: input.address,
       ...(role === "student"
@@ -401,7 +405,7 @@ const users: UserRepository = {
     }
     const ALLOWED_KEYS = [
       "name", "phone", "email", "address", "studentId", "department",
-      "notificationPrefs", "avatarSeed",
+      "notificationPrefs", "avatarSeed", "gender",
     ] as const;
     const safePatch: Partial<User> = {};
     for (const key of ALLOWED_KEYS) {

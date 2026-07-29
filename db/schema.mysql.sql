@@ -31,6 +31,9 @@ CREATE TABLE hostels (
   name                 VARCHAR(191) NOT NULL,
   -- Short display location ("Mirpur, Dhaka"), derived from the address parts.
   area                 VARCHAR(191) NOT NULL DEFAULT '',
+  -- Whether this hostel houses boys or girls (Hostel.gender). NULL only for
+  -- legacy rows created before this column existed; new hostels always set it.
+  gender               ENUM('boys','girls') NULL,
   -- Structured address (lib/geo/bangladesh.ts): division → district → thana.
   division             VARCHAR(64)  NULL,
   district             VARCHAR(64)  NULL,
@@ -80,6 +83,9 @@ CREATE TABLE users (
   phone               VARCHAR(32)  NOT NULL,
   phone_normalized    VARCHAR(20)  NULL,
   email               VARCHAR(191) NULL,
+  -- The member's gender (User.gender). Collected at signup for new accounts;
+  -- NULL for platform-team/legacy accounts that predate the column.
+  gender              ENUM('male','female') NULL,
   -- Every account has one (scrypt, lib/data/server/password.ts). New
   -- accounts set it at signup; accounts created by staff (owner adding a
   -- manager/cook) or migrated from before this column existed default to

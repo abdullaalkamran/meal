@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
-import { repo, type GeoAddress, type Hostel, type User } from "@/lib/data";
+import { repo, type GeoAddress, type Hostel, type HostelGender, type User } from "@/lib/data";
 import { formatAddress } from "@/lib/geo/bangladesh";
 import { DEFAULT_MANAGER_PERMISSIONS } from "@/lib/auth/permissions";
 
@@ -43,6 +43,7 @@ export function AddHostelSheet({
   onCreated: (hostel: Hostel) => void;
 }) {
   const [name, setName] = useState("");
+  const [gender, setGender] = useState<HostelGender | null>(null);
   const [address, setAddress] = useState<Partial<GeoAddress>>({});
   const [house, setHouse] = useState("");
   const [road, setRoad] = useState("");
@@ -62,16 +63,17 @@ export function AddHostelSheet({
       .filter(Boolean)
       .join(", ");
 
-  const valid = name.trim() && isCompleteAddress(address);
+  const valid = name.trim() && gender && isCompleteAddress(address);
 
   const submit = async () => {
-    if (!valid || saving || !isCompleteAddress(address)) return;
+    if (!valid || saving || !gender || !isCompleteAddress(address)) return;
     setSaving(true);
     setError("");
 
     try {
       const hostel = await repo.hostels.create({
         name: name.trim(),
+        gender,
         // Short display form ("Mirpur, Dhaka") derived from the dropdowns.
         area: formatAddress(address),
         address,
@@ -105,6 +107,7 @@ export function AddHostelSheet({
       onCreated(hostel);
       onClose();
       setName("");
+      setGender(null);
       setAddress({});
       setHouse("");
       setRoad("");
@@ -120,6 +123,27 @@ export function AddHostelSheet({
   return (
     <Sheet open={open} onClose={onClose} title="Add hostel">
       <Field label="Hostel name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Blue Sky Hostel" />
+
+      <div className="mb-3">
+        <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          This hostel is for
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {(["boys", "girls"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGender(g)}
+              className={`min-h-11 rounded-btn border text-[12px] font-extrabold capitalize transition-colors ${
+                gender === g ? "border-primary bg-primary text-white" : "border-border bg-transparent text-text"
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <GeoSelect label="Hostel address" value={address} onChange={setAddress} />
 
       <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">

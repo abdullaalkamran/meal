@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { repo, type GeoAddress } from "@/lib/data";
+import { repo, type GeoAddress, type PersonGender } from "@/lib/data";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -40,6 +40,7 @@ export default function SignupPage() {
   const { login } = useSession();
   const [role, setRole] = useState<"student" | "owner">("student");
   const [name, setName] = useState("");
+  const [gender, setGender] = useState<PersonGender | null>(null);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -54,6 +55,10 @@ export default function SignupPage() {
     if (saving) return;
     if (!name.trim() || !phone.trim() || !password) {
       setError("Name, phone number, and password are required.");
+      return;
+    }
+    if (!gender) {
+      setError("Please select your gender.");
       return;
     }
     if (password.length < 6) {
@@ -85,6 +90,7 @@ export default function SignupPage() {
         password,
         email: email.trim() || undefined,
         role,
+        gender,
         avatarSeed: `${role}-${slug(name)}`,
         address: isCompleteAddress(address) ? address : undefined,
         ...(role === "student"
@@ -138,6 +144,25 @@ export default function SignupPage() {
       <Card>
         <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahim Uddin" />
         <Field label="Phone number" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01711-123456" />
+        <div className="mb-3">
+          <div className="mb-1.5 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Gender
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(["male", "female"] as const).map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGender(g)}
+                className={`min-h-11 rounded-btn border text-[12px] font-extrabold capitalize transition-colors ${
+                  gender === g ? "border-primary bg-primary text-white" : "border-border bg-transparent text-text"
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <Field
             label="Password"

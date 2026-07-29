@@ -196,6 +196,11 @@ function FindHostelInner() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 text-[12.5px] font-extrabold">
                     <span className="truncate">{h.name}</span>
+                    {h.gender && (
+                      <span className={`shrink-0 rounded-pill px-1.5 py-0.5 text-[8px] font-extrabold ${h.gender === "girls" ? "bg-[#7C6CF6]/10 text-[#7C6CF6]" : "bg-blue-soft text-blue"}`}>
+                        {h.gender === "girls" ? "Girls" : "Boys"}
+                      </span>
+                    )}
                     {h.verified && (
                       <span className="flex shrink-0 items-center gap-0.5 rounded-pill bg-primary-soft px-1.5 py-0.5 text-[8px] font-extrabold text-primary">
                         <Icon icon={BadgeCheck} size={9} /> Verified

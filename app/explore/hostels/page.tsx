@@ -11,7 +11,7 @@ import { ExploreHeader } from "@/components/explore/ExploreHeader";
 import { HostelDetailSheet } from "@/components/student/HostelDetailSheet";
 import { useServiceListings } from "@/hooks/useServiceListings";
 import { DIVISIONS, districtsOf, thanasOf } from "@/lib/geo/bangladesh";
-import { repo, type Hostel } from "@/lib/data";
+import { repo, type Hostel, type HostelGender, type Room } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 
 const selectClass =
@@ -21,17 +21,33 @@ export default function HostelsPage() {
   const { user } = useSession();
   const { toast } = useToast();
   const [hostels, setHostels] = useState<Hostel[]>([]);
+  const [roomsByHostel, setRoomsByHostel] = useState<Record<string, Room[]>>({});
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [detailHostel, setDetailHostel] = useState<Hostel | null>(null);
   const [query, setQuery] = useState("");
   const [division, setDivision] = useState("");
   const [district, setDistrict] = useState("");
   const [thana, setThana] = useState("");
+  const [gender, setGender] = useState<"" | HostelGender>("");
+  const [sort, setSort] = useState<"default" | "rent-asc" | "rent-desc" | "seats-desc">("default");
   const allListings = useServiceListings("hostel").filter((l) => l.active);
 
   useEffect(() => {
-    repo.hostels.listAll().then(setHostels);
+    repo.hostels.listAll().then(async (all) => {
+      setHostels(all);
+      // Rooms drive the rent-from / seats-free sort + the per-card summary.
+      const rooms = await Promise.all(all.map((h) => repo.rooms.listByHostel(h.id)));
+      setRoomsByHostel(Object.fromEntries(all.map((h, i) => [h.id, rooms[i]])));
+    });
   }, []);
+
+  // Cheapest occupied-rate seat, and total free seats, across a hostel's rooms.
+  const rentFrom = (hostelId: string) => {
+    const rents = (roomsByHostel[hostelId] ?? []).map((r) => r.seatRent).filter((n) => n > 0);
+    return rents.length ? Math.min(...rents) : 0;
+  };
+  const freeSeats = (hostelId: string) =>
+    (roomsByHostel[hostelId] ?? []).reduce((s, r) => s + Math.max(r.capacity - r.occupantIds.length, 0), 0);
 
   // Location + name/area search. A hostel matches a chosen division/district by
   // its structured address when it has one, else by its display area text (so
@@ -46,17 +62,33 @@ export default function HostelsPage() {
     if (thana && addr?.thana !== thana && !a.includes(thana.toLowerCase())) return false;
     return true;
   };
-  const filtersActive = !!q || !!division || !!district || !!thana;
+  const filtersActive = !!q || !!division || !!district || !!thana || !!gender || sort !== "default";
   const clearFilters = () => {
     setQuery("");
     setDivision("");
     setDistrict("");
     setThana("");
+    setGender("");
+    setSort("default");
   };
 
-  const shownHostels = hostels.filter(
-    (h) => matchesText(h.name, h.area) && matchesLoc(h.area, h.address)
-  );
+  const shownHostels = hostels
+    .filter(
+      (h) =>
+        matchesText(h.name, h.area) &&
+        matchesLoc(h.area, h.address) &&
+        (!gender || h.gender === gender)
+    )
+    .sort((a, b) => {
+      if (sort === "rent-asc" || sort === "rent-desc") {
+        // Hostels with no priced seat sink to the bottom either way.
+        const ra = rentFrom(a.id) || Infinity;
+        const rb = rentFrom(b.id) || Infinity;
+        return sort === "rent-asc" ? ra - rb : (rb === Infinity ? -1 : ra === Infinity ? 1 : rb - ra);
+      }
+      if (sort === "seats-desc") return freeSeats(b.id) - freeSeats(a.id);
+      return 0;
+    });
   const shownListings = allListings.filter((l) => matchesText(l.name, l.area) && matchesLoc(l.area));
 
   const requestJoin = async (hostelId: string, name: string) => {
@@ -131,6 +163,32 @@ export default function HostelsPage() {
             ))}
           </select>
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex rounded-btn border border-border bg-card p-0.5 shadow-chip">
+            {([["", "All"], ["boys", "Boys"], ["girls", "Girls"]] as const).map(([val, label]) => (
+              <button
+                key={val || "all"}
+                type="button"
+                onClick={() => setGender(val)}
+                className={`min-h-8 flex-1 rounded-pill text-[10.5px] font-extrabold transition-colors ${
+                  gender === val ? "bg-primary text-white" : "bg-transparent text-text-secondary"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as typeof sort)}
+            className={selectClass}
+          >
+            <option value="default">Sort: default</option>
+            <option value="rent-asc">Seat rent: low to high</option>
+            <option value="rent-desc">Seat rent: high to low</option>
+            <option value="seats-desc">Most seats free</option>
+          </select>
+        </div>
         {filtersActive && (
           <button
             type="button"
@@ -172,6 +230,11 @@ export default function HostelsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-[12px] font-extrabold">{h.name}</span>
+                      {h.gender && (
+                        <span className={`shrink-0 rounded-pill px-1.5 py-0.5 text-[8px] font-extrabold ${h.gender === "girls" ? "bg-[#7C6CF6]/10 text-[#7C6CF6]" : "bg-blue-soft text-blue"}`}>
+                          {h.gender === "girls" ? "Girls" : "Boys"}
+                        </span>
+                      )}
                       {h.verified && (
                         <span className="flex shrink-0 items-center gap-0.5 rounded-pill bg-primary-soft px-1.5 py-0.5 text-[8px] font-extrabold text-primary">
                           <Icon icon={BadgeCheck} size={9} /> Verified
@@ -181,7 +244,11 @@ export default function HostelsPage() {
                     <div className="flex items-center gap-1 text-[10px] font-semibold text-text-secondary">
                       <Icon icon={MapPin} size={11} /> {h.area}
                     </div>
-                    <div className="text-[9.5px] font-semibold text-primary">Tap for rooms, rent &amp; contacts</div>
+                    <div className="text-[9.5px] font-semibold text-text-secondary">
+                      {rentFrom(h.id) > 0 ? `From ${formatBDT(rentFrom(h.id))}/seat` : "Rent —"}
+                      {" · "}
+                      {freeSeats(h.id)} seat{freeSeats(h.id) === 1 ? "" : "s"} free
+                    </div>
                   </div>
                   <Icon icon={ChevronRight} size={16} className="shrink-0 text-text-secondary" />
                 </button>

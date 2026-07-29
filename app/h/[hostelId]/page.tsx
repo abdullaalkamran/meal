@@ -80,6 +80,11 @@ export default function PublicHostelPage() {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold">
+          {view.gender && (
+            <span className={`rounded-pill px-2.5 py-1 ${view.gender === "girls" ? "bg-[#7C6CF6]/10 text-[#7C6CF6]" : "bg-blue-soft text-blue"}`}>
+              {view.gender === "girls" ? "Girls' hostel" : "Boys' hostel"}
+            </span>
+          )}
           <span className="rounded-pill bg-primary-soft px-2.5 py-1 text-primary">{totalFree} seat{totalFree === 1 ? "" : "s"} free now</span>
           {totalUpcoming > 0 && (
             <span className="rounded-pill bg-orange-soft px-2.5 py-1 text-orange">{totalUpcoming} opening soon</span>

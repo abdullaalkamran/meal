@@ -77,8 +77,13 @@ export function HostelDetailSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title={hostel.name}>
-      <div className="mb-1 flex items-center gap-2">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
         <div className="text-[11px] font-semibold text-text-secondary">{hostel.area}</div>
+        {hostel.gender && (
+          <span className={`rounded-pill px-2 py-0.5 text-[9px] font-extrabold ${hostel.gender === "girls" ? "bg-[#7C6CF6]/10 text-[#7C6CF6]" : "bg-blue-soft text-blue"}`}>
+            {hostel.gender === "girls" ? "Girls' hostel" : "Boys' hostel"}
+          </span>
+        )}
         {hostel.verified ? (
           <span className="flex items-center gap-1 rounded-pill bg-primary-soft px-2 py-0.5 text-[9px] font-extrabold text-primary">
             <Icon icon={BadgeCheck} size={11} /> Verified

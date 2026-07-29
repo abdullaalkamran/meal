@@ -249,6 +249,7 @@ export async function getPublicHostelView(id: string): Promise<PublicHostelView 
     name: hostel.name,
     area: hostel.area,
     street: hostel.street,
+    gender: hostel.gender,
     verified: !!hostel.verified,
     seatRentFrom: seatRents.length ? Math.min(...seatRents) : undefined,
     facilities: [...new Set(rooms.flatMap((r) => r.facilities ?? []))],

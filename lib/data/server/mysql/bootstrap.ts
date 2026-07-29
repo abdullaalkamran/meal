@@ -216,6 +216,17 @@ async function ensureHostelVerifiedColumn(): Promise<void> {
   await run("ALTER TABLE hostels ADD COLUMN verified BOOLEAN NOT NULL DEFAULT FALSE AFTER meal_toggle_cutoff");
 }
 
+/** Adds the boys/girls gender flag to hostels + users on databases that
+ * predate it. NULL for existing rows — new hostels/accounts always set it. */
+async function ensureGenderColumns(): Promise<void> {
+  if (!(await columnExists("hostels", "gender"))) {
+    await run("ALTER TABLE hostels ADD COLUMN gender ENUM('boys','girls') NULL AFTER area");
+  }
+  if (!(await columnExists("users", "gender"))) {
+    await run("ALTER TABLE users ADD COLUMN gender ENUM('male','female') NULL AFTER email");
+  }
+}
+
 /** Replaces the old single meals_default_off flag with three per-meal
  * switches (User.futureMealsOff[meal]). On a database that still has the old
  * column, existing members who had it on get all three new switches on too —
@@ -475,6 +486,7 @@ export function ensureReady(): Promise<void> {
       await ensureAdvanceRentColumns();
       await ensureDutyGroupSizeColumn();
       await ensureHostelVerifiedColumn();
+      await ensureGenderColumns();
       await ensureMealsDefaultOffColumn();
       await ensureHostelStreetColumn();
       await ensureServicePermissionColumn();

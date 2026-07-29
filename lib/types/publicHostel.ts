@@ -20,6 +20,8 @@ export interface PublicHostelView {
   name: string;
   area: string;
   street?: string;
+  /** Whether this is a boys' or girls' hostel; undefined for legacy records. */
+  gender?: "boys" | "girls";
   verified: boolean;
   seatRentFrom?: number;
   facilities: string[];

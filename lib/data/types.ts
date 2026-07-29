@@ -5,6 +5,11 @@
 export type Role = "student" | "manager" | "owner" | "cook" | "superadmin" | "marketing" | "service";
 export type MealSlot = "breakfast" | "lunch" | "dinner";
 export type Stars = 1 | 2 | 3 | 4 | 5;
+/** Whether a hostel houses boys or girls — chosen by the owner on creation and
+ * shown to people browsing hostels to join. A person's own gender is
+ * `PersonGender`; a "boys" hostel is for `male` boarders, "girls" for `female`. */
+export type HostelGender = "boys" | "girls";
+export type PersonGender = "male" | "female";
 
 /** A structured Bangladesh address, chosen from cascading dropdowns:
  * division → district → thana/upazila (see lib/geo/bangladesh.ts). */
@@ -31,6 +36,10 @@ export interface User {
   /** Used to prefill forms (e.g. the study-abroad eligibility check). */
   email?: string;
   role: Role;
+  /** The member's gender — collected at signup (mandatory for new accounts) so
+   * boys/girls hostels can be matched and shown correctly. Optional on the type
+   * only because platform-team and legacy accounts predate it. */
+  gender?: PersonGender;
   roomId?: string;
   avatarSeed: string;
   /** Set only for students: institutional ID and department, e.g. "STU2024005", "CSE, BUET". */
@@ -92,6 +101,8 @@ export interface SignupInput {
   password: string;
   email?: string;
   role: "student" | "owner";
+  /** Mandatory on the signup form; validated server-side too. */
+  gender?: PersonGender;
   avatarSeed: string;
   studentId?: string;
   department?: string;
@@ -215,6 +226,10 @@ export interface Hostel {
   ownerId: string;
   managerId: string;
   cookId?: string;
+  /** Whether this hostel houses boys or girls — set by the owner on creation
+   * (mandatory for new hostels). Optional on the type only because legacy
+   * records predate it; new hostels always carry it. */
+  gender?: HostelGender;
   /** DEPRECATED — the real per-meal cost is AUTOMATIC per month (total
    * shopping ÷ total meals, member + guest; see meals.getActualMealRate).
    * Nothing bills from this field; kept for legacy data only. */
