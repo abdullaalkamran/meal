@@ -224,10 +224,11 @@ async function sendPushToUserMock(userId: string, payload: { title: string; body
   }
 }
 
-function notifyUser(userId: string, title: string, body: string) {
+function notifyUser(userId: string, title: string, body: string, announcementId?: string) {
   store.data.notifications.push({
     id: nextId("notif"),
     userId,
+    ...(announcementId ? { announcementId } : {}),
     title,
     body,
     read: false,
@@ -2302,6 +2303,18 @@ const announcements: AnnouncementRepository = {
     const created = { ...a, id: nextId("ann"), createdAt: new Date().toISOString() };
     store.data.announcements.push(created);
     store.emit(`announcements:${a.hostelId}`);
+    // A general (manager broadcast) announcement becomes a real, pushable
+    // notification for every active member — so it pings their device and lights
+    // the bell, not just sits in the announcements stream. System kinds already
+    // notify the people they concern.
+    if ((a.kind ?? "general") === "general") {
+      const actorId = actingUser?.id;
+      for (const m of store.data.users) {
+        if (m.hostelId === a.hostelId && !m.banned && isHostelMember(m.role) && m.id !== actorId) {
+          notifyUser(m.id, a.title, a.body, created.id);
+        }
+      }
+    }
     return created;
   },
   async update(id, patch) {

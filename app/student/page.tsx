@@ -102,6 +102,10 @@ export default function StudentHomePage() {
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const unreadNotifications = notifications.filter((n) => !n.read);
   const unread = unreadNotifications.length > 0;
+  // General announcements arrive as linked personal notifications; drop the
+  // announcement copy here so home doesn't show it twice.
+  const linkedAnnouncementIds = new Set(notifications.map((n) => n.announcementId).filter(Boolean));
+  const visibleAnnouncements = announcements.filter((a) => !linkedAnnouncementIds.has(a.id));
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
   const myBlock = myPlan?.blocks.find((b) => b.userIds.includes(user?.id ?? ""));
@@ -134,7 +138,7 @@ export default function StudentHomePage() {
       <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} mealsOn={mealsOn} />
 
       {/* Announcements + unread personal notifications (pinned until clicked) */}
-      {(announcements.length > 0 || unreadNotifications.length > 0) && (
+      {(visibleAnnouncements.length > 0 || unreadNotifications.length > 0) && (
         <div>
           <div className="mb-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -162,7 +166,7 @@ export default function StudentHomePage() {
             {unreadNotifications.slice(0, 3).map((n) => (
               <NotificationItem key={n.id} notification={n} />
             ))}
-            {announcements.slice(0, 3).map((a) => (
+            {visibleAnnouncements.slice(0, 3).map((a) => (
               <AnnouncementItem key={a.id} announcement={a} userId={user?.id} />
             ))}
           </div>

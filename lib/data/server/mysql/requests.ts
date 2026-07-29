@@ -30,7 +30,7 @@ import type {
 import { normalizePhone } from "../../../utils/phone";
 import { addDays, today } from "../../../utils/date";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity, notify, notifyHostelStaff } from "./context";
+import { currentActor, logActivity, notify, notifyAnnouncement, notifyHostelStaff } from "./context";
 import { ensureEntries, invalidateSealCache, offeredOnDay } from "./meals";
 import { newId } from "./ids";
 import { users } from "./core";
@@ -615,6 +615,20 @@ export const announcements: AnnouncementRepository = {
       "INSERT INTO announcements (id, hostel_id, kind, title, body, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [id, a.hostelId, a.kind ?? "general", a.title, a.body, a.payload ? JSON.stringify(a.payload) : null, fromIso(createdAt)]
     );
+    // A general (manager broadcast) announcement becomes a real, pushable
+    // notification for every active member — so it pings their device and lights
+    // the bell, not just sits in the announcements stream. System-generated
+    // kinds (polls, swaps, shortages…) already notify the people they concern.
+    if ((a.kind ?? "general") === "general") {
+      const actorId = currentActor()?.id;
+      const members = await all<{ id: string }>(
+        "SELECT id FROM users WHERE hostel_id = ? AND banned = 0 AND role IN ('student','manager','cook')",
+        [a.hostelId]
+      );
+      for (const m of members) {
+        if (m.id !== actorId) await notifyAnnouncement(m.id, id, a.title, a.body);
+      }
+    }
     return { ...a, id, createdAt };
   },
 

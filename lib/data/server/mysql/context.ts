@@ -73,6 +73,26 @@ export async function notify(
   });
 }
 
+/** Like notify(), but links the notification to an announcement so the feed can
+ * show it once (as the personal, pushable notification) instead of twice. Used
+ * to fan a general hostel announcement out to every member. */
+export async function notifyAnnouncement(
+  userId: string,
+  announcementId: string,
+  title: string,
+  body: string,
+  on?: Queryable
+): Promise<void> {
+  await run(
+    "INSERT INTO notifications (id, user_id, announcement_id, title, body, is_read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+    [newId("notif"), userId, announcementId, title, body, fromIso(new Date().toISOString())],
+    on
+  );
+  setImmediate(() => {
+    void sendPushToUser(userId, { title, body }).catch(() => {});
+  });
+}
+
 /** Delivers a Web Push to every browser the user has subscribed, pruning any
  * subscription the push service reports as dead. Uses the pool (never a caller's
  * transaction connection) and never throws. */

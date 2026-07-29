@@ -20,9 +20,18 @@ export function NotificationsFeed() {
   const notifications = useNotifications(user?.id);
   const announcements = useAnnouncements(activeHostelId);
 
+  // A general announcement is delivered to each member as a linked notification;
+  // show that personal (readable) copy and drop the announcement row so it never
+  // appears twice.
+  const linkedAnnouncementIds = new Set(
+    notifications.map((n) => n.announcementId).filter(Boolean)
+  );
+
   const rows: FeedRow[] = [
     ...notifications.map((n): FeedRow => ({ kind: "notification", at: n.createdAt, notification: n })),
-    ...announcements.map((a): FeedRow => ({ kind: "announcement", at: a.createdAt, announcement: a })),
+    ...announcements
+      .filter((a) => !linkedAnnouncementIds.has(a.id))
+      .map((a): FeedRow => ({ kind: "announcement", at: a.createdAt, announcement: a })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
