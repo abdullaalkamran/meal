@@ -3,6 +3,7 @@ import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { SideNav } from "./SideNav";
 import { LoginPromoPopup } from "@/components/student/LoginPromoPopup";
+import { PushNudge } from "@/components/student/PushNudge";
 import type { NavItem } from "./navItems";
 
 export function AppShell({
@@ -38,6 +39,7 @@ export function AppShell({
       )}
       <FloatingCartButton />
       <LoginPromoPopup />
+      <PushNudge />
     </div>
   );
 }
