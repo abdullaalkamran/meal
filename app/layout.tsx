@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { I18nProvider } from "@/lib/i18n/I18nProvider";
 import { SessionProvider } from "@/lib/auth/SessionProvider";
 import { ToastProvider } from "@/components/ui/Toast";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -45,6 +46,7 @@ export default function RootLayout({
           <I18nProvider>
             <SessionProvider>
               <ToastProvider>{children}</ToastProvider>
+              <ServiceWorkerRegistrar />
             </SessionProvider>
           </I18nProvider>
         </ThemeProvider>
