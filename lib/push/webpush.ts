@@ -21,8 +21,11 @@ function ensureConfigured(): boolean {
     try {
       webpush.setVapidDetails(subject, publicKey, privateKey);
       configured = true;
-    } catch {
+    } catch (err) {
       // Malformed keys — treat as unconfigured rather than crash every send.
+      // Logged because this fails EVERY future send silently otherwise —
+      // exactly the "push looks enabled but nothing ever arrives" symptom.
+      console.error("[push] Invalid VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY/VAPID_SUBJECT — push disabled:", err);
       configured = false;
     }
   } else {
@@ -71,6 +74,13 @@ export async function sendToSubscription(
     return { ok: true, gone: false };
   } catch (err) {
     const status = (err as { statusCode?: number })?.statusCode;
-    return { ok: false, gone: status === 404 || status === 410 };
+    const gone = status === 404 || status === 410;
+    // A dead subscription (gone) is routine — the caller prunes it silently.
+    // Anything else (401/403 = VAPID key mismatch, network error, etc.) is a
+    // real send failure with previously no visibility anywhere; log it.
+    if (!gone) {
+      console.error(`[push] Send failed (status ${status ?? "?"}):`, (err as { body?: string })?.body ?? err);
+    }
+    return { ok: false, gone };
   }
 }
