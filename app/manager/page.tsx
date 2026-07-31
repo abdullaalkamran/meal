@@ -47,6 +47,7 @@ import { MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, greeting, today } from "@/lib/utils/date";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
+import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
 import { useNotifications } from "@/hooks/useNotifications";
 
 const QUICK_ACTIONS = [
@@ -127,6 +128,7 @@ export default function ManagerDashboardPage() {
   const shortages = useShortages(activeHostelId);
   const rooms = useRooms(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
+  const myMealSummary = useMemberMealSummary(activeHostelId, user?.id);
   const [expenseSheetOpen, setExpenseSheetOpen] = useState(false);
   const [announceSheetOpen, setAnnounceSheetOpen] = useState(false);
   const [pendingPayments, setPendingPayments] = useState(0);
@@ -359,7 +361,7 @@ export default function ManagerDashboardPage() {
           </div>
           <div className="rounded-btn bg-bg p-2.5 text-center">
             <div className="text-[9px] font-bold text-text-secondary">MY MEALS</div>
-            <div className="text-[12.5px] font-extrabold">{bill?.mealsCount ?? 0}</div>
+            <div className="text-[12.5px] font-extrabold">{myMealSummary?.mealsOn ?? bill?.mealsCount ?? 0}</div>
           </div>
           <div className="rounded-btn bg-bg p-2.5 text-center">
             <div className="text-[9px] font-bold text-text-secondary">MY DUE</div>

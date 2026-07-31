@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Ban,
   BedDouble,
@@ -29,6 +29,7 @@ import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useBill } from "@/hooks/useBill";
 import { useMenu } from "@/hooks/useMenu";
 import { useRooms } from "@/hooks/useRooms";
+import { useUsers } from "@/hooks/useUsers";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -40,10 +41,12 @@ import { AnnouncementItem } from "@/components/student/AnnouncementItem";
 import { NotificationItem } from "@/components/student/NotificationItem";
 import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSheet";
 import { HomeHero } from "@/components/student/HomeHero";
+import { MealRosterSheet } from "@/components/student/MealRosterSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
-import { repo, type MealSlot } from "@/lib/data";
+import type { MealSlot } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
+import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
 
 const QUICK_ACTIONS = [
   { key: "stop", label: "Meal request", icon: Ban, tone: "danger" as const },
@@ -83,22 +86,29 @@ export default function StudentHomePage() {
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
   // This month's own meal count, live — so the hero shows it before any bill
   // is generated (the bill's mealsCount is 0 until then).
-  const [mealsOn, setMealsOn] = useState<number | null>(null);
-  useEffect(() => {
-    if (!activeHostelId || !user) return;
-    const load = () =>
-      repo.meals.getMemberMealSummary(activeHostelId, user.id, currentMonth()).then((s) => setMealsOn(s.mealsOn));
-    load();
-    return repo.meals.subscribe(activeHostelId, load);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeHostelId, user?.id]);
+  const mealsOn = useMemberMealSummary(activeHostelId, user?.id)?.mealsOn ?? null;
   const menu = useMenu(activeHostelId, today());
   const rooms = useRooms(activeHostelId);
+  const boarders = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const notifications = useNotifications(user?.id);
   const [sheet, setSheet] = useState<"stop" | "guest" | "leave" | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [rosterMeal, setRosterMeal] = useState<MealSlot | null>(null);
 
   const myEntry = user && day?.entries[user.id];
+  // How many are eating each meal today, hostel-wide — same on/off resolution
+  // as the manager's roster (MealsScreen), so it always matches what a
+  // manager sees when deciding how much to cook.
+  const todaysEatingCount = (meal: MealSlot) =>
+    boarders.reduce((sum, m) => {
+      const joinedDay = m.joinedAt?.slice(0, 10);
+      const boarderThatDay = !joinedDay || joinedDay <= today();
+      if (!boarderThatDay || (day?.sealed && !day.entries[m.id])) return sum;
+      const entry = day?.entries[m.id];
+      const offeredThatDay = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+      const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offeredThatDay);
+      return sum + (on ? 1 : 0) + (entry?.[meal]?.guestCount ?? 0);
+    }, 0);
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const unreadNotifications = notifications.filter((n) => !n.read);
   const unread = unreadNotifications.length > 0;
@@ -200,9 +210,11 @@ export default function StudentHomePage() {
             const on = myEntry?.[meal].on ?? true;
             const c = MEAL_COLORS[meal];
             return (
-              <div
+              <button
                 key={meal}
-                className={`flex flex-col items-center gap-2 rounded-btn py-3.5 ${
+                type="button"
+                onClick={() => setRosterMeal(meal)}
+                className={`flex cursor-pointer flex-col items-center gap-2 rounded-btn py-3.5 ${
                   on ? "bg-bg" : "bg-bg/50"
                 }`}
               >
@@ -221,7 +233,8 @@ export default function StudentHomePage() {
                 >
                   {on ? "On" : "Off"}
                 </div>
-              </div>
+                <div className="text-[9px] font-bold text-text-secondary">{todaysEatingCount(meal)} eating</div>
+              </button>
             );
           })}
         </div>
@@ -299,6 +312,13 @@ export default function StudentHomePage() {
       <GuestMealSheet open={sheet === "guest"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <LeaveRequestSheet open={sheet === "leave"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <NotificationPrefsSheet open={prefsOpen} onClose={() => setPrefsOpen(false)} user={user} />
+      <MealRosterSheet
+        open={rosterMeal !== null}
+        onClose={() => setRosterMeal(null)}
+        hostelId={activeHostelId}
+        date={today()}
+        meal={rosterMeal}
+      />
     </div>
   );
 }

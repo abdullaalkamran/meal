@@ -25,6 +25,7 @@ import { addDays, currentMonth, formatMonthLabel, today } from "@/lib/utils/date
 import { canToggleMeal, cutoffLabel } from "@/lib/utils/mealPolicy";
 import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
+import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
 
 export default function StudentMealsPage() {
   const { user, hostel, activeHostelId } = useSession();
@@ -42,7 +43,6 @@ export default function StudentMealsPage() {
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
-  const [summary, setSummary] = useState<{ mealsOn: number; billedMeals: number; cost: number } | null>(null);
 
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
@@ -111,14 +111,7 @@ export default function StudentMealsPage() {
   // The member's own meals this month, live — so they see them without waiting
   // for a generated bill. Re-fetched on any meal change (incl. the manager
   // confirming cooking, which moves meals from "on" into "billed").
-  useEffect(() => {
-    if (!activeHostelId || !user) return;
-    const load = () =>
-      repo.meals.getMemberMealSummary(activeHostelId, user.id, currentMonth()).then(setSummary);
-    load();
-    return repo.meals.subscribe(activeHostelId, load);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeHostelId, user?.id]);
+  const summary = useMemberMealSummary(activeHostelId, user?.id);
 
   useEffect(() => {
     if (!hostel) return;
