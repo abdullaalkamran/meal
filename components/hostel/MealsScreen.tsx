@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronUp, Clock, PencilLine, Phone, Trophy } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Clock, PencilLine, Phone, Trophy, UserPlus } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealDay } from "@/hooks/useMealDay";
@@ -17,6 +17,7 @@ import { Calendar } from "@/components/ui/Calendar";
 import { StarRating } from "@/components/ui/StarRating";
 import { useToast } from "@/components/ui/Toast";
 import { RequestMealEditSheet } from "@/components/manager/RequestMealEditSheet";
+import { AddGuestMealSheet } from "@/components/manager/AddGuestMealSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -124,6 +125,7 @@ export function MealsScreen({
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
   const [editRequestTarget, setEditRequestTarget] = useState<User | null>(null);
+  const [guestTarget, setGuestTarget] = useState<User | null>(null);
   const { toast } = useToast();
 
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
@@ -280,6 +282,9 @@ export function MealsScreen({
   ).id;
 
   const rosterCols = readOnly ? "grid-cols-[1fr_auto_auto_auto]" : "grid-cols-[1fr_auto_auto_auto_auto]";
+  const offeredMealsForDay = (["breakfast", "lunch", "dinner"] as MealSlot[]).filter(
+    (meal) => day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -406,7 +411,7 @@ export function MealsScreen({
               <div className="w-6 text-center">B</div>
               <div className="w-6 text-center">L</div>
               <div className="w-6 text-center">D</div>
-              {!readOnly && <div className="w-16 text-center">Edit</div>}
+              {!readOnly && <div className="w-16 text-center">Actions</div>}
             </div>
             {users.map((m) => {
               const entry = day?.entries[m.id];
@@ -460,7 +465,17 @@ export function MealsScreen({
                     );
                   })}
                   {!readOnly && (
-                    <div className="flex w-16 justify-center">
+                    <div className="flex w-16 items-center justify-center gap-1">
+                      {counted && (
+                        <button
+                          type="button"
+                          onClick={() => setGuestTarget(m)}
+                          aria-label={`Add guest meal for ${m.name}`}
+                          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-text-secondary"
+                        >
+                          <Icon icon={UserPlus} size={14} />
+                        </button>
+                      )}
                       {!counted ? null : request?.status === "approved" ? (
                         <span className="text-[9px] font-extrabold text-primary">Unlocked</span>
                       ) : request?.status === "pending" ? (
@@ -649,6 +664,16 @@ export function MealsScreen({
           targetUserId={editRequestTarget?.id}
           targetUserName={editRequestTarget?.name ?? ""}
           date={selectedDate}
+        />
+      )}
+      {!readOnly && (
+        <AddGuestMealSheet
+          open={!!guestTarget}
+          onClose={() => setGuestTarget(null)}
+          hostelId={activeHostelId}
+          date={selectedDate}
+          member={guestTarget}
+          offeredMeals={offeredMealsForDay}
         />
       )}
     </div>

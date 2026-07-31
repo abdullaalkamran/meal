@@ -103,6 +103,10 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   transfers: { advance: HOSTEL_STAFF },
   meals: {
     setMemberMealsForRange: HOSTEL_STAFF,
+    // A direct, unapproved write straight onto a member's guest count — unlike
+    // guestMeals.request (member-initiated, needs manager approval), this is
+    // the manager adding one themselves, so it's manager/owner only.
+    addGuestMeal: HOSTEL_STAFF,
   },
   duties: { createPlan: HOSTEL_STAFF },
   announcements: { post: HOSTEL_STAFF, update: HOSTEL_STAFF },

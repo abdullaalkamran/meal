@@ -12,6 +12,7 @@
 // the month's generated bill when one exists.
 
 import { repo } from "@/lib/data";
+import { formatMonthLabel } from "@/lib/utils/date";
 import type { ReportTable } from "./ownerReports";
 
 export interface MemberMonthlyReport {
@@ -24,6 +25,13 @@ export interface MemberMonthlyReport {
   shoppingSpent: number; // what they personally spent on duty shopping
   mealBalance: number; // shoppingSpent − mealCost (+credit / −due)
   rent: number;
+  /** The roomRent section's own line items, exactly as billed — labelled with
+   * whichever month the manager actually billed (normally this month, but
+   * "Generate bills" can bill a different month's rent in advance, e.g. next
+   * month's rent inside this month's bill — reusing the bill's own label here
+   * instead of assuming it always matches the report's month avoids a
+   * mismatched "Rent · <wrong month>" line). */
+  rentItems: { label: string; amount: number }[];
   serviceCharge: number;
   /** The service-charge section EXACTLY as billed — each line item from bill
    * generation (owner monthly charge, water bill, gas bill, cleaning, …). */
@@ -120,6 +128,11 @@ export async function buildMonthlyMealReport(
       shoppingSpent,
       mealBalance: shoppingSpent - mealCost,
       rent: bill ? section("roomRent") : room?.seatRent ?? 0,
+      rentItems: bill
+        ? bill.sections.find((s) => s.label === "roomRent")?.items ?? []
+        : room?.seatRent
+          ? [{ label: `Room ${room.number} (seat) · ${formatMonthLabel(month)}`, amount: room.seatRent }]
+          : [],
       serviceCharge: bill
         ? section("serviceCharge")
         : serviceItems.reduce((sum, i) => sum + i.amount, 0),

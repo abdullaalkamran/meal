@@ -33,12 +33,17 @@ function BalanceTag({ balance }: { balance: number }) {
   );
 }
 
-function MemberReportCard({ m, month }: { m: MemberMonthlyReport; month: string }) {
+function MemberReportCard({ m }: { m: MemberMonthlyReport }) {
   const rows: [string, string][] = [
     ["Total meals", String(m.totalMeals)],
     ["Meal cost (avg rate × meals)", money(m.mealCost)],
     ["Shopping spent", money(m.shoppingSpent)],
-    [`Rent · ${formatMonthLabel(month)}`, money(m.rent)],
+    // Each rent line exactly as billed — labelled with whichever month it
+    // actually covers (normally this month, but a manager can bill next
+    // month's rent in advance, e.g. an "Advance rent" line), not assumed to
+    // always be the report's own month.
+    ...m.rentItems.map((i): [string, string] => [`· ${i.label}`, money(i.amount)]),
+    ["Rent total", money(m.rent)],
     // Every billed service line by name (water, gas, cleaning, owner
     // charge, …), then the section total — same as the bill.
     ...m.serviceItems.map((i): [string, string] => [`· ${i.label}`, money(i.amount)]),
@@ -282,7 +287,7 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
         ) : (
           <div className="flex flex-col gap-2.5">
             {visibleMembers.map((m) => (
-              <MemberReportCard key={m.userId} m={m} month={month} />
+              <MemberReportCard key={m.userId} m={m} />
             ))}
           </div>
         )}
