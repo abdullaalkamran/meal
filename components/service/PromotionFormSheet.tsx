@@ -5,7 +5,8 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ImagePicker } from "@/components/store/ImagePicker";
-import { repo, type Promotion } from "@/lib/data";
+import { ServiceAreaPicker } from "@/components/ui/ServiceAreaPicker";
+import { repo, type GeoArea, type Promotion } from "@/lib/data";
 
 /** Recommended upload size per placement, shown to the uploader so cards stay
  * sharp. Hero = wide 2:1 banner; popup = square. */
@@ -36,6 +37,7 @@ export function PromotionFormSheet({
   const [title, setTitle] = useState("");
   const [tagline, setTagline] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [areas, setAreas] = useState<GeoArea[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export function PromotionFormSheet({
         setTitle(editing?.title ?? "");
         setTagline(editing?.tagline ?? "");
         setLinkUrl(editing?.linkUrl ?? "");
+        setAreas(editing?.areas ?? []);
         setBusy(false);
       });
     }
@@ -62,6 +65,7 @@ export function PromotionFormSheet({
         title: title.trim() || undefined,
         tagline: tagline.trim() || undefined,
         linkUrl: linkUrl.trim() || undefined,
+        areas: areas.length > 0 ? areas : undefined,
       };
       if (editing) await repo.promotions.update(editing.id, fields);
       else await repo.promotions.add(fields);
@@ -106,6 +110,10 @@ export function PromotionFormSheet({
         inputMode="url"
         className="mb-4 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-semibold"
       />
+
+      <div className="mb-4">
+        <ServiceAreaPicker value={areas} onChange={setAreas} />
+      </div>
 
       <Button fullWidth onClick={save} disabled={!canSave}>
         {busy ? "Saving…" : editing ? "Save changes" : `Add ${TITLE[placement].toLowerCase()}`}

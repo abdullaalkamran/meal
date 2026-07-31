@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
 import { repo, type Promotion } from "@/lib/data";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
+import { useMemberArea } from "@/hooks/useMemberArea";
 
 // Shown at most once per browser session. A single flag (not one per id) also
 // lets us SKIP the fetch entirely once dismissed — important because this lives
@@ -15,6 +17,7 @@ const SESSION_FLAG = "promo-popup-done";
  * Manager uploads these under Home page promotions. */
 export function LoginPromoPopup() {
   const [promo, setPromo] = useState<Promotion | null>(null);
+  const area = useMemberArea();
 
   useEffect(() => {
     let done = false;
@@ -30,12 +33,14 @@ export function LoginPromoPopup() {
     repo.promotions
       .listActive("popup")
       .then((list) => {
-        if (!cancelled && list.length > 0) setPromo(list[0]);
+        const match = list.find((p) => isAvailableAt(p.areas, area));
+        if (!cancelled && match) setPromo(match);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!promo) return null;
