@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Lock, Phone } from "lucide-react";
+import { Download, Lock, Phone } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -98,6 +98,15 @@ export default function LoginPage() {
       >
         New here? Create an account
       </Link>
+
+      <a
+        href="/downloads/mydorm.apk"
+        download
+        className="flex min-h-11 items-center justify-center gap-2 rounded-card text-[11px] font-extrabold text-text-secondary"
+      >
+        <Icon icon={Download} size={13} className="shrink-0" />
+        Download the Android app (APK)
+      </a>
 
       <ForgotPasswordSheet open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
