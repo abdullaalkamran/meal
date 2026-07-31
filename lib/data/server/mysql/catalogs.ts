@@ -21,6 +21,7 @@ import type {
   Product,
   ProductKind,
   Promotion,
+  QuickServiceSettings,
   ServiceListing,
   StudyAbroadItem,
   StudyLead,
@@ -37,6 +38,7 @@ import type {
   ProductRepository,
   PromoSettingsRepository,
   PromotionRepository,
+  QuickServicesRepository,
   ServiceCatalogRepository,
   StoreSettingsRepository,
   StudyAbroadRepository,
@@ -70,7 +72,7 @@ function omitKeys(obj: Record<string, unknown>, keys: readonly string[]): Record
 
 // ── Availability areas (shared by listings and products) ───────────────────
 
-export type AreaEntity = "service_listing" | "product" | "user";
+export type AreaEntity = "service_listing" | "product" | "user" | "promotion";
 
 export async function writeAreas(entity: AreaEntity, entityId: string, areas: GeoArea[] | undefined, tx: Queryable) {
   await run("DELETE FROM availability_areas WHERE entity_type = ? AND entity_id = ?", [entity, entityId], tx);
@@ -855,7 +857,7 @@ interface PromoRow {
   id: string; placement: Promotion["placement"]; image: string; title: string | null;
   tagline: string | null; link_url: string | null; active: number; created_at: string;
 }
-const toPromotion = (r: PromoRow): Promotion => ({
+const toPromotion = (r: PromoRow, areas?: GeoArea[]): Promotion => ({
   id: r.id,
   placement: r.placement,
   image: r.image,
@@ -864,6 +866,7 @@ const toPromotion = (r: PromoRow): Promotion => ({
   linkUrl: r.link_url ?? undefined,
   active: toBool(r.active),
   createdAt: toIso(r.created_at),
+  ...(areas && areas.length ? { areas } : {}),
 });
 
 export const promotions: PromotionRepository = {
@@ -871,40 +874,54 @@ export const promotions: PromotionRepository = {
     const rows = await all<PromoRow>(
       "SELECT id, placement, image, title, tagline, link_url, active, created_at FROM promotions ORDER BY created_at DESC"
     );
-    return rows.map(toPromotion);
+    const areas = await loadAreas("promotion", rows.map((r) => r.id));
+    return rows.map((r) => toPromotion(r, areas.get(r.id)));
   },
   async listActive(placement) {
     const rows = await all<PromoRow>(
       "SELECT id, placement, image, title, tagline, link_url, active, created_at FROM promotions WHERE placement = ? AND active = 1 ORDER BY created_at DESC",
       [placement]
     );
-    return rows.map(toPromotion);
+    const areas = await loadAreas("promotion", rows.map((r) => r.id));
+    return rows.map((r) => toPromotion(r, areas.get(r.id)));
   },
   async add(promo) {
-    await run(
-      `INSERT INTO promotions (id, placement, image, title, tagline, link_url, active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-      [newId("promo"), promo.placement, promo.image, promo.title ?? null, promo.tagline ?? null, promo.linkUrl ?? null, now()]
-    );
+    await transaction(async (tx) => {
+      const id = newId("promo");
+      await run(
+        `INSERT INTO promotions (id, placement, image, title, tagline, link_url, active, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+        [id, promo.placement, promo.image, promo.title ?? null, promo.tagline ?? null, promo.linkUrl ?? null, now()],
+        tx
+      );
+      await writeAreas("promotion", id, promo.areas, tx);
+    });
   },
   async update(id, patch) {
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    if (patch.placement !== undefined) { sets.push("placement = ?"); vals.push(patch.placement); }
-    if (patch.image !== undefined) { sets.push("image = ?"); vals.push(patch.image); }
-    if (patch.title !== undefined) { sets.push("title = ?"); vals.push(patch.title ?? null); }
-    if (patch.tagline !== undefined) { sets.push("tagline = ?"); vals.push(patch.tagline ?? null); }
-    if (patch.linkUrl !== undefined) { sets.push("link_url = ?"); vals.push(patch.linkUrl ?? null); }
-    if (patch.active !== undefined) { sets.push("active = ?"); vals.push(patch.active ? 1 : 0); }
-    if (sets.length === 0) return;
-    vals.push(id);
-    await run(`UPDATE promotions SET ${sets.join(", ")} WHERE id = ?`, vals);
+    await transaction(async (tx) => {
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      if (patch.placement !== undefined) { sets.push("placement = ?"); vals.push(patch.placement); }
+      if (patch.image !== undefined) { sets.push("image = ?"); vals.push(patch.image); }
+      if (patch.title !== undefined) { sets.push("title = ?"); vals.push(patch.title ?? null); }
+      if (patch.tagline !== undefined) { sets.push("tagline = ?"); vals.push(patch.tagline ?? null); }
+      if (patch.linkUrl !== undefined) { sets.push("link_url = ?"); vals.push(patch.linkUrl ?? null); }
+      if (patch.active !== undefined) { sets.push("active = ?"); vals.push(patch.active ? 1 : 0); }
+      if (sets.length > 0) {
+        vals.push(id);
+        await run(`UPDATE promotions SET ${sets.join(", ")} WHERE id = ?`, vals, tx);
+      }
+      if (patch.areas !== undefined) await writeAreas("promotion", id, patch.areas, tx);
+    });
   },
   async toggleActive(id, active) {
     await run("UPDATE promotions SET active = ? WHERE id = ?", [active ? 1 : 0, id]);
   },
   async remove(id) {
-    await run("DELETE FROM promotions WHERE id = ?", [id]);
+    await transaction(async (tx) => {
+      await run("DELETE FROM availability_areas WHERE entity_type = 'promotion' AND entity_id = ?", [id], tx);
+      await run("DELETE FROM promotions WHERE id = ?", [id], tx);
+    });
   },
   subscribe: serverOnly,
 };
@@ -1041,6 +1058,24 @@ export const studyLeads: StudyLeadRepository = {
 
   async remove(id) {
     await run("DELETE FROM study_leads WHERE id = ?", [id]);
+  },
+
+  subscribe: serverOnly,
+};
+
+// ── Quick service (member home "Quick actions") availability, single row ──
+
+export const quickServices: QuickServicesRepository = {
+  async get() {
+    const r = await one<{ data: unknown }>("SELECT data FROM quick_service_settings WHERE id = 1");
+    return parseAttrs(r?.data) as QuickServiceSettings;
+  },
+
+  async update(key, patch) {
+    const r = await one<{ data: unknown }>("SELECT data FROM quick_service_settings WHERE id = 1");
+    const current = (parseAttrs(r?.data) as QuickServiceSettings)[key] ?? { enabled: true, areas: [] };
+    const next = { ...(parseAttrs(r?.data) as QuickServiceSettings), [key]: { ...current, ...patch } };
+    await run("UPDATE quick_service_settings SET data = ? WHERE id = 1", [JSON.stringify(next)]);
   },
 
   subscribe: serverOnly,

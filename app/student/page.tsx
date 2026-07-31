@@ -2,26 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import {
-  Ban,
-  BedDouble,
-  Bell,
-  BookOpen,
-  Briefcase,
-  ChefHat,
-  ChevronRight,
-  CreditCard,
-  DoorOpen,
-  GraduationCap,
-  Megaphone,
-  MessagesSquare,
-  Plane,
-  ShoppingBasket,
-  ShoppingCart,
-  Tag,
-  TrendingUp,
-  UserPlus,
-} from "lucide-react";
+import { Bell, ChevronRight, Megaphone, ShoppingCart } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useActionableAnnouncements } from "@/hooks/useActionableAnnouncements";
@@ -47,32 +28,9 @@ import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date"
 import type { MealSlot } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
-
-const QUICK_ACTIONS = [
-  { key: "stop", label: "Meal request", icon: Ban, tone: "danger" as const },
-  { key: "guest", label: "Guest meal", icon: UserPlus, tone: "orange" as const },
-  { key: "leave", label: "Leave hostel", icon: DoorOpen, tone: "orange" as const },
-  { key: "pay", label: "Pay bill", icon: CreditCard, tone: "primary" as const, href: "/student/bill" },
-  { key: "shopping", label: "Shopping", icon: ShoppingCart, tone: "blue" as const, href: "/student/shopping" },
-  { key: "grocery", label: "Grocery", icon: ShoppingBasket, tone: "primary" as const, href: "/explore/grocery" },
-  { key: "jobs", label: "Find Job", icon: Briefcase, tone: "primary" as const, href: "/explore/jobs" },
-  { key: "learning", label: "Learning", icon: GraduationCap, tone: "blue" as const, href: "/explore/learning" },
-  { key: "studyAbroad", label: "Study abroad", icon: Plane, tone: "violet" as const, href: "/explore/study-abroad" },
-  { key: "investment", label: "Investment", icon: TrendingUp, tone: "primary" as const, href: "/explore/investment" },
-  { key: "books", label: "Buy Books", icon: BookOpen, tone: "orange" as const, href: "/explore/books" },
-  { key: "findHostel", label: "Find Hostel", icon: BedDouble, tone: "violet" as const, href: "/explore/hostels" },
-  { key: "findCook", label: "Find Cook", icon: ChefHat, tone: "orange" as const, href: "/explore/cooks" },
-  { key: "offers", label: "Shop offer", icon: Tag, tone: "blue" as const, href: "/explore/offers" },
-  { key: "community", label: "Community", icon: MessagesSquare, tone: "primary" as const, href: "/explore/community" },
-] as const;
-
-const TONE_CLASSES = {
-  danger: "bg-danger-soft text-danger",
-  orange: "bg-orange-soft text-orange",
-  primary: "bg-primary-soft text-primary",
-  blue: "bg-blue-soft text-blue",
-  violet: "bg-[#7C6CF6]/10 text-[#7C6CF6]",
-};
+import { useQuickServices } from "@/hooks/useQuickServices";
+import { QUICK_ACTIONS, QUICK_ACTION_TONE_CLASSES as TONE_CLASSES } from "@/lib/quickActions";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 
 export default function StudentHomePage() {
   const { user, hostel, activeHostelId } = useSession();
@@ -91,9 +49,18 @@ export default function StudentHomePage() {
   const rooms = useRooms(activeHostelId);
   const boarders = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
   const notifications = useNotifications(user?.id);
-  const [sheet, setSheet] = useState<"stop" | "guest" | "leave" | null>(null);
+  const [sheet, setSheet] = useState<string | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [rosterMeal, setRosterMeal] = useState<MealSlot | null>(null);
+  // Super Admin's per-quick-action enable/disable + location restriction —
+  // "restrictions only ever narrow": a key missing from settings, or with no
+  // areas set, stays visible everywhere.
+  const quickServiceSettings = useQuickServices();
+  const visibleQuickActions = QUICK_ACTIONS.filter((a) => {
+    if (!a.quickService) return true;
+    const s = quickServiceSettings[a.key];
+    return (s?.enabled ?? true) && isAvailableAt(s?.areas, hostel?.address);
+  });
 
   const myEntry = user && day?.entries[user.id];
   // How many are eating each meal today, hostel-wide — same on/off resolution
@@ -263,7 +230,7 @@ export default function StudentHomePage() {
       <div>
         <div className="mb-2 text-[13.5px] font-extrabold">Quick actions</div>
         <div className="grid grid-cols-4 gap-2.5">
-          {QUICK_ACTIONS.map((action) => {
+          {visibleQuickActions.map((action) => {
             const content = (
               <div className="flex flex-col items-center gap-2 rounded-card border border-border bg-card py-3.5 shadow-chip">
                 <div className={`flex h-9 w-9 items-center justify-center rounded-full ${TONE_CLASSES[action.tone]}`}>
@@ -272,7 +239,7 @@ export default function StudentHomePage() {
                 <div className="text-center text-[9.5px] font-bold leading-tight">{action.label}</div>
               </div>
             );
-            if ("href" in action) {
+            if (action.href) {
               return (
                 <Link key={action.key} href={action.href}>
                   {content}

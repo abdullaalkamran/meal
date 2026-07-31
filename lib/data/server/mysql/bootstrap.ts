@@ -416,6 +416,35 @@ async function ensurePromoSettings(): Promise<void> {
   if (rows.length === 0) await run("INSERT INTO hero_promo_settings (id) VALUES (1)");
 }
 
+/** Widens availability_areas.entity_type on databases that predate 'user' and
+ * 'promotion' — without this, writeAreas("user", …) (service-manager area
+ * permissions) and writeAreas("promotion", …) (promo card regions) fail
+ * against the narrower enum. */
+async function ensureAvailabilityAreasEntityEnum(): Promise<void> {
+  const row = await one<{ COLUMN_TYPE: string }>(
+    "SELECT COLUMN_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'availability_areas' AND column_name = 'entity_type'"
+  );
+  if (row?.COLUMN_TYPE?.includes("promotion")) return;
+  await run(
+    "ALTER TABLE availability_areas MODIFY COLUMN entity_type ENUM('service_listing','product','user','promotion') NOT NULL"
+  );
+}
+
+/** Creates quick_service_settings on databases that predate it. */
+async function ensureQuickServiceSettingsTable(): Promise<void> {
+  if (!(await tableExists("quick_service_settings"))) {
+    await run(
+      `CREATE TABLE quick_service_settings (
+         id   TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
+         data JSON    NOT NULL,
+         CONSTRAINT ck_quick_service_settings_singleton CHECK (id = 1)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    );
+  }
+  const rows = await all<{ id: number }>("SELECT id FROM quick_service_settings LIMIT 1");
+  if (rows.length === 0) await run("INSERT INTO quick_service_settings (id, data) VALUES (1, JSON_OBJECT())");
+}
+
 /** Widens orders.status to the full delivery pipeline, and adds the
  * discount/coupon/buyer-phone columns, on databases that predate them. */
 async function ensureOrderPipelineColumns(): Promise<void> {
@@ -506,6 +535,8 @@ export function ensureReady(): Promise<void> {
       await ensurePromotionsTable();
       await ensureEmailTables();
       await ensurePromoSettings();
+      await ensureQuickServiceSettingsTable();
+      await ensureAvailabilityAreasEntityEnum();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.

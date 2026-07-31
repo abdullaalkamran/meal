@@ -49,6 +49,8 @@ import type {
   Product,
   Promotion,
   ProductKind,
+  QuickServiceAvailability,
+  QuickServiceSettings,
   Rating,
   NewServiceListing,
   Reaction,
@@ -629,6 +631,14 @@ export interface PromoSettingsRepository {
   subscribe(cb: (settings: HeroPromoSettings) => void): Unsubscribe;
 }
 
+/** Super Admin's per-quick-action enable/disable + location restriction
+ * (see lib/quickActions.ts for the fixed set of keys). */
+export interface QuickServicesRepository {
+  get(): Promise<QuickServiceSettings>;
+  update(key: string, patch: Partial<QuickServiceAvailability>): Promise<void>;
+  subscribe(cb: (settings: QuickServiceSettings) => void): Unsubscribe;
+}
+
 export interface StudyLeadRepository {
   listAll(): Promise<StudyLead[]>;
   /** Member submits the "check your eligibility" form. */
@@ -707,4 +717,5 @@ export interface Repositories {
   studyAbroad: StudyAbroadRepository;
   studyLeads: StudyLeadRepository;
   promoSettings: PromoSettingsRepository;
+  quickServices: QuickServicesRepository;
 }

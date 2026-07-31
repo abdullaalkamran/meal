@@ -31,6 +31,7 @@ import {
   products,
   promoSettings,
   promotions,
+  quickServices,
   serviceCatalog,
   storeSettings,
   studyAbroad,
@@ -150,4 +151,5 @@ export const mysqlRepositories: Repositories = {
   studyLeads,
   promoSettings,
   promotions,
+  quickServices,
 };

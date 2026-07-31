@@ -26,6 +26,7 @@ import type {
   CartRepository,
   ProductRepository,
   PromoSettingsRepository,
+  QuickServicesRepository,
   RatingRepository,
   Repositories,
   RoomRepository,
@@ -3353,6 +3354,25 @@ const promoSettings: PromoSettingsRepository = {
   },
 };
 
+const quickServices: QuickServicesRepository = {
+  async get() {
+    return { ...store.data.quickServiceSettings };
+  },
+  async update(key, patch) {
+    const current = store.data.quickServiceSettings[key] ?? { enabled: true, areas: [] };
+    store.data.quickServiceSettings = {
+      ...store.data.quickServiceSettings,
+      [key]: { ...current, ...patch },
+    };
+    store.emit("quickServices");
+  },
+  subscribe(cb) {
+    const fire = () => cb({ ...store.data.quickServiceSettings });
+    fire();
+    return store.on("quickServices", fire);
+  },
+};
+
 const studyLeads: StudyLeadRepository = {
   async listAll() {
     return [...store.data.studyLeads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -3492,4 +3512,5 @@ export const mockRepositories: Repositories = {
   studyAbroad,
   studyLeads,
   promoSettings,
+  quickServices,
 };

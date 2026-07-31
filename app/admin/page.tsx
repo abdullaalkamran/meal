@@ -2,10 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BedDouble, ChevronRight, Mail, Megaphone, Package, Users } from "lucide-react";
+import {
+  BedDouble,
+  ChevronRight,
+  Mail,
+  Megaphone,
+  Package,
+  Settings,
+  UserCog,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { SmtpSettingsSheet } from "@/components/admin/SmtpSettingsSheet";
+import { CreatePlatformAccountSheet } from "@/components/admin/CreatePlatformAccountSheet";
 import { repo, type Bill, type Hostel, type Order, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, today } from "@/lib/utils/date";
@@ -18,8 +30,10 @@ export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [leadCount, setLeadCount] = useState(0);
   const [smtpOpen, setSmtpOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const { toast } = useToast();
 
-  useEffect(() => {
+  const load = () => {
     (async () => {
       const [hs, us, allOrders, leads] = await Promise.all([
         repo.hostels.listAll(),
@@ -52,7 +66,8 @@ export default function AdminDashboardPage() {
         )
       );
     })();
-  }, []);
+  };
+  useEffect(load, []);
 
   const activeHostels = hostels.filter((h) => !h.suspended).length;
   const owners = allUsers.filter((u) => u.role === "owner").length;
@@ -97,34 +112,83 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <Link href="/admin/hostels">
-          <Card className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary">
-              <Icon icon={BedDouble} size={17} />
-            </div>
-            <div className="min-w-0 flex-1 text-[11.5px] font-extrabold">Hostels directory</div>
-            <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
-          </Card>
-        </Link>
-        <Link href="/admin/users">
-          <Card className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-soft text-blue">
-              <Icon icon={Users} size={17} />
-            </div>
-            <div className="min-w-0 flex-1 text-[11.5px] font-extrabold">All users</div>
-            <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
-          </Card>
-        </Link>
-        <button type="button" onClick={() => setSmtpOpen(true)} className="text-left">
-          <Card className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-soft text-orange">
-              <Icon icon={Mail} size={17} />
-            </div>
-            <div className="min-w-0 flex-1 text-[11.5px] font-extrabold">Email (SMTP) settings</div>
-            <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
-          </Card>
-        </button>
+      <div>
+        <div className="mb-2 text-[13.5px] font-extrabold">Manage</div>
+        <div className="flex flex-col gap-2">
+          <Link href="/admin/hostels">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary">
+                <Icon icon={BedDouble} size={17} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-extrabold">Hostels directory</div>
+                <div className="text-[9.5px] font-semibold text-text-secondary">{hostels.length} hostels</div>
+              </div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </Link>
+          <Link href="/admin/users">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-soft text-blue">
+                <Icon icon={Users} size={17} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-extrabold">All users</div>
+                <div className="text-[9.5px] font-semibold text-text-secondary">{allUsers.length} accounts</div>
+              </div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </Link>
+          <Link href="/admin/services">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#7C6CF6]/10 text-[#7C6CF6]">
+                <Icon icon={Settings} size={17} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-extrabold">Quick services</div>
+                <div className="text-[9.5px] font-semibold text-text-secondary">
+                  Enable/disable home-page tiles by region
+                </div>
+              </div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </Link>
+          <button type="button" onClick={() => setCreateOpen(true)} className="text-left">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-soft text-primary">
+                <Icon icon={UserPlus} size={17} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-extrabold">Create platform account</div>
+                <div className="text-[9.5px] font-semibold text-text-secondary">Marketing or Service Manager</div>
+              </div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </button>
+          <Link href="/admin/users">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#7C6CF6]/10 text-[#7C6CF6]">
+                <Icon icon={UserCog} size={17} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11.5px] font-extrabold">Service permissions</div>
+                <div className="text-[9.5px] font-semibold text-text-secondary">
+                  Service types + regions per manager
+                </div>
+              </div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </Link>
+          <button type="button" onClick={() => setSmtpOpen(true)} className="text-left">
+            <Card className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-soft text-orange">
+                <Icon icon={Mail} size={17} />
+              </div>
+              <div className="min-w-0 flex-1 text-[11.5px] font-extrabold">Email (SMTP) settings</div>
+              <Icon icon={ChevronRight} size={15} className="text-text-secondary" />
+            </Card>
+          </button>
+        </div>
       </div>
 
       <div>
@@ -145,6 +209,14 @@ export default function AdminDashboardPage() {
       </div>
 
       <SmtpSettingsSheet open={smtpOpen} onClose={() => setSmtpOpen(false)} />
+      <CreatePlatformAccountSheet
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(name) => {
+          toast(`${name}'s account created`);
+          load();
+        }}
+      />
     </div>
   );
 }

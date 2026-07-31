@@ -40,6 +40,7 @@ import type {
   Payment,
   Product,
   Promotion,
+  QuickServiceSettings,
   Rating,
   Reaction,
   Room,
@@ -106,6 +107,7 @@ export interface Tables {
   studyAbroadItems: StudyAbroadItem[];
   studyLeads: StudyLead[];
   heroPromoSettings: HeroPromoSettings;
+  quickServiceSettings: QuickServiceSettings;
   /** userId -> scrypt password hash. Kept OUT of the `users` array (and thus
    * the `User` type) so it can never be serialized back to a client — every
    * User-returning read (getUser, listByHostel, subscribeUser, ...) reads

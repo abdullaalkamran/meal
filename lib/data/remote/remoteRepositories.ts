@@ -13,7 +13,7 @@ import type {
   SwapRequest,
   User,
 } from "../types";
-import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StoreSettingsRepository, CouponRepository, StudyAbroadRepository, PromoSettingsRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository, ShoppingCostEditRepository, PushSubscriptionRepository, PromotionRepository } from "../repository";
+import type { Repositories, UserRepository, RoomRepository, HostelRepository, MealRepository, MenuRepository, RatingRepository, CommentRepository, DutyRepository, SwapRepository, ShortageRepository, BillRepository, CookLeaveRepository, CookAttendanceRepository, MealEditRepository, AnnouncementRepository, NotificationRepository, ExpenseRepository, TransferRepository, JoinRequestRepository, LeaveRequestRepository, MealStopRepository, GuestMealRepository, ExploreInteractionRepository, CommunityRepository, ServiceCatalogRepository, CampaignRepository, MarketingRepository, ProductRepository, CartRepository, OrderRepository, StoreSettingsRepository, CouponRepository, StudyAbroadRepository, PromoSettingsRepository, QuickServicesRepository, StudyLeadRepository, UsedBookRepository, ActivityRepository, ShoppingCostRepository, ShoppingCostEditRepository, PushSubscriptionRepository, PromotionRepository } from "../repository";
 const POLL_INTERVAL_MS = 2500;
 
 // The activity-log actor is derived server-side from the session cookie
@@ -402,6 +402,11 @@ const promoSettings = remoteRepo<PromoSettingsRepository>("promoSettings", {
     makeSubscribe(() => rpc<Awaited<ReturnType<PromoSettingsRepository["get"]>>>("promoSettings", "get", []), cb),
 });
 
+const quickServices = remoteRepo<QuickServicesRepository>("quickServices", {
+  subscribe: (cb) =>
+    makeSubscribe(() => rpc<Awaited<ReturnType<QuickServicesRepository["get"]>>>("quickServices", "get", []), cb),
+});
+
 const studyLeads = remoteRepo<StudyLeadRepository>("studyLeads", {
   subscribe: (cb) =>
     makeSubscribe(() => rpc<Awaited<ReturnType<StudyLeadRepository["listAll"]>>>("studyLeads", "listAll", []), cb),
@@ -464,4 +469,5 @@ export const remoteRepositories: Repositories = {
   studyAbroad,
   studyLeads,
   promoSettings,
+  quickServices,
 };

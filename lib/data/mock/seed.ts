@@ -69,5 +69,6 @@ export function buildSeed(): Tables {
       intervalSec: 4,
       photoHeightPx: 150,
     },
+    quickServiceSettings: {},
   };
 }

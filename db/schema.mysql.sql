@@ -861,7 +861,7 @@ CREATE TABLE products (
 -- whole division, NULL thana the whole district.
 CREATE TABLE availability_areas (
   id          VARCHAR(64) NOT NULL PRIMARY KEY,
-  entity_type ENUM('service_listing','product') NOT NULL,
+  entity_type ENUM('service_listing','product','user','promotion') NOT NULL,
   entity_id   VARCHAR(64) NOT NULL,
   division    VARCHAR(64) NOT NULL,
   district    VARCHAR(64) NULL,
@@ -1026,6 +1026,18 @@ CREATE TABLE hero_promo_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO hero_promo_settings (id) VALUES (1);
+
+-- Super Admin's per-quick-action (Find Job, Grocery, …) enable/disable +
+-- location restriction. Single JSON blob keyed by the quick action's key —
+-- a fixed, small set (see lib/quickActions.ts) that doesn't warrant its own
+-- normalized columns/table the way hero_promo_settings' sources do.
+CREATE TABLE quick_service_settings (
+  id   TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
+  data JSON    NOT NULL,
+  CONSTRAINT ck_quick_service_settings_singleton CHECK (id = 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO quick_service_settings (id, data) VALUES (1, JSON_OBJECT());
 
 -- One-time password-reset codes emailed to an account. The code is stored
 -- only as a scrypt hash; rate limiting/expiry are enforced in the app.

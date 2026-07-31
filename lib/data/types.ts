@@ -955,6 +955,8 @@ export interface Promotion {
   linkUrl?: string;
   active: boolean;
   createdAt: string;
+  /** Regions where this card shows. Missing/empty = shown everywhere. */
+  areas?: GeoArea[];
 }
 
 export interface HeroPromoSettings {
@@ -971,3 +973,15 @@ export interface HeroPromoSettings {
   /** Rendered height of the photo cards in px (120–240). */
   photoHeightPx: number;
 }
+
+/** Super Admin's control over one "Quick action" tile on the member home page
+ * (Find Job, Grocery, Learning, …). Missing key = enabled, no area
+ * restriction — same "restrictions only ever narrow" rule as GeoArea
+ * elsewhere, so new quick actions don't need seeding here. */
+export interface QuickServiceAvailability {
+  enabled: boolean;
+  areas: GeoArea[];
+}
+
+/** Keyed by the quick action's key (see lib/quickActions.ts). */
+export type QuickServiceSettings = Record<string, QuickServiceAvailability>;

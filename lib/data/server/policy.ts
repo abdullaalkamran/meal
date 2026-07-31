@@ -113,6 +113,9 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   studyAbroad: { add: SERVICE_TEAM, update: SERVICE_TEAM, toggleActive: SERVICE_TEAM, remove: SERVICE_TEAM },
   studyLeads: { setContacted: SERVICE_TEAM, remove: SERVICE_TEAM },
   promoSettings: { update: SERVICE_TEAM },
+  // Which "Quick action" tiles show on the member home page, and where —
+  // Super Admin only.
+  quickServices: { update: PLATFORM_ADMIN },
   // Home-page banners + login popups: only the service team / super admin
   // may create or change them; listing is open to signed-in members.
   promotions: {

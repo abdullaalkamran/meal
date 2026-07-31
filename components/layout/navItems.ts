@@ -69,6 +69,7 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/admin", label: "Dashboard", iconKey: "dashboard" },
     { href: "/admin/hostels", label: "Hostels", iconKey: "hostels" },
     { href: "/admin/users", label: "Users", iconKey: "students" },
+    { href: "/admin/services", label: "Quick services", iconKey: "settings" },
   ],
   marketing: [
     { href: "/marketing", label: "KPIs", iconKey: "kpi" },
