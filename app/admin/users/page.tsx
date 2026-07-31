@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
+import { Chip } from "@/components/ui/Chip";
+import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { ResetPasswordSheet } from "@/components/hostel/ResetPasswordSheet";
 import { CreatePlatformAccountSheet } from "@/components/admin/CreatePlatformAccountSheet";
@@ -39,6 +42,9 @@ export default function AdminUsersPage() {
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [permsUser, setPermsUser] = useState<User | null>(null);
+  const [query, setQuery] = useState("");
+  const [bannedOnly, setBannedOnly] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const { toast } = useToast();
 
   const load = () => {
@@ -53,6 +59,18 @@ export default function AdminUsersPage() {
   // it (dangling ownerId/managerId) — those must be reassigned first.
   const referencedBy = (userId: string) =>
     hostels.find((h) => h.ownerId === userId || h.managerId === userId || h.cookId === userId);
+
+  const q = query.trim().toLowerCase();
+  const visibleUsers = users.filter((u) => {
+    if (bannedOnly && !u.banned) return false;
+    if (roleFilter !== "all" && u.role !== roleFilter) return false;
+    if (!q) return true;
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.phone.toLowerCase().includes(q) ||
+      (u.hostelId ? hostelName(u.hostelId).toLowerCase().includes(q) : false)
+    );
+  });
 
   const ban = async (u: User) => {
     await repo.users.setBanned(u.id, true);
@@ -87,8 +105,42 @@ export default function AdminUsersPage() {
         </button>
       </div>
 
+      <div className="relative">
+        <Icon icon={Search} size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name, phone or hostel…"
+          className="w-full rounded-btn border border-border bg-card py-2.5 pl-9 pr-3 text-[12px] font-bold shadow-chip"
+        />
+      </div>
+
+      <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+        <button type="button" onClick={() => setRoleFilter("all")} className="shrink-0">
+          <Chip tone="primary" active={roleFilter === "all"}>
+            All roles
+          </Chip>
+        </button>
+        {ROLE_ORDER.map((role) => (
+          <button key={role} type="button" onClick={() => setRoleFilter(role)} className="shrink-0">
+            <Chip tone="primary" active={roleFilter === role}>
+              {ROLE_LABEL[role]}
+            </Chip>
+          </button>
+        ))}
+        <button type="button" onClick={() => setBannedOnly((v) => !v)} className="shrink-0">
+          <Chip tone="danger" active={bannedOnly}>
+            Banned only
+          </Chip>
+        </button>
+      </div>
+
+      {visibleUsers.length === 0 && (
+        <Card className="text-center text-[11.5px] font-semibold text-text-secondary">No accounts match.</Card>
+      )}
+
       {ROLE_ORDER.map((role) => {
-        const list = users.filter((u) => u.role === role);
+        const list = visibleUsers.filter((u) => u.role === role);
         if (list.length === 0) return null;
         return (
           <div key={role}>
