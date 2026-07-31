@@ -18,11 +18,26 @@ function hueFromSeed(seed: string): number {
 interface AvatarProps {
   name: string;
   seed?: string;
+  /** An uploaded profile photo (data URI) — shown instead of the
+   * initials/gradient when present. */
+  photo?: string;
   size?: number;
   className?: string;
 }
 
-export function Avatar({ name, seed, size = 40, className }: AvatarProps) {
+export function Avatar({ name, seed, photo, size = 40, className }: AvatarProps) {
+  if (photo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={photo}
+        alt={name}
+        className={clsx("shrink-0 rounded-full object-cover", className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   const hue = hueFromSeed(seed ?? name);
   return (
     <div

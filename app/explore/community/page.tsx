@@ -48,7 +48,7 @@ export default function CommunityPage() {
 
       <Card>
         <div className="mb-2 flex items-center gap-2.5">
-          <Avatar name={user?.name ?? "You"} seed={user?.avatarSeed} size={32} />
+          <Avatar name={user?.name ?? "You"} seed={user?.avatarSeed} photo={user?.avatarImage} size={32} />
           <div className="text-[11.5px] font-extrabold">Share with the community</div>
         </div>
         <textarea

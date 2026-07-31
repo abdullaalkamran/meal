@@ -132,7 +132,7 @@ export function RoomsScreen({ memberHref }: { memberHref: (userId: string) => st
                         onClick={() => router.push(memberHref(uid))}
                         className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                       >
-                        <Avatar name={u.name} seed={u.avatarSeed} size={30} />
+                        <Avatar name={u.name} seed={u.avatarSeed} photo={u.avatarImage} size={30} />
                         <div className="truncate text-[11.5px] font-bold">{u.name}</div>
                       </button>
                       {u.role !== "manager" && (

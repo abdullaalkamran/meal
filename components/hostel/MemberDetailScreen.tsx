@@ -194,7 +194,7 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
 
       {/* Header */}
       <Card className="flex items-center gap-3">
-        <Avatar name={member.name} seed={member.avatarSeed} size={54} />
+        <Avatar name={member.name} seed={member.avatarSeed} photo={member.avatarImage} size={54} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-[15px] font-extrabold">{member.name}</div>

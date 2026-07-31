@@ -115,7 +115,7 @@ export default function StudentMorePage() {
       <div className="text-[17.5px] font-extrabold tracking-tight">Profile &amp; settings</div>
 
       <Card className="flex items-center gap-3">
-        <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} size={52} />
+        <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} photo={user?.avatarImage} size={52} />
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-extrabold">{user?.name}</div>
           <div className="text-[10.5px] font-semibold text-text-secondary">

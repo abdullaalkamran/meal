@@ -257,6 +257,13 @@ async function ensureHostelStreetColumn(): Promise<void> {
   await run("ALTER TABLE hostels ADD COLUMN street VARCHAR(255) NULL AFTER service_charge_monthly");
 }
 
+/** Uploaded profile photo (data URI) — shown instead of the generated
+ * initials/gradient avatar wherever a user appears. */
+async function ensureAvatarImageColumn(): Promise<void> {
+  if (await columnExists("users", "avatar_image")) return;
+  await run("ALTER TABLE users ADD COLUMN avatar_image MEDIUMTEXT NULL AFTER avatar_seed");
+}
+
 /** Service Manager permission assignment (Super Admin → Users). */
 async function ensureServicePermissionColumn(): Promise<void> {
   if (await columnExists("users", "service_kinds")) return;
@@ -525,6 +532,7 @@ export function ensureReady(): Promise<void> {
       await ensureHostelRulesColumn();
       await ensureMealsDefaultOffColumn();
       await ensureHostelStreetColumn();
+      await ensureAvatarImageColumn();
       await ensureServicePermissionColumn();
       await ensureLeaveRequestsTable();
       await ensureOrderPipelineColumns();

@@ -50,7 +50,7 @@ export function AppHeader() {
             onClick={() => setProfileOpen(true)}
             className="cursor-pointer rounded-full ring-2 ring-transparent transition hover:ring-primary/40"
           >
-            <Avatar name={user.name} seed={user.avatarSeed} size={34} />
+            <Avatar name={user.name} seed={user.avatarSeed} photo={user.avatarImage} size={34} />
           </button>
         )}
       </div>

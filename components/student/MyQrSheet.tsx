@@ -48,7 +48,7 @@ export function MyQrSheet({
   return (
     <Sheet open={open} onClose={onClose} title="My QR code">
       <div className="mb-3 flex items-center justify-center gap-2.5">
-        <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} size={34} />
+        <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} photo={user?.avatarImage} size={34} />
         <div>
           <div className="text-[12.5px] font-extrabold">{user?.name}</div>
           <div className="text-[10px] font-semibold text-text-secondary">{user?.phone}</div>

@@ -120,7 +120,7 @@ export function AddMemberSheet({
         {scanned ? (
           <>
             <div className="mb-3 flex items-center gap-3 rounded-card bg-bg p-3">
-              <Avatar name={scanned.name} seed={scanned.avatarSeed} size={42} />
+              <Avatar name={scanned.name} seed={scanned.avatarSeed} photo={scanned.avatarImage} size={42} />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-extrabold">{scanned.name}</div>
                 <div className="text-[10.5px] font-semibold text-text-secondary">

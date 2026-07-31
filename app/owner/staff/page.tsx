@@ -74,7 +74,7 @@ export default function OwnerStaffPage() {
     <div className="rounded-btn bg-bg p-3">
       <div className="flex items-center gap-3">
         {person ? (
-          <Avatar name={person.name} seed={person.avatarSeed} size={40} />
+          <Avatar name={person.name} seed={person.avatarSeed} photo={person.avatarImage} size={40} />
         ) : (
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card text-text-secondary">
             <Icon icon={UserPlus} size={16} />

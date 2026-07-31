@@ -107,7 +107,7 @@ export default function StudentHomePage() {
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-danger" />
             )}
           </Link>
-          <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} size={40} />
+          <Avatar name={user?.name ?? ""} seed={user?.avatarSeed} photo={user?.avatarImage} size={40} />
         </div>
       </div>
 

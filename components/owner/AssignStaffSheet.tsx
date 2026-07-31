@@ -178,7 +178,7 @@ export function AssignStaffSheet({
             </div>
             {found && (
               <div className="flex items-center gap-3 rounded-btn border border-primary bg-primary-soft px-3 py-2.5">
-                <Avatar name={found.name} seed={found.avatarSeed} size={34} />
+                <Avatar name={found.name} seed={found.avatarSeed} photo={found.avatarImage} size={34} />
                 <div className="min-w-0">
                   <div className="text-[11.5px] font-extrabold">{found.name}</div>
                   <div className="text-[9.5px] font-semibold text-text-secondary">{found.phone}</div>
@@ -203,7 +203,7 @@ export function AssignStaffSheet({
                   selectedId === u.id ? "border-primary bg-primary-soft" : "border-border"
                 }`}
               >
-                <Avatar name={u.name} seed={u.avatarSeed} size={34} />
+                <Avatar name={u.name} seed={u.avatarSeed} photo={u.avatarImage} size={34} />
                 <div className="min-w-0">
                   <div className="text-[11.5px] font-extrabold">{u.name}</div>
                   <div className="text-[9.5px] font-semibold text-text-secondary">{u.phone}</div>

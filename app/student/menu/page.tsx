@@ -189,7 +189,7 @@ export default function StudentMenuPage() {
         <div className="flex flex-col gap-2">
           {shopper && (
             <Card className="flex items-center gap-3">
-              <Avatar name={shopper.name} seed={shopper.avatarSeed} size={40} />
+              <Avatar name={shopper.name} seed={shopper.avatarSeed} photo={shopper.avatarImage} size={40} />
               <div className="min-w-0 flex-1">
                 <div className="text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
                   Shopping duty
@@ -208,7 +208,7 @@ export default function StudentMenuPage() {
           {manager && (
             <Card>
               <div className="flex items-center gap-3">
-                <Avatar name={manager.name} seed={manager.avatarSeed} size={40} />
+                <Avatar name={manager.name} seed={manager.avatarSeed} photo={manager.avatarImage} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
                     Manager
@@ -306,7 +306,7 @@ export default function StudentMenuPage() {
             return (
               <Card key={c.id}>
                 <div className="mb-1.5 flex items-center gap-2.5">
-                  <Avatar name={author?.name ?? "?"} seed={author?.avatarSeed} size={32} />
+                  <Avatar name={author?.name ?? "?"} seed={author?.avatarSeed} photo={author?.avatarImage} size={32} />
                   <div className="min-w-0 flex-1">
                     <div className="text-[11.5px] font-extrabold">{author?.name ?? "Member"}</div>
                     <div className="text-[9.5px] font-semibold text-text-secondary">

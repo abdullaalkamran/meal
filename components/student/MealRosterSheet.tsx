@@ -35,7 +35,7 @@ export function MealRosterSheet({ open, onClose, hostelId, date, meal }: MealRos
       const offeredThatDay = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
       const on = entry?.[meal]?.on ?? (m.futureMealsOff?.[meal] ? false : offeredThatDay);
       const guests = entry?.[meal]?.guestCount ?? 0;
-      return { id: m.id, name: m.name, avatarSeed: m.avatarSeed, on, guests };
+      return { id: m.id, name: m.name, avatarSeed: m.avatarSeed, avatarImage: m.avatarImage, on, guests };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .sort((a, b) => Number(b.on) - Number(a.on) || a.name.localeCompare(b.name));
@@ -47,7 +47,7 @@ export function MealRosterSheet({ open, onClose, hostelId, date, meal }: MealRos
       <div className="flex flex-col gap-1.5">
         {rows.map((r) => (
           <div key={r.id} className="flex items-center gap-2.5 rounded-btn bg-bg px-3 py-2">
-            <Avatar name={r.name} seed={r.avatarSeed} size={30} />
+            <Avatar name={r.name} seed={r.avatarSeed} photo={r.avatarImage} size={30} />
             <div className="min-w-0 flex-1 text-[12px] font-bold">{r.name}</div>
             <div className={`text-[10px] font-extrabold uppercase tracking-wide ${r.on ? "text-primary" : "text-text-secondary"}`}>
               {r.on ? "On" : "Off"}

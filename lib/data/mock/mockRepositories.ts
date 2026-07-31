@@ -407,7 +407,7 @@ const users: UserRepository = {
     }
     const ALLOWED_KEYS = [
       "name", "phone", "email", "address", "studentId", "department",
-      "notificationPrefs", "avatarSeed", "gender",
+      "notificationPrefs", "avatarSeed", "avatarImage", "gender",
     ] as const;
     const safePatch: Partial<User> = {};
     for (const key of ALLOWED_KEYS) {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { GeoSelect, isCompleteAddress } from "@/components/ui/GeoSelect";
+import { ImagePicker } from "@/components/store/ImagePicker";
 import { ChangePasswordSheet } from "@/components/student/ChangePasswordSheet";
 import { repo, type GeoAddress, type User } from "@/lib/data";
 import { normalizePhone } from "@/lib/utils/phone";
@@ -40,6 +41,7 @@ export function EditProfileSheet({
   user: User | undefined;
   onSaved?: () => void;
 }) {
+  const [avatarImage, setAvatarImage] = useState<string | undefined>(undefined);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -59,6 +61,7 @@ export function EditProfileSheet({
     if (!user || prefilled.current) return;
     prefilled.current = true;
     queueMicrotask(() => {
+      setAvatarImage(user.avatarImage);
       setName(user.name);
       setPhone(user.phone);
       setEmail(user.email ?? "");
@@ -90,6 +93,10 @@ export function EditProfileSheet({
       phone: phone.trim(),
       email: email.trim() || undefined,
       address: isCompleteAddress(address) ? address : undefined,
+      // "" (not undefined) so removing a photo actually clears it — an
+      // `undefined` value is dropped entirely by JSON.stringify on the way
+      // to the server, so the old photo would silently stick around.
+      avatarImage: avatarImage ?? "",
       ...(isStudent
         ? { studentId: studentId.trim() || undefined, department: department.trim() || undefined }
         : {}),
@@ -107,6 +114,9 @@ export function EditProfileSheet({
           Without one, you&rsquo;ll need your manager or owner to reset it for you.
         </div>
       )}
+      <div className="mb-3 flex justify-center">
+        <ImagePicker value={avatarImage} onChange={setAvatarImage} label="PROFILE PHOTO (optional)" maxDim={320} />
+      </div>
       <Field label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
       <Field label="Phone number (your sign-in)" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <Field label="Email" optional type="email" value={email} onChange={(e) => setEmail(e.target.value)} />

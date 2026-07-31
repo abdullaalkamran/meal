@@ -94,6 +94,7 @@ CREATE TABLE users (
   -- their own phone number as the password.
   password_hash       VARCHAR(255) NULL,
   avatar_seed         VARCHAR(191) NOT NULL DEFAULT '',
+  avatar_image        MEDIUMTEXT   NULL,
   -- NULL for owners/platform team and for members with no hostel yet.
   hostel_id           VARCHAR(64)  NULL,
   room_id             VARCHAR(64)  NULL,

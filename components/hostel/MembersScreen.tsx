@@ -174,7 +174,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
         </div>
         <div className="flex items-center gap-3">
           {cook ? (
-            <Avatar name={cook.name} seed={cook.avatarSeed} size={38} />
+            <Avatar name={cook.name} seed={cook.avatarSeed} photo={cook.avatarImage} size={38} />
           ) : (
             <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-bg text-text-secondary">
               <Icon icon={ChefHat} size={16} />
@@ -288,7 +288,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
                 onClick={() => router.push(memberHref(u.id))}
                 className="flex items-center gap-3 rounded-card border border-border bg-card p-3 text-left shadow-chip"
               >
-                <Avatar name={u.name} seed={u.avatarSeed} size={38} />
+                <Avatar name={u.name} seed={u.avatarSeed} photo={u.avatarImage} size={38} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <div className="truncate text-[12px] font-extrabold">{u.name}</div>
@@ -352,7 +352,7 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
                     key={u.id}
                     className="flex items-center gap-3 rounded-card border border-border bg-card p-3"
                   >
-                    <Avatar name={u.name} seed={u.avatarSeed} size={38} />
+                    <Avatar name={u.name} seed={u.avatarSeed} photo={u.avatarImage} size={38} />
                     <button
                       type="button"
                       onClick={() => router.push(memberHref(u.id))}

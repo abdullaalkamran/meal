@@ -66,7 +66,7 @@ const MEALS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 interface UserRow {
   id: string; role: Role; name: string; phone: string; email: string | null;
   gender: string | null;
-  avatar_seed: string; hostel_id: string | null; room_id: string | null;
+  avatar_seed: string; avatar_image: string | null; hostel_id: string | null; room_id: string | null;
   student_id: string | null; department: string | null;
   division: string | null; district: string | null; thana: string | null;
   meals_suspended: number;
@@ -107,6 +107,7 @@ function toUser(r: UserRow): User {
     gender: (r.gender as PersonGender | null) ?? undefined,
     roomId: r.room_id ?? undefined,
     avatarSeed: r.avatar_seed,
+    avatarImage: r.avatar_image ?? undefined,
     studentId: r.student_id ?? undefined,
     department: r.department ?? undefined,
     address: r.division && r.district && r.thana
@@ -228,7 +229,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
 }
 
 const USER_COLS =
-  "id, role, name, phone, email, gender, avatar_seed, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, future_breakfast_off, future_lunch_off, future_dinner_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
+  "id, role, name, phone, email, gender, avatar_seed, avatar_image, hostel_id, room_id, student_id, department, division, district, thana, meals_suspended, future_breakfast_off, future_lunch_off, future_dinner_off, banned, manager_rating, manager_rating_note, joined_at, advance_held, notify_announcements, notify_bills, notify_monthly_report, service_kinds";
 
 async function loadUser(id: string, on?: Queryable): Promise<User | undefined> {
   const row = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, [id], on);
@@ -361,6 +362,7 @@ export const users: UserRepository = {
     if (patch.email !== undefined) put("email", patch.email ?? null);
     if (patch.gender !== undefined) put("gender", patch.gender ?? null);
     if (patch.avatarSeed !== undefined) put("avatar_seed", patch.avatarSeed);
+    if (patch.avatarImage !== undefined) put("avatar_image", patch.avatarImage ?? null);
     if (patch.studentId !== undefined) put("student_id", patch.studentId ?? null);
     if (patch.department !== undefined) put("department", patch.department ?? null);
     if ("address" in patch) {

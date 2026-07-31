@@ -42,6 +42,10 @@ export interface User {
   gender?: PersonGender;
   roomId?: string;
   avatarSeed: string;
+  /** An uploaded profile photo (data URI) — shown instead of the generated
+   * initials/gradient wherever this user's avatar appears. Undefined = no
+   * photo, fall back to avatarSeed's gradient. */
+  avatarImage?: string;
   /** Set only for students: institutional ID and department, e.g. "STU2024005", "CSE, BUET". */
   studentId?: string;
   department?: string;
