@@ -581,8 +581,32 @@ export const menus: MenuRepository = {
     return { hostelId, date, dishes };
   },
 
+  /** Staff can edit any day's menu. A member can too, but ONLY for a date
+   * they're the assigned shopping-duty member for (per the live DutyPlan
+   * rotation, not the day/anyone) — they're the one who bought the food, so
+   * they know what's actually being cooked. */
   async saveMenu(hostelId, date, dishes) {
     await transaction(async (tx) => {
+      const actor = currentActor();
+      const actorRow = actor
+        ? await one<{ role: string }>("SELECT role FROM users WHERE id = ?", [actor.id], tx)
+        : null;
+      const isStaff = actorRow && ["manager", "owner", "superadmin"].includes(actorRow.role);
+      if (!isStaff) {
+        const onDuty = actor
+          ? await one<{ x: number }>(
+              `SELECT 1 x FROM duty_plans p
+               JOIN duty_blocks b ON b.plan_id = p.id
+               JOIN duty_block_members bm ON bm.block_id = b.id
+               JOIN duty_block_dates bd ON bd.block_id = b.id
+               WHERE p.hostel_id = ? AND p.type = 'shopping' AND bm.user_id = ? AND bd.day = ?
+               LIMIT 1`,
+              [hostelId, actor.id, date],
+              tx
+            )
+          : null;
+        if (!onDuty) throw new Error("Only the manager or that day's shopping-duty member can edit the menu.");
+      }
       await run("INSERT IGNORE INTO menus (hostel_id, day) VALUES (?, ?)", [hostelId, date], tx);
       await run("DELETE FROM menu_dishes WHERE hostel_id = ? AND day = ?", [hostelId, date], tx);
       for (const slot of MEALS) {

@@ -1283,7 +1283,22 @@ const menus: MenuRepository = {
   async getMenu(hostelId, date) {
     return store.data.menus.find((m) => m.hostelId === hostelId && m.date === date);
   },
+  /** Staff can edit any day's menu. A member can too, but ONLY for a date
+   * they're the assigned shopping-duty member for (per the live DutyPlan
+   * rotation, not the day/anyone) — they're the one who bought the food, so
+   * they know what's actually being cooked. */
   async saveMenu(hostelId, date, dishes) {
+    const actorUser = store.data.users.find((u) => u.id === actingUser?.id);
+    const isStaff = actorUser && (["manager", "owner", "superadmin"] as Role[]).includes(actorUser.role);
+    if (!isStaff) {
+      const onDuty = store.data.dutyPlans.some(
+        (p) =>
+          p.hostelId === hostelId &&
+          p.type === "shopping" &&
+          p.blocks.some((b) => b.userIds.includes(actingUser?.id ?? "") && b.dates.includes(date))
+      );
+      if (!onDuty) throw new Error("Only the manager or that day's shopping-duty member can edit the menu.");
+    }
     let menu = store.data.menus.find((m) => m.hostelId === hostelId && m.date === date);
     if (!menu) {
       menu = { hostelId, date, dishes };

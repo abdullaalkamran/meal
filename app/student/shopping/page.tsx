@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { SpinWheel } from "@/components/ui/SpinWheel";
 import { ProductCard } from "@/components/store/ProductCard";
+import { MenuEditSheet } from "@/components/hostel/MenuEditSheet";
 import { repo, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, today } from "@/lib/utils/date";
@@ -33,6 +34,7 @@ export default function StudentShoppingPage() {
   const [cost, setCost] = useState("");
   const [items, setItems] = useState("");
   const [history, setHistory] = useState<ShoppingCost[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const swapSectionRef = useRef<HTMLDivElement>(null);
 
   const plan = plans.find(
@@ -255,13 +257,22 @@ export default function StudentShoppingPage() {
                 </div>
               )}
             </div>
+            {myBlock.dates.includes(today()) && (
+              <button
+                type="button"
+                onClick={() => setMenuOpen(true)}
+                className="mt-3 min-h-11 w-full cursor-pointer rounded-btn bg-white/90 text-[12px] font-extrabold text-[#92400E]"
+              >
+                Edit today&rsquo;s menu
+              </button>
+            )}
             {!myOutgoing && !myIncoming && (
               <button
                 type="button"
                 onClick={() =>
                   swapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
                 }
-                className="mt-3 min-h-11 w-full cursor-pointer rounded-btn bg-white/90 text-[12px] font-extrabold text-[#92400E]"
+                className="mt-2 min-h-11 w-full cursor-pointer rounded-btn border border-white/40 text-[12px] font-extrabold text-white"
               >
                 Request duty swap
               </button>
@@ -463,6 +474,8 @@ export default function StudentShoppingPage() {
           </div>
         </div>
       )}
+
+      <MenuEditSheet open={menuOpen} onClose={() => setMenuOpen(false)} hostelId={activeHostelId} />
     </div>
   );
 }
