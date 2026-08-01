@@ -768,6 +768,16 @@ CREATE TABLE announcements (
   CONSTRAINT fk_announcements_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Per-user "hide this announcement from my own view" — swipe-to-remove on a
+-- notice that needs no action. Everyone else still sees the announcement.
+CREATE TABLE announcement_dismissals (
+  user_id         VARCHAR(64) NOT NULL,
+  announcement_id VARCHAR(64) NOT NULL,
+  PRIMARY KEY (user_id, announcement_id),
+  CONSTRAINT fk_ann_dismiss_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ann_dismiss_ann  FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE notifications (
   id              VARCHAR(64) NOT NULL PRIMARY KEY,
   user_id         VARCHAR(64) NOT NULL,

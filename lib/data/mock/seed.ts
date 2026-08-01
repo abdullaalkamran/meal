@@ -70,5 +70,6 @@ export function buildSeed(): Tables {
       photoHeightPx: 150,
     },
     quickServiceSettings: {},
+    announcementDismissals: {},
   };
 }

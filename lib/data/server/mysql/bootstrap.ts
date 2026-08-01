@@ -437,6 +437,20 @@ async function ensureAvailabilityAreasEntityEnum(): Promise<void> {
   );
 }
 
+/** Creates announcement_dismissals on databases that predate it. */
+async function ensureAnnouncementDismissalsTable(): Promise<void> {
+  if (await tableExists("announcement_dismissals")) return;
+  await run(
+    `CREATE TABLE announcement_dismissals (
+       user_id         VARCHAR(64) NOT NULL,
+       announcement_id VARCHAR(64) NOT NULL,
+       PRIMARY KEY (user_id, announcement_id),
+       CONSTRAINT fk_ann_dismiss_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+       CONSTRAINT fk_ann_dismiss_ann  FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 /** Creates quick_service_settings on databases that predate it. */
 async function ensureQuickServiceSettingsTable(): Promise<void> {
   if (!(await tableExists("quick_service_settings"))) {
@@ -545,6 +559,7 @@ export function ensureReady(): Promise<void> {
       await ensurePromoSettings();
       await ensureQuickServiceSettingsTable();
       await ensureAvailabilityAreasEntityEnum();
+      await ensureAnnouncementDismissalsTable();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.

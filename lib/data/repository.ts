@@ -442,6 +442,11 @@ export interface AnnouncementRepository {
   listByHostel(hostelId: string): Promise<Announcement[]>;
   post(a: Omit<Announcement, "id" | "createdAt">): Promise<Announcement>;
   update(id: string, patch: Partial<Announcement>): Promise<void>;
+  /** Hides an announcement from THIS user's own view only (everyone else
+   * still sees it) — swipe-to-remove on a notice that needs no action.
+   * Self-only: a caller may only dismiss for their own userId. */
+  dismiss(userId: string, announcementId: string): Promise<void>;
+  listDismissedIds(userId: string): Promise<string[]>;
   subscribe(hostelId: string, cb: (list: Announcement[]) => void): Unsubscribe;
 }
 

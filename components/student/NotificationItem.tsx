@@ -1,14 +1,19 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { Bell, Megaphone } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
 import { Chip } from "@/components/ui/Chip";
 import { repo, type Notification } from "@/lib/data";
 import { formatRelativeTime } from "@/lib/utils/date";
 
 /** One personal notification card — stays highlighted (and pinned into the
- * home announcements section) until clicked, which marks it read. */
+ * home announcements section) until clicked, which marks it read. A general
+ * hostel announcement arrives as one of these (linked via announcementId) so
+ * it can push/light the bell; give it the same Megaphone/notice look as the
+ * standalone AnnouncementItem it turns back into once read, instead of
+ * looking identical to a personal notice. */
 export function NotificationItem({ notification: n }: { notification: Notification }) {
+  const isAnnouncement = !!n.announcementId;
   return (
     <button
       type="button"
@@ -20,8 +25,12 @@ export function NotificationItem({ notification: n }: { notification: Notificati
           n.read ? "border-border opacity-70" : "border-primary/40"
         }`}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-          <Icon icon={Bell} size={15} />
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+            isAnnouncement ? "bg-blue-soft text-blue" : "bg-primary-soft text-primary"
+          }`}
+        >
+          <Icon icon={isAnnouncement ? Megaphone : Bell} size={15} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[12px] font-extrabold">{n.title}</div>

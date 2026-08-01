@@ -108,6 +108,9 @@ export interface Tables {
   studyLeads: StudyLead[];
   heroPromoSettings: HeroPromoSettings;
   quickServiceSettings: QuickServiceSettings;
+  /** Per-user "hide this announcement from my own view" list — everyone else
+   * still sees it. userId -> announcementId[]. */
+  announcementDismissals: Record<string, string[]>;
   /** userId -> scrypt password hash. Kept OUT of the `users` array (and thus
    * the `User` type) so it can never be serialized back to a client — every
    * User-returning read (getUser, listByHostel, subscribeUser, ...) reads

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Bell, ChevronRight, Megaphone, ShoppingCart } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
-import { useActionableAnnouncements } from "@/hooks/useActionableAnnouncements";
+import { useActionableAnnouncements, canDismissAnnouncement } from "@/hooks/useActionableAnnouncements";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useBill } from "@/hooks/useBill";
 import { useMenu } from "@/hooks/useMenu";
@@ -19,6 +19,7 @@ import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { LeaveRequestSheet } from "@/components/student/LeaveRequestSheet";
 import { AnnouncementItem } from "@/components/student/AnnouncementItem";
+import { SwipeToDismiss } from "@/components/ui/SwipeToDismiss";
 import { NotificationItem } from "@/components/student/NotificationItem";
 import { NotificationPrefsSheet } from "@/components/student/NotificationPrefsSheet";
 import { HomeHero } from "@/components/student/HomeHero";
@@ -39,7 +40,7 @@ export default function StudentHomePage() {
   // Only what still needs THIS user's attention — voted polls and
   // resolved shortages/swaps drop out here but stay visible in the full
   // history on the notifications page.
-  const announcements = useActionableAnnouncements(activeHostelId, user?.id);
+  const { announcements, dismiss: dismissAnnouncement } = useActionableAnnouncements(activeHostelId, user?.id);
   const plans = useDutyPlans(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
   // This month's own meal count, live — so the hero shows it before any bill
@@ -79,9 +80,13 @@ export default function StudentHomePage() {
   const myRoom = rooms.find((r) => r.id === user?.roomId);
   const unreadNotifications = notifications.filter((n) => !n.read);
   const unread = unreadNotifications.length > 0;
-  // General announcements arrive as linked personal notifications; drop the
-  // announcement copy here so home doesn't show it twice.
-  const linkedAnnouncementIds = new Set(notifications.map((n) => n.announcementId).filter(Boolean));
+  // General announcements arrive as linked personal notifications; while that
+  // notification is still UNREAD, drop the announcement copy here so home
+  // doesn't show it twice. Only unread ones count — this section only ever
+  // renders unread notifications (below), so once the notification is read
+  // and drops out of that list, the announcement must reappear on its own
+  // (properly styled) rather than vanish from Home entirely.
+  const linkedAnnouncementIds = new Set(unreadNotifications.map((n) => n.announcementId).filter(Boolean));
   const visibleAnnouncements = announcements.filter((a) => !linkedAnnouncementIds.has(a.id));
 
   const myPlan = plans.find((p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? ""));
@@ -144,7 +149,13 @@ export default function StudentHomePage() {
               <NotificationItem key={n.id} notification={n} />
             ))}
             {visibleAnnouncements.slice(0, 3).map((a) => (
-              <AnnouncementItem key={a.id} announcement={a} userId={user?.id} />
+              <SwipeToDismiss
+                key={a.id}
+                disabled={!canDismissAnnouncement(a)}
+                onDismiss={() => dismissAnnouncement(a.id)}
+              >
+                <AnnouncementItem announcement={a} userId={user?.id} />
+              </SwipeToDismiss>
             ))}
           </div>
 

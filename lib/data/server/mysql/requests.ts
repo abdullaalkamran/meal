@@ -644,6 +644,23 @@ export const announcements: AnnouncementRepository = {
     await run(`UPDATE announcements SET ${sets.join(", ")} WHERE id = ?`, params);
   },
 
+  async dismiss(userId, announcementId) {
+    if (currentActor()?.id !== userId) throw new Error("You can only dismiss announcements for yourself.");
+    await run(
+      "INSERT IGNORE INTO announcement_dismissals (user_id, announcement_id) VALUES (?, ?)",
+      [userId, announcementId]
+    );
+  },
+
+  async listDismissedIds(userId) {
+    if (currentActor()?.id !== userId) throw new Error("You can only view your own dismissed announcements.");
+    const rows = await all<{ announcement_id: string }>(
+      "SELECT announcement_id FROM announcement_dismissals WHERE user_id = ?",
+      [userId]
+    );
+    return rows.map((r) => r.announcement_id);
+  },
+
   subscribe: serverOnly,
 };
 

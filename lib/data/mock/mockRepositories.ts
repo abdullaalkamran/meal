@@ -2384,6 +2384,15 @@ const announcements: AnnouncementRepository = {
     Object.assign(a, patch);
     store.emit(`announcements:${a.hostelId}`);
   },
+  async dismiss(userId, announcementId) {
+    if (actingUser?.id !== userId) throw new Error("You can only dismiss announcements for yourself.");
+    const list = store.data.announcementDismissals[userId] ?? (store.data.announcementDismissals[userId] = []);
+    if (!list.includes(announcementId)) list.push(announcementId);
+  },
+  async listDismissedIds(userId) {
+    if (actingUser?.id !== userId) throw new Error("You can only view your own dismissed announcements.");
+    return store.data.announcementDismissals[userId] ?? [];
+  },
   subscribe(hostelId, cb) {
     const fire = () =>
       cb(
