@@ -357,6 +357,40 @@ async function applySectionPaid(billId: string, label: BillTarget, delta: number
   }
 }
 
+/** How a payment amount settles the chosen targets — previous balance first,
+ * then sections in a fixed order, each capped at its own due; any leftover
+ * past every selected target's due becomes credit on the first target. Pure
+ * computation, no side effects. */
+function computePaymentBreakdown(bill: Bill, targets: BillTarget[], amount: number): Partial<Record<BillTarget, number>> {
+  const breakdown: Partial<Record<BillTarget, number>> = {};
+  let remaining = amount;
+  if (targets.includes("previousBalance")) {
+    const due = bill.previousBalance - bill.previousBalancePaid;
+    if (due > 0 && remaining > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown.previousBalance = applied;
+      remaining -= applied;
+    }
+  }
+  for (const label of SECTION_ORDER) {
+    if (remaining <= 0) break;
+    if (!targets.includes(label)) continue;
+    const section = bill.sections.find((s) => s.label === label);
+    if (!section) continue;
+    const due = section.total - section.paid;
+    if (due > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown[label] = (breakdown[label] ?? 0) + applied;
+      remaining -= applied;
+    }
+  }
+  if (remaining > 0) {
+    const fallback = targets[0];
+    if (fallback) breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
+  }
+  return breakdown;
+}
+
 export const bills: BillRepository = {
   async getBill(hostelId, userId, month) {
     const found = await loadBills("hostel_id = ? AND user_id = ? AND month = ?", [hostelId, userId, month]);
@@ -373,6 +407,10 @@ export const bills: BillRepository = {
 
   async listByHostel(hostelId, month) {
     return loadBills("hostel_id = ? AND month = ?", [hostelId, month]);
+  },
+
+  async listByUser(hostelId, userId) {
+    return loadBills("hostel_id = ? AND user_id = ? ORDER BY month DESC", [hostelId, userId]);
   },
 
   async listPayments(billId) {
@@ -397,38 +435,7 @@ export const bills: BillRepository = {
   async pay(payment) {
     await transaction(async (tx) => {
       const [bill] = await loadBills("id = ?", [payment.billId], tx);
-      const breakdown: Partial<Record<BillTarget, number>> = {};
-      if (bill) {
-        let remaining = payment.amount;
-        if (payment.targets.includes("previousBalance")) {
-          const due = bill.previousBalance - bill.previousBalancePaid;
-          if (due > 0 && remaining > 0) {
-            const applied = Math.min(remaining, due);
-            breakdown.previousBalance = applied;
-            remaining -= applied;
-          }
-        }
-        for (const label of SECTION_ORDER) {
-          if (remaining <= 0) break;
-          if (!payment.targets.includes(label)) continue;
-          const section = bill.sections.find((s) => s.label === label);
-          if (!section) continue;
-          const due = section.total - section.paid;
-          if (due > 0) {
-            const applied = Math.min(remaining, due);
-            breakdown[label] = (breakdown[label] ?? 0) + applied;
-            remaining -= applied;
-          }
-        }
-        if (remaining > 0) {
-          // Overpayment past every selected target becomes credit, parked on
-          // whichever target the member chose first.
-          const fallback = payment.targets[0];
-          if (fallback) {
-            breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
-          }
-        }
-      }
+      const breakdown = bill ? computePaymentBreakdown(bill, payment.targets, payment.amount) : {};
 
       const paymentId = newId("pay");
       await run(
@@ -450,6 +457,40 @@ export const bills: BillRepository = {
           tx
         );
       }
+    });
+  },
+
+  /** Manager logs a payment received OUTSIDE the app (cash handed over in
+   * person, etc.) — applied immediately, no separate verification step,
+   * since the manager recording it IS the verification. */
+  async recordPayment(payment) {
+    await transaction(async (tx) => {
+      const [bill] = await loadBills("id = ?", [payment.billId], tx);
+      if (!bill) return;
+      const breakdown = computePaymentBreakdown(bill, payment.targets, payment.amount);
+
+      const paymentId = newId("pay");
+      await run(
+        `INSERT INTO payments (id, bill_id, amount, paid_at, method, reference, sender_number, verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        [
+          paymentId, payment.billId, payment.amount, fromIso(payment.paidAt), payment.method,
+          payment.reference ?? null, payment.senderNumber ?? null,
+        ],
+        tx
+      );
+      for (const t of payment.targets) {
+        await run("INSERT IGNORE INTO payment_targets (payment_id, target) VALUES (?, ?)", [paymentId, t], tx);
+      }
+      for (const [target, amount] of Object.entries(breakdown)) {
+        await run(
+          "INSERT INTO payment_breakdown (payment_id, target, amount) VALUES (?, ?, ?)",
+          [paymentId, target, amount],
+          tx
+        );
+        await applySectionPaid(bill.id, target as BillTarget, amount as number, tx);
+      }
+      await run("UPDATE bills SET paid = paid + ? WHERE id = ?", [payment.amount, bill.id], tx);
     });
   },
 

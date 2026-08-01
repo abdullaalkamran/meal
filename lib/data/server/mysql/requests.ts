@@ -572,7 +572,7 @@ export const guestMeals: GuestMealRepository = {
       const day = toDay(req.day);
       await ensureEntries(req.hostel_id, day, req.user_id, tx);
       await run(
-        "UPDATE meal_entries SET guest_count = guest_count + ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
+        "UPDATE meal_entries SET guest_count = GREATEST(guest_count + ?, 0) WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
         [req.qty, req.hostel_id, day, req.user_id, req.meal],
         tx
       );

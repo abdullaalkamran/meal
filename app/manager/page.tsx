@@ -36,6 +36,7 @@ import { useGuestMeals } from "@/hooks/useGuestMeals";
 import { useRooms } from "@/hooks/useRooms";
 import { useBill } from "@/hooks/useBill";
 import { useShortages } from "@/hooks/useShortages";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
@@ -146,8 +147,9 @@ export default function ManagerDashboardPage() {
   const pendingShortages = shortages.filter((s) => s.status === "pending");
   const pendingStops = mealStops.filter((r) => r.status === "pending").length;
   const pendingGuests = guestMeals.filter((r) => r.status === "pending").length;
-  const pendingCookLeaveCount = cookLeaveRequests.filter((r) => r.status === "pending").length;
-  const pendingTotal = pendingStops + pendingGuests + pendingCookLeaveCount + pendingPayments;
+  // The true total across every approval category (same count the
+  // Approvals page and nav badge show) — not just the 3 highlighted below.
+  const pendingTotal = usePendingApprovalsCount(activeHostelId);
 
   useEffect(() => {
     if (!activeHostelId) return;

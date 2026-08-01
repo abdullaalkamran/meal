@@ -266,10 +266,14 @@ function ManagerApprovalsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="text-[12px] font-extrabold">{nameOf(r.userId)}</div>
                     <div className="text-[10px] font-semibold text-text-secondary">
-                      {r.meal} · {r.date} · {r.qty} guest{r.qty > 1 ? "s" : ""}
+                      {r.meal} · {r.date} · {r.qty < 0 ? "Remove" : "Add"} {Math.abs(r.qty)} guest
+                      {Math.abs(r.qty) === 1 ? "" : "s"}
                     </div>
                   </div>
-                  <div className="text-[12.5px] font-extrabold">~{formatBDT(actualRate.rate * r.qty)}</div>
+                  <div className={`text-[12.5px] font-extrabold ${r.qty < 0 ? "text-primary" : ""}`}>
+                    {r.qty < 0 ? "−" : "~"}
+                    {formatBDT(Math.abs(actualRate.rate * r.qty))}
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button

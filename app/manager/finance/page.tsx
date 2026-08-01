@@ -32,6 +32,8 @@ import { RecordShoppingCostSheet } from "@/components/manager/RecordShoppingCost
 import { EditShoppingCostSheet } from "@/components/manager/EditShoppingCostSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { BillingInstructionsSheet } from "@/components/manager/BillingInstructionsSheet";
+import { BillHistorySheet } from "@/components/hostel/BillHistorySheet";
+import { RecordPaymentSheet } from "@/components/manager/RecordPaymentSheet";
 import { SettleMealCreditSheet } from "@/components/manager/SettleMealCreditSheet";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests";
@@ -99,6 +101,8 @@ function ManagerFinancePage() {
   const [generateSheetOpen, setGenerateSheetOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<{ userId: string; name: string } | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<Bill | null>(null);
   const [settleUserId, setSettleUserId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<BillSection["label"] | null>(null);
 
@@ -457,6 +461,24 @@ function ManagerFinancePage() {
                         );
                       })}
 
+                      {(due > 0 || anyCategoryDue) && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentTarget(b)}
+                          className="mt-1 flex min-h-10 w-full cursor-pointer items-center justify-center rounded-btn bg-primary-soft text-[11.5px] font-extrabold text-primary"
+                        >
+                          Record a payment received
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setHistoryTarget({ userId: b.userId, name: nameOf(b.userId) })}
+                        className="mt-1 flex min-h-10 w-full cursor-pointer items-center justify-center rounded-btn border border-border text-[11.5px] font-extrabold text-text-secondary"
+                      >
+                        Bill history — all months
+                      </button>
+
                       {(due > 0 || anyCategoryDue) && canSuspendMeals && (
                         <button
                           type="button"
@@ -678,6 +700,19 @@ function ManagerFinancePage() {
       </div>
 
       <BillingInstructionsSheet open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
+      <BillHistorySheet
+        open={!!historyTarget}
+        onClose={() => setHistoryTarget(null)}
+        hostelId={activeHostelId}
+        userId={historyTarget?.userId}
+        name={historyTarget?.name}
+      />
+      <RecordPaymentSheet
+        open={!!paymentTarget}
+        onClose={() => setPaymentTarget(null)}
+        bill={paymentTarget ?? undefined}
+        memberName={paymentTarget ? nameOf(paymentTarget.userId) : undefined}
+      />
       <AddExpenseSheet
         open={expenseSheetOpen}
         onClose={() => setExpenseSheetOpen(false)}

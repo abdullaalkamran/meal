@@ -43,7 +43,7 @@ import type {
   PromotionRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
+import type { Bill, BillSection, BillTarget, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
 import { getVapidPublicKey, sendToSubscription } from "../../push/webpush";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
@@ -1176,11 +1176,27 @@ const meals: MealRepository = {
     entry[meal].on = on;
     store.emit(`mealDay:${hostelId}`);
   },
+  /** Staff can add/reduce any member's guest meals on any date. A member can
+   * do the same for THEMSELVES, but only while it's still before their own
+   * meal-toggle cutoff (see setMemberMealToggle) — the same cutoff rule
+   * that gates their own on/off toggles, since a guest meal has the same
+   * billing impact. Past the cutoff, self-service is blocked; they go
+   * through guestMeals.request for manager approval instead. */
   async addGuestMeal(hostelId, userId, date, meal, count) {
+    const actor = store.data.users.find((u) => u.id === actingUser?.id);
+    const isStaff = actor && (["manager", "owner", "superadmin"] as Role[]).includes(actor.role);
+    if (!isStaff) {
+      if (actingUser?.id !== userId) throw new Error("You can only add guest meals for yourself.");
+      const hostel = store.data.hostels.find((h) => h.id === hostelId);
+      const decision = canToggleMeal(date, hostel?.settings.mealToggleCutoff);
+      if (!decision.allowed) {
+        throw new Error(decision.message ?? "This date can no longer be changed directly — send the manager a request.");
+      }
+    }
     if (!isMealOffered(hostelId, meal)) return;
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);
-    entry[meal].guestCount += count;
+    entry[meal].guestCount = Math.max(0, entry[meal].guestCount + count);
     store.emit(`mealDay:${hostelId}`);
   },
   async setMemberMealsForRange(hostelId, userId, from, to, on) {
@@ -1636,6 +1652,61 @@ const shortages: ShortageRepository = {
   },
 };
 
+/** How a payment amount settles the chosen targets — previous balance first,
+ * then sections in a fixed order, each capped at its own due; any leftover
+ * past every selected target's due becomes credit on the first target. Pure
+ * computation, no side effects — callers decide when (or whether) to apply
+ * it to the bill. */
+function computePaymentBreakdown(
+  bill: Bill,
+  targets: BillTarget[],
+  amount: number
+): NonNullable<Payment["breakdown"]> {
+  const breakdown: NonNullable<Payment["breakdown"]> = {};
+  let remaining = amount;
+  if (targets.includes("previousBalance")) {
+    const due = bill.previousBalance - bill.previousBalancePaid;
+    if (due > 0 && remaining > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown.previousBalance = applied;
+      remaining -= applied;
+    }
+  }
+  const order: BillSection["label"][] = ["mealCost", "roomRent", "serviceCharge", "cookSalary"];
+  for (const label of order) {
+    if (remaining <= 0) break;
+    if (!targets.includes(label)) continue;
+    const section = bill.sections.find((s) => s.label === label);
+    if (!section) continue;
+    const due = section.total - section.paid;
+    if (due > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown[label] = (breakdown[label] ?? 0) + applied;
+      remaining -= applied;
+    }
+  }
+  if (remaining > 0) {
+    const fallback = targets[0];
+    if (fallback) breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
+  }
+  return breakdown;
+}
+
+/** Applies an already-decided breakdown to a bill's paid amounts — the one
+ * place money actually moves, used by both a manager verifying a member's
+ * claim and a manager recording a cash payment directly. */
+function applyPaymentBreakdown(bill: Bill, breakdown: NonNullable<Payment["breakdown"]>, amount: number): void {
+  for (const [key, amt] of Object.entries(breakdown)) {
+    if (key === "previousBalance") {
+      bill.previousBalancePaid += amt as number;
+    } else {
+      const section = bill.sections.find((s) => s.label === key);
+      if (section) section.paid += amt as number;
+    }
+  }
+  bill.paid += amount;
+}
+
 const bills: BillRepository = {
   async getBill(hostelId, userId, month) {
     return store.data.bills.find(
@@ -1650,6 +1721,11 @@ const bills: BillRepository = {
   async listByHostel(hostelId, month) {
     return store.data.bills.filter((b) => b.hostelId === hostelId && b.month === month);
   },
+  async listByUser(hostelId, userId) {
+    return store.data.bills
+      .filter((b) => b.hostelId === hostelId && b.userId === userId)
+      .sort((a, b) => b.month.localeCompare(a.month));
+  },
   async listPayments(billId) {
     return store.data.payments.filter((p) => p.billId === billId);
   },
@@ -1662,41 +1738,20 @@ const bills: BillRepository = {
    */
   async pay(payment) {
     const bill = store.data.bills.find((b) => b.id === payment.billId);
-    const breakdown: NonNullable<Payment["breakdown"]> = {};
-    if (bill) {
-      let remaining = payment.amount;
-      if (payment.targets.includes("previousBalance")) {
-        const due = bill.previousBalance - bill.previousBalancePaid;
-        if (due > 0 && remaining > 0) {
-          const applied = Math.min(remaining, due);
-          breakdown.previousBalance = applied;
-          remaining -= applied;
-        }
-      }
-      const order: BillSection["label"][] = ["mealCost", "roomRent", "serviceCharge", "cookSalary"];
-      for (const label of order) {
-        if (remaining <= 0) break;
-        if (!payment.targets.includes(label)) continue;
-        const section = bill.sections.find((s) => s.label === label);
-        if (!section) continue;
-        const due = section.total - section.paid;
-        if (due > 0) {
-          const applied = Math.min(remaining, due);
-          breakdown[label] = (breakdown[label] ?? 0) + applied;
-          remaining -= applied;
-        }
-      }
-      if (remaining > 0) {
-        // Overpaying past every selected target's due becomes credit — parked
-        // on whichever target the member chose first.
-        const fallback = payment.targets[0];
-        if (fallback) {
-          breakdown[fallback] = (breakdown[fallback] ?? 0) + remaining;
-        }
-      }
-    }
+    const breakdown = bill ? computePaymentBreakdown(bill, payment.targets, payment.amount) : {};
     store.data.payments.push({ ...payment, id: nextId("pay"), verified: false, breakdown });
     if (bill) store.emit(`bill:${bill.userId}`);
+  },
+  /** Manager logs a payment received OUTSIDE the app (cash handed over in
+   * person, etc.) — applied immediately, no separate verification step,
+   * since the manager recording it IS the verification. */
+  async recordPayment(payment) {
+    const bill = store.data.bills.find((b) => b.id === payment.billId);
+    if (!bill) return;
+    const breakdown = computePaymentBreakdown(bill, payment.targets, payment.amount);
+    applyPaymentBreakdown(bill, breakdown, payment.amount);
+    store.data.payments.push({ ...payment, id: nextId("pay"), verified: true, breakdown });
+    store.emit(`bill:${bill.userId}`);
   },
   async listPendingVerification(hostelId, month) {
     const billIds = store.data.bills
@@ -1711,17 +1766,7 @@ const bills: BillRepository = {
     if (status === "verified") {
       // Apply the exact split computed at submission time — the balance
       // moves for the first time right here, not when the member submitted.
-      if (bill) {
-        for (const [key, amt] of Object.entries(payment.breakdown ?? {})) {
-          if (key === "previousBalance") {
-            bill.previousBalancePaid += amt;
-          } else {
-            const section = bill.sections.find((s) => s.label === key);
-            if (section) section.paid += amt;
-          }
-        }
-        bill.paid += payment.amount;
-      }
+      if (bill) applyPaymentBreakdown(bill, payment.breakdown ?? {}, payment.amount);
       payment.verified = true;
     } else {
       // Declined: nothing was ever applied to the bill, so just drop the claim.
@@ -2828,7 +2873,7 @@ const guestMeals: GuestMealRepository = {
     if (status === "approved") {
       const day = ensureMealDay(req.hostelId, req.date);
       const entry = ensureMealEntry(day, req.userId);
-      entry[req.meal].guestCount += req.qty;
+      entry[req.meal].guestCount = Math.max(0, entry[req.meal].guestCount + req.qty);
       store.emit(`mealDay:${req.hostelId}`);
     }
     store.emit(`guestMeals:${req.hostelId}`);

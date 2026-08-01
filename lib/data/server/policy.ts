@@ -77,6 +77,10 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   bills: {
     generateBills: HOSTEL_STAFF,
     decidePayment: HOSTEL_STAFF,
+    // A direct, already-verified write of a payment onto a member's bill —
+    // unlike pay() (member-initiated, always pending until decidePayment),
+    // this is the manager logging cash/off-app payments themselves.
+    recordPayment: HOSTEL_STAFF,
     settleMealCredit: HOSTEL_STAFF,
     applyAdvanceOnLeave: HOSTEL_STAFF,
   },
@@ -103,10 +107,13 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   transfers: { advance: HOSTEL_STAFF },
   meals: {
     setMemberMealsForRange: HOSTEL_STAFF,
-    // A direct, unapproved write straight onto a member's guest count — unlike
-    // guestMeals.request (member-initiated, needs manager approval), this is
-    // the manager adding one themselves, so it's manager/owner only.
-    addGuestMeal: HOSTEL_STAFF,
+    // NOT role-gated here: addGuestMeal is a direct, unapproved write onto a
+    // member's guest count — staff can do it for anyone, anytime, but a
+    // member can also do it for THEMSELVES while still before their own
+    // meal-toggle cutoff (mirrors setMemberMealToggle, which is open here for
+    // the same reason). Both the self-only and cutoff checks live inside the
+    // implementation itself (like users.updateUser), since policy.ts can't
+    // express "staff, OR self-with-a-condition".
   },
   duties: { createPlan: HOSTEL_STAFF },
   announcements: { post: HOSTEL_STAFF, update: HOSTEL_STAFF },

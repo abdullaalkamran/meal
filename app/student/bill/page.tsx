@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
+import { BillHistorySheet } from "@/components/hostel/BillHistorySheet";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
 import { printReport } from "@/lib/reports/export";
@@ -43,6 +44,7 @@ export default function StudentBillPage() {
   const monthStr = `${year}-${String(month).padStart(2, "0")}`;
   const { bill, payments, adjustments } = useBill(activeHostelId, user?.id, monthStr);
   const [payOpen, setPayOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const monthNav = (
     <MonthNav
@@ -204,6 +206,14 @@ export default function StudentBillPage() {
         </button>
       </div>
 
+      <button
+        type="button"
+        onClick={() => setHistoryOpen(true)}
+        className="min-h-11 w-full cursor-pointer rounded-btn border border-border text-[12px] font-extrabold text-text-secondary"
+      >
+        Bill history — all months
+      </button>
+
       <div>
         <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
           Payment history
@@ -267,6 +277,12 @@ export default function StudentBillPage() {
       )}
 
       <PayBillSheet open={payOpen} onClose={() => setPayOpen(false)} bill={bill} />
+      <BillHistorySheet
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        hostelId={activeHostelId}
+        userId={user?.id}
+      />
     </div>
   );
 }

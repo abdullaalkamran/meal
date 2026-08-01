@@ -29,7 +29,7 @@ import type {
 import { addDays, monthRange, today } from "../../../utils/date";
 import { canToggleMeal } from "../../../utils/mealPolicy";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { notify } from "./context";
+import { currentActor, notify } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -443,12 +443,35 @@ export const meals: MealRepository = {
     });
   },
 
+  /** Staff can add/reduce any member's guest meals on any date. A member can
+   * do the same for THEMSELVES, but only while it's still before their own
+   * meal-toggle cutoff (see setMemberMealToggle) — the same cutoff rule
+   * that gates their own on/off toggles, since a guest meal has the same
+   * billing impact. Past the cutoff, self-service is blocked; they go
+   * through guestMeals.request for manager approval instead. */
   async addGuestMeal(hostelId, userId, date, meal, count) {
     await transaction(async (tx) => {
+      const actor = currentActor();
+      const actorRow = actor
+        ? await one<{ role: string }>("SELECT role FROM users WHERE id = ?", [actor.id], tx)
+        : null;
+      const isStaff = actorRow && ["manager", "owner", "superadmin"].includes(actorRow.role);
+      if (!isStaff) {
+        if (actor?.id !== userId) throw new Error("You can only add guest meals for yourself.");
+        const cutoff = await one<{ meal_toggle_cutoff: string }>(
+          "SELECT meal_toggle_cutoff FROM hostels WHERE id = ?",
+          [hostelId],
+          tx
+        );
+        const decision = canToggleMeal(date, cutoff?.meal_toggle_cutoff);
+        if (!decision.allowed) {
+          throw new Error(decision.message ?? "This date can no longer be changed directly — send the manager a request.");
+        }
+      }
       if (!(await offeredSlots(hostelId, tx))[meal]) return;
       await ensureEntries(hostelId, date, userId, tx);
       await run(
-        "UPDATE meal_entries SET guest_count = guest_count + ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
+        "UPDATE meal_entries SET guest_count = GREATEST(guest_count + ?, 0) WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
         [count, hostelId, date, userId, meal],
         tx
       );

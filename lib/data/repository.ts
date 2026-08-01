@@ -351,8 +351,16 @@ export interface BillRepository {
    * member's closing balance for settlement. */
   getLatestForUser(hostelId: string, userId: string): Promise<Bill | undefined>;
   listByHostel(hostelId: string, month: string): Promise<Bill[]>;
+  /** Every bill this member has ever had at this hostel, newest first — the
+   * at-a-glance month-by-month history (rent/meal cost/paid/due per month). */
+  listByUser(hostelId: string, userId: string): Promise<Bill[]>;
   listPayments(billId: string): Promise<Payment[]>;
   pay(payment: Omit<Payment, "id">): Promise<void>;
+  /** Manager logs a payment received outside the app (cash handed over in
+   * person, bank transfer confirmed by phone, etc.) — applied to the bill
+   * immediately, already verified, since the manager recording it IS the
+   * verification. Manager/owner only. */
+  recordPayment(payment: Omit<Payment, "id" | "verified">): Promise<void>;
   listPendingVerification(hostelId: string, month: string): Promise<Payment[]>;
   decidePayment(paymentId: string, status: "verified" | "declined"): Promise<void>;
   /** Computes bills for every boarder in the hostel for hostelId/month from
