@@ -4,13 +4,12 @@ import { useEffect, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
-import { repo, type MealSlot } from "@/lib/data";
+import { repo, type MealDay, type MealSlot } from "@/lib/data";
 import { MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { addDays, today } from "@/lib/utils/date";
@@ -45,6 +44,7 @@ export function GuestMealSheet({
   const [guestName, setGuestName] = useState("");
   const [qty, setQty] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [rangeDays, setRangeDays] = useState<MealDay[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,6 +59,19 @@ export function GuestMealSheet({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultDate]);
+
+  // So "Remove guests" can be disabled unless there's actually something to
+  // remove in the selected range — re-fetched whenever the date range moves.
+  useEffect(() => {
+    if (!open || !hostelId) return;
+    let cancelled = false;
+    repo.meals.listMealDays(hostelId, { from: fromDate, to: toDate }).then((days) => {
+      if (!cancelled) setRangeDays(days);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, hostelId, fromDate, toDate]);
 
   const toggleMeal = (m: MealSlot) =>
     setMeals((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
@@ -82,6 +95,18 @@ export function GuestMealSheet({
   };
 
   const dates = dateList();
+  // Whether the CURRENTLY selected dates/meals have any guest already added —
+  // "Remove guests" only makes sense, and is only enabled, when this is true.
+  const existingGuestCount = dates.reduce(
+    (sum, d) =>
+      sum +
+      meals.reduce((s, m) => s + (rangeDays.find((day) => day.date === d)?.entries[userId ?? ""]?.[m]?.guestCount ?? 0), 0),
+    0
+  );
+  const canRemove = existingGuestCount > 0;
+  // Falls back to "add" for rendering/submission the moment the selection no
+  // longer has anything to remove, without a setState-in-effect round trip.
+  const effectiveAction = action === "remove" && !canRemove ? "add" : action;
   const cellCount = dates.length * meals.length;
   const total = price * qty * cellCount;
   const directCount = dates.filter((d) => canToggleMeal(d, hostel?.settings.mealToggleCutoff).allowed).length * meals.length;
@@ -93,7 +118,7 @@ export function GuestMealSheet({
     if (!canSubmit || !hostelId || !userId) return;
     setSaving(true);
     try {
-      const delta = action === "add" ? qty : -qty;
+      const delta = effectiveAction === "add" ? qty : -qty;
       let direct = 0;
       let requested = 0;
       for (const date of dates) {
@@ -130,16 +155,27 @@ export function GuestMealSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title="Guest meal">
-      <div className="mb-4">
-        <SegmentedControl
-          options={[
-            { value: "add", label: "Add guests" },
-            { value: "remove", label: "Remove guests" },
-          ]}
-          value={action}
-          onChange={setAction}
-          className="w-full"
-        />
+      <div className="mb-4 inline-flex w-full gap-1 rounded-pill border border-border bg-card p-1 shadow-chip">
+        <button
+          type="button"
+          onClick={() => setAction("add")}
+          className={`min-h-9 flex-1 cursor-pointer rounded-pill px-4 font-sans text-[11.5px] font-extrabold transition-colors ${
+            effectiveAction === "add" ? "bg-primary text-white" : "bg-transparent text-text"
+          }`}
+        >
+          Add guests
+        </button>
+        <button
+          type="button"
+          onClick={() => canRemove && setAction("remove")}
+          disabled={!canRemove}
+          title={canRemove ? undefined : "No guests added yet for this date/meal to remove"}
+          className={`min-h-9 flex-1 rounded-pill px-4 font-sans text-[11.5px] font-extrabold transition-colors ${
+            effectiveAction === "remove" ? "bg-primary text-white" : "bg-transparent text-text"
+          } ${canRemove ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`}
+        >
+          Remove guests
+        </button>
       </div>
 
       <div className="mb-4">
@@ -181,7 +217,7 @@ export function GuestMealSheet({
         </label>
       </div>
 
-      {action === "add" && (
+      {effectiveAction === "add" && (
         <div className="mb-4">
           <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">
             GUEST NAME <span className="font-semibold normal-case">· optional</span>
@@ -198,7 +234,7 @@ export function GuestMealSheet({
 
       <div className="mb-4">
         <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">
-          {action === "add" ? "GUESTS PER MEAL" : "GUESTS TO REMOVE, PER MEAL"}
+          {effectiveAction === "add" ? "GUESTS PER MEAL" : "GUESTS TO REMOVE, PER MEAL"}
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -220,7 +256,7 @@ export function GuestMealSheet({
       </div>
 
       <div className="mb-4 rounded-btn bg-bg px-4 py-3">
-        {action === "add" ? (
+        {effectiveAction === "add" ? (
           <>
             <div className="flex items-center justify-between">
               <div className="text-[11.5px] font-bold text-text-secondary">
@@ -236,7 +272,8 @@ export function GuestMealSheet({
           </>
         ) : (
           <div className="text-[9.5px] font-semibold text-text-secondary">
-            Only removes guests already added — a day/meal already at 0 guests is left as is.
+            {existingGuestCount} guest{existingGuestCount === 1 ? "" : "s"} currently added across the
+            selected date(s)/meal(s) — a slot already at 0 is left as is.
           </div>
         )}
         {cellCount > 0 && (
@@ -259,7 +296,7 @@ export function GuestMealSheet({
       <Button fullWidth onClick={submit} disabled={!canSubmit}>
         {saving
           ? "Saving…"
-          : action === "add"
+          : effectiveAction === "add"
             ? `Add ${qty} guest meal${qty * cellCount === 1 ? "" : "s"}`
             : `Remove ${qty} guest meal${qty * cellCount === 1 ? "" : "s"}`}
       </Button>

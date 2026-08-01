@@ -7,6 +7,7 @@ import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useMealStops } from "@/hooks/useMealStops";
+import { useGuestMeals } from "@/hooks/useGuestMeals";
 import { useMenu } from "@/hooks/useMenu";
 import { useBill } from "@/hooks/useBill";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
@@ -133,6 +134,7 @@ export default function StudentMealsPage() {
   }, [activeHostelId, day?.shoppingUserId]);
 
   const myRequests = myStops.filter((r) => r.userId === user?.id);
+  const myGuestRequests = useGuestMeals(activeHostelId).filter((r) => r.userId === user?.id);
   const shoppingPlan = plans.find((p) => p.type === "shopping");
   const due = bill ? bill.grandTotal - bill.paid : 0;
   const mealsSuspended = user?.mealsSuspended ?? false;
@@ -428,7 +430,7 @@ export default function StudentMealsPage() {
         </button>
         {requestsOpen && (
           <div className="mt-3 flex flex-col gap-2">
-            {myRequests.length === 0 && (
+            {myRequests.length === 0 && myGuestRequests.length === 0 && (
               <div className="text-[11.5px] font-semibold text-text-secondary">No requests yet.</div>
             )}
             {myRequests.map((r) => (
@@ -444,6 +446,30 @@ export default function StudentMealsPage() {
                   <div className="text-[10px] font-semibold text-text-secondary">
                     {r.reason || "No reason given"}
                   </div>
+                </div>
+                <div
+                  className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
+                    r.status === "approved"
+                      ? "bg-primary-soft text-primary"
+                      : r.status === "denied"
+                        ? "bg-danger-soft text-danger"
+                        : "bg-orange-soft text-orange"
+                  }`}
+                >
+                  {r.status}
+                </div>
+              </div>
+            ))}
+            {myGuestRequests.map((r) => (
+              <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
+                <div>
+                  <div className="text-[11.5px] font-bold">
+                    <span className={r.qty < 0 ? "text-danger" : "text-primary"}>
+                      {r.qty < 0 ? "Remove" : "Add"} {Math.abs(r.qty)} guest{Math.abs(r.qty) === 1 ? "" : "s"}
+                    </span>{" "}
+                    {MEAL_LABEL[r.meal]} &middot; {r.date}
+                  </div>
+                  <div className="text-[10px] font-semibold text-text-secondary">{r.guestName}</div>
                 </div>
                 <div
                   className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${

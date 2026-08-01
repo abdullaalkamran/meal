@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
-import { repo, type MealSlot, type User } from "@/lib/data";
+import { repo, type MealDay, type MealSlot, type User } from "@/lib/data";
 import { MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatShortDate } from "@/lib/utils/date";
 
-/** Manager adds a guest meal directly onto a member's day — no approval
- * needed (unlike a member's own GuestMealSheet request), since the manager
- * is already the one who'd approve it. */
+/** Manager adds or removes a guest meal directly on a member's day — no
+ * approval needed (unlike a member's own GuestMealSheet request), since the
+ * manager is already the one who'd approve it. */
 export function AddGuestMealSheet({
   open,
   onClose,
@@ -23,6 +23,7 @@ export function AddGuestMealSheet({
   date,
   member,
   offeredMeals,
+  day,
   onAdded,
 }: {
   open: boolean;
@@ -31,9 +32,14 @@ export function AddGuestMealSheet({
   date: string;
   member: User | null;
   offeredMeals: MealSlot[];
+  /** The selected date's MealDay, already loaded by the caller — used to
+   * read the member's current guest count so "Remove" can be disabled when
+   * there's nothing to remove. */
+  day: MealDay | undefined;
   onAdded?: () => void;
 }) {
   const { toast } = useToast();
+  const [action, setAction] = useState<"add" | "remove">("add");
   const [meal, setMeal] = useState<MealSlot>("lunch");
   const [qty, setQty] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -41,6 +47,7 @@ export function AddGuestMealSheet({
   useEffect(() => {
     if (open) {
       queueMicrotask(() => {
+        setAction("add");
         setMeal(offeredMeals[0] ?? "lunch");
         setQty(1);
       });
@@ -53,12 +60,19 @@ export function AddGuestMealSheet({
 
   if (!member) return null;
 
+  const currentGuests = day?.entries[member.id]?.[meal]?.guestCount ?? 0;
+  const canRemove = currentGuests > 0;
+  const effectiveAction = action === "remove" && !canRemove ? "add" : action;
+
   const submit = async () => {
     if (!hostelId || saving) return;
     setSaving(true);
     try {
-      await repo.meals.addGuestMeal(hostelId, member.id, date, meal, qty);
-      toast(`${qty} guest meal${qty === 1 ? "" : "s"} added for ${member.name.split(" ")[0]}`);
+      const delta = effectiveAction === "add" ? qty : -qty;
+      await repo.meals.addGuestMeal(hostelId, member.id, date, meal, delta);
+      toast(
+        `${qty} guest meal${qty === 1 ? "" : "s"} ${effectiveAction === "add" ? "added for" : "removed for"} ${member.name.split(" ")[0]}`
+      );
       onAdded?.();
       onClose();
     } finally {
@@ -69,7 +83,30 @@ export function AddGuestMealSheet({
   return (
     <Sheet open={open} onClose={onClose} title={`Guest meal · ${member.name}`}>
       <div className="mb-4 text-[11px] font-semibold text-text-secondary">
-        Adds directly to {formatShortDate(date)} — no approval needed, this counts immediately.
+        Applies directly to {formatShortDate(date)} — no approval needed, this counts immediately.
+      </div>
+
+      <div className="mb-4 inline-flex w-full gap-1 rounded-pill border border-border bg-card p-1 shadow-chip">
+        <button
+          type="button"
+          onClick={() => setAction("add")}
+          className={`min-h-9 flex-1 cursor-pointer rounded-pill px-4 font-sans text-[11.5px] font-extrabold transition-colors ${
+            effectiveAction === "add" ? "bg-primary text-white" : "bg-transparent text-text"
+          }`}
+        >
+          Add guests
+        </button>
+        <button
+          type="button"
+          onClick={() => canRemove && setAction("remove")}
+          disabled={!canRemove}
+          title={canRemove ? undefined : `No guests added yet for ${MEAL_LABEL[meal]} to remove`}
+          className={`min-h-9 flex-1 rounded-pill px-4 font-sans text-[11.5px] font-extrabold transition-colors ${
+            effectiveAction === "remove" ? "bg-primary text-white" : "bg-transparent text-text"
+          } ${canRemove ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`}
+        >
+          Remove guests
+        </button>
       </div>
 
       <div className="mb-4 flex gap-2">
@@ -83,7 +120,9 @@ export function AddGuestMealSheet({
       </div>
 
       <div className="mb-4">
-        <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">GUESTS</div>
+        <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">
+          {effectiveAction === "add" ? "GUESTS" : "GUESTS TO REMOVE"}
+        </div>
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -104,19 +143,31 @@ export function AddGuestMealSheet({
       </div>
 
       <div className="mb-4 rounded-btn bg-bg px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="text-[11.5px] font-bold text-text-secondary">
-            {qty} × {formatBDT(actual.rate)} <span className="font-semibold">est.</span>
+        {effectiveAction === "add" ? (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="text-[11.5px] font-bold text-text-secondary">
+                {qty} × {formatBDT(actual.rate)} <span className="font-semibold">est.</span>
+              </div>
+              <div className="text-[13.5px] font-extrabold">Total ~{formatBDT(total)}</div>
+            </div>
+            <div className="mt-1 text-[9.5px] font-semibold text-text-secondary">
+              Billed the same as a member meal: the month&rsquo;s actual per-meal cost.
+            </div>
+          </>
+        ) : (
+          <div className="text-[9.5px] font-semibold text-text-secondary">
+            {currentGuests} guest{currentGuests === 1 ? "" : "s"} currently added for {MEAL_LABEL[meal]}.
           </div>
-          <div className="text-[13.5px] font-extrabold">Total ~{formatBDT(total)}</div>
-        </div>
-        <div className="mt-1 text-[9.5px] font-semibold text-text-secondary">
-          Billed the same as a member meal: the month&rsquo;s actual per-meal cost.
-        </div>
+        )}
       </div>
 
       <Button fullWidth onClick={submit} disabled={saving}>
-        {saving ? "Adding…" : `Add ${qty} guest meal${qty === 1 ? "" : "s"}`}
+        {saving
+          ? "Saving…"
+          : effectiveAction === "add"
+            ? `Add ${qty} guest meal${qty === 1 ? "" : "s"}`
+            : `Remove ${qty} guest meal${qty === 1 ? "" : "s"}`}
       </Button>
     </Sheet>
   );

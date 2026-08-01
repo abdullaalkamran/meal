@@ -674,6 +674,7 @@ export function MealsScreen({
           date={selectedDate}
           member={guestTarget}
           offeredMeals={offeredMealsForDay}
+          day={day}
         />
       )}
     </div>
