@@ -79,6 +79,16 @@ export default function StudentShoppingPage() {
 
   // Records for the selected month (any date of the cost falls in that month).
   const monthRecords = allCosts.filter((c) => c.dates.some((d) => d.startsWith(recordMonthStr)));
+  // Who was on shopping duty in the selected month — blocks from ANY rotation
+  // (current or a past one still on record) whose dates fall in that month.
+  const monthBlocks = plans
+    .filter((p) => p.type === "shopping")
+    .flatMap((p) =>
+      p.blocks
+        .filter((b) => b.userIds.length > 0 && b.dates.some((d) => d.startsWith(recordMonthStr)))
+        .map((b) => ({ userIds: b.userIds, dates: b.dates, done: b.userIds.some((id) => p.done?.[id]) }))
+    )
+    .sort((a, b) => a.dates[0].localeCompare(b.dates[0]));
 
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   const blockOf = (id: string) => plan?.blocks.find((b) => b.userIds.includes(id));
@@ -116,11 +126,11 @@ export default function StudentShoppingPage() {
   const myDone = !!(user && plan?.done?.[user.id]);
   const dutyStarted = !!myBlock && today() >= myBlock.dates[0];
   const canMarkDone = !!myBlock && !!hasSpun && dutyStarted && !myDone;
-  // A duty block is still swappable only if it hasn't already passed and no one
-  // in it has marked it done — you can't hand your duty to someone who's
-  // finished (or whose days are gone).
+  // A duty block is swappable only if it hasn't STARTED yet (so not a duty
+  // that's currently running or already passed) and no one in it has marked it
+  // done — you can't hand a duty to someone who's already on it or finished.
   const isSwappable = (b: { userIds: string[]; dates: string[] }) =>
-    b.dates.at(-1)! >= today() && !b.userIds.some((id) => plan?.done?.[id]);
+    b.dates[0] > today() && !b.userIds.some((id) => plan?.done?.[id]);
 
   const markMyDutyDone = async () => {
     if (!plan || !user) return;
@@ -325,11 +335,20 @@ export default function StudentShoppingPage() {
                 </div>
               )}
             </div>
+            {myBlock.dates.at(-1)! >= today() && (
+              <button
+                type="button"
+                onClick={() => downloadDutyReminder(myBlock.dates, hostel?.name)}
+                className="mt-3 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-btn bg-white/15 text-[12px] font-extrabold text-white"
+              >
+                <Icon icon={CalendarClock} size={15} /> Set a phone reminder
+              </button>
+            )}
             {myBlock.dates.includes(today()) && (
               <button
                 type="button"
                 onClick={() => setMenuOpen(true)}
-                className="mt-3 min-h-11 w-full cursor-pointer rounded-btn bg-white/90 text-[12px] font-extrabold text-[#92400E]"
+                className="mt-2 min-h-11 w-full cursor-pointer rounded-btn bg-white/90 text-[12px] font-extrabold text-[#92400E]"
               >
                 Edit today&rsquo;s menu
               </button>
@@ -538,11 +557,11 @@ export default function StudentShoppingPage() {
         </div>
       </div>
 
-      {/* Shopping records — browse any month */}
+      {/* Shopping records + responsible persons — browse any month */}
       <div>
         <div className="mb-2 flex items-center justify-between">
           <div className="text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-            Shopping records
+            Shopping · {formatMonthLabel(recordMonthStr)}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -565,6 +584,55 @@ export default function StudentShoppingPage() {
               <Icon icon={ChevronRight} size={13} />
             </button>
           </div>
+        </div>
+
+        {/* Responsible persons that month */}
+        <div className="mb-1.5 text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
+          Responsible
+        </div>
+        {monthBlocks.length === 0 ? (
+          <Card className="mb-3 text-center text-[11px] font-semibold text-text-secondary">
+            No shopping duty scheduled in {formatMonthLabel(recordMonthStr)}.
+          </Card>
+        ) : (
+          <div className="mb-3 flex flex-col gap-2">
+            {monthBlocks.map((b, i) => {
+              const isMe = b.userIds.includes(user?.id ?? "");
+              const isToday = b.dates.includes(today());
+              const isPast = b.dates.at(-1)! < today();
+              const label = b.done ? "✓ Done" : isToday ? "Today" : isPast ? "Done" : "Upcoming";
+              return (
+                <div
+                  key={i}
+                  className={clsx(
+                    "flex items-center justify-between rounded-btn px-3 py-2.5 shadow-chip",
+                    isMe ? "bg-primary-soft" : "bg-card"
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-[12px] font-bold">{b.userIds.map(nameOf).join(" + ")}</div>
+                    <div className="text-[10.5px] font-semibold text-text-secondary">
+                      {formatShortDate(b.dates[0])}
+                      {b.dates.length > 1 ? ` – ${formatShortDate(b.dates.at(-1)!)}` : ""}
+                    </div>
+                  </div>
+                  <div
+                    className={clsx(
+                      "shrink-0 rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold",
+                      b.done || isToday ? "bg-primary text-white" : "bg-bg text-text-secondary"
+                    )}
+                  >
+                    {label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Recorded shopping costs that month */}
+        <div className="mb-1.5 text-[9.5px] font-bold uppercase tracking-wide text-text-secondary">
+          Recorded costs
         </div>
         {monthRecords.length === 0 ? (
           <Card className="text-center text-[11px] font-semibold text-text-secondary">
