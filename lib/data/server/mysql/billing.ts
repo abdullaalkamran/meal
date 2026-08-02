@@ -104,7 +104,8 @@ export const expenses: ExpenseRepository = {
         expense.hostelId,
         "Expense recorded",
         `${expense.category} · ৳${expense.amount}${expense.note ? ` — ${expense.note}` : ""}`,
-        tx
+        tx,
+        "bill"
       );
     });
   },
@@ -118,7 +119,7 @@ export const expenses: ExpenseRepository = {
       );
       if (!row) return;
       await run("DELETE FROM expenses WHERE id = ?", [id], tx);
-      await logActivity(row.hostel_id, "Expense removed", `${row.category} · ৳${Number(row.amount)}`, tx);
+      await logActivity(row.hostel_id, "Expense removed", `${row.category} · ৳${Number(row.amount)}`, tx, "bill");
     });
   },
 
@@ -177,6 +178,8 @@ export const shoppingCosts: ShoppingCostRepository = {
         `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`,
         tx
       );
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [cost.userId], tx);
+      await logActivity(cost.hostelId, "Shopping cost submitted", `৳${cost.amount} by ${m?.name ?? "member"}`, tx, "shopping");
     });
   },
 
@@ -199,11 +202,27 @@ export const shoppingCosts: ShoppingCostRepository = {
         `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`,
         tx
       );
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [cost.userId], tx);
+      await logActivity(cost.hostelId, "Shopping cost recorded", `৳${cost.amount} for ${m?.name ?? "member"}`, tx, "shopping");
     });
   },
 
   async decide(id, status) {
+    const row = await one<{ hostel_id: string; amount: number; user_id: string }>(
+      "SELECT hostel_id, amount, user_id FROM shopping_costs WHERE id = ?",
+      [id]
+    );
     await run("UPDATE shopping_costs SET status = ? WHERE id = ?", [status, id]);
+    if (row) {
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [row.user_id]);
+      await logActivity(
+        row.hostel_id,
+        status === "approved" ? "Shopping cost approved" : "Shopping cost denied",
+        `৳${Number(row.amount)} · ${m?.name ?? "member"}`,
+        undefined,
+        "shopping"
+      );
+    }
   },
 };
 
@@ -491,6 +510,14 @@ export const bills: BillRepository = {
         await applySectionPaid(bill.id, target as BillTarget, amount as number, tx);
       }
       await run("UPDATE bills SET paid = paid + ? WHERE id = ?", [payment.amount, bill.id], tx);
+      const member = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [bill.userId], tx);
+      await logActivity(
+        bill.hostelId,
+        "Payment recorded",
+        `৳${payment.amount} ${payment.method} from ${member?.name ?? "member"}`,
+        tx,
+        "bill"
+      );
     });
   },
 
@@ -515,10 +542,22 @@ export const bills: BillRepository = {
         }
         await run("UPDATE bills SET paid = paid + ? WHERE id = ?", [Number(payment.amount), payment.bill_id], tx);
         await run("UPDATE payments SET verified = 1 WHERE id = ?", [paymentId], tx);
+        const vb = await one<{ hostel_id: string; name: string }>(
+          "SELECT b.hostel_id, u.name FROM bills b JOIN users u ON u.id = b.user_id WHERE b.id = ?",
+          [payment.bill_id],
+          tx
+        );
+        await logActivity(vb?.hostel_id, "Payment verified", `৳${Number(payment.amount)} from ${vb?.name ?? "member"}`, tx, "bill");
         return;
       }
       // Declined: nothing was ever applied to the bill, so just drop the claim.
+      const rb = await one<{ hostel_id: string; name: string }>(
+        "SELECT b.hostel_id, u.name FROM bills b JOIN users u ON u.id = b.user_id WHERE b.id = ?",
+        [payment.bill_id],
+        tx
+      );
       await run("DELETE FROM payments WHERE id = ?", [paymentId], tx);
+      await logActivity(rb?.hostel_id, "Payment rejected", `৳${Number(payment.amount)} from ${rb?.name ?? "member"}`, tx, "bill");
     });
   },
 
@@ -552,6 +591,14 @@ export const bills: BillRepository = {
           fromIso(new Date().toISOString()),
         ],
         tx
+      );
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [bill.userId], tx);
+      await logActivity(
+        bill.hostelId,
+        destination === "refund" ? "Meal credit refunded" : "Meal credit moved to cover dues",
+        `৳${applied} · ${m?.name ?? "member"}`,
+        tx,
+        "bill"
       );
     });
   },
@@ -618,7 +665,7 @@ export const bills: BillRepository = {
         await run("UPDATE bills SET grand_total = ? WHERE id = ?", [grandTotal, bill.id], tx);
       }
       await run("UPDATE users SET advance_held = 0 WHERE id = ?", [userId], tx);
-      await logActivity(hostelId, "Advance rent applied on leaving", `৳${held}`, tx);
+      await logActivity(hostelId, "Advance rent applied on leaving", `৳${held}`, tx, "bill");
     });
   },
 
@@ -876,7 +923,7 @@ export const bills: BillRepository = {
       for (const a of advanceCharged) {
         await run("UPDATE users SET advance_held = ? WHERE id = ?", [a.amount, a.id], tx);
       }
-      await logActivity(hostelId, "Bills generated", `${month} · ${out.length} member bills`, tx);
+      await logActivity(hostelId, "Bills generated", `${month} · ${out.length} member bills`, tx, "bill");
       return out;
     });
   },

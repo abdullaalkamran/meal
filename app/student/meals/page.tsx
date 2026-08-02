@@ -19,10 +19,11 @@ import { Calendar } from "@/components/ui/Calendar";
 import { StarRating } from "@/components/ui/StarRating";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
+import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
-import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
+import { repo, type CookAttendanceReport, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { addDays, currentMonth, formatMonthLabel, today } from "@/lib/utils/date";
+import { addDays, currentMonth, formatDayMonth, formatMonthLabel, today } from "@/lib/utils/date";
 import { canToggleMeal, cutoffLabel } from "@/lib/utils/mealPolicy";
 import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
@@ -44,6 +45,7 @@ export default function StudentMealsPage() {
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
+  const [allReports, setAllReports] = useState<CookAttendanceReport[]>([]);
 
   // Cook is staff and owner is cross-hostel management — neither is a boarder,
   // so both are excluded from meal-toggle rosters.
@@ -96,6 +98,13 @@ export default function StudentMealsPage() {
   const menu = useMenu(activeHostelId, selectedDate);
   const myStops = useMealStops(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
+  // The bill for the SELECTED month — so the shopping-cost card can show this
+  // member's meal cost as paid or due for whichever month they're viewing.
+  const { bill: monthBill } = useBill(
+    activeHostelId,
+    user?.id,
+    `${year}-${String(month).padStart(2, "0")}`
+  );
   const plans = useDutyPlans(activeHostelId);
   const [manager, setManager] = useState<User | undefined>(undefined);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
@@ -123,6 +132,7 @@ export default function StudentMealsPage() {
     if (!activeHostelId) return;
     repo.shoppingCosts.listByHostel(activeHostelId).then(setAllCosts);
     repo.ratings.listByHostel(activeHostelId).then(setAllRatings);
+    repo.cookAttendance.listByHostel(activeHostelId).then(setAllReports);
   }, [activeHostelId]);
 
   useEffect(() => {
@@ -168,17 +178,32 @@ export default function StudentMealsPage() {
 
   // Per-person cost/rate/quality for the selected month, used by both the
   // shopping-responsible rotation list and the leaderboard below it.
+  //
+  // Meals are counted with the EXACT same gate as the hostel's actual meal rate
+  // (billing's mealRateFor / meals.getActualMealRate): a (day, meal) counts only
+  // when the manager has confirmed it was cooked, only for current non-banned
+  // boarders, and only from each member's join date on. Counting raw entries
+  // instead (including future/uncooked days) inflated the denominator and made
+  // the leaderboard's "৳/meal" disagree with the "Avg cost / meal" summary.
+  const cookedSlots = new Set(
+    allReports.filter((r) => r.status === "resolved_cooked").map((r) => `${r.date}|${r.meal}`)
+  );
+  const boarderIds = new Set(users.filter((u) => !u.banned).map((u) => u.id));
+  const joinedById = new Map(users.map((u) => [u.id, u.joinedAt?.slice(0, 10)]));
   const mealsServedOn = (date: string) => {
     const d = monthDays.find((x) => x.date === date);
     if (!d) return 0;
-    return Object.values(d.entries).reduce(
-      (sum, e) =>
-        sum +
-        ((e.breakfast.on ? 1 : 0) + e.breakfast.guestCount) +
-        ((e.lunch.on ? 1 : 0) + e.lunch.guestCount) +
-        ((e.dinner.on ? 1 : 0) + e.dinner.guestCount),
-      0
-    );
+    let sum = 0;
+    for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+      if (!cookedSlots.has(`${date}|${slot}`)) continue;
+      for (const [userId, e] of Object.entries(d.entries)) {
+        if (!boarderIds.has(userId)) continue;
+        const joined = joinedById.get(userId);
+        if (joined && joined > date) continue;
+        sum += (e[slot].on ? 1 : 0) + e[slot].guestCount;
+      }
+    }
+    return sum;
   };
   const statsByUser = new Map<
     string,
@@ -212,6 +237,32 @@ export default function StudentMealsPage() {
     (best, row) => (row.quality > best.quality ? { id: row.userId, quality: row.quality } : best),
     { id: undefined, quality: 0 }
   ).id;
+
+  // This member's OWN eaten meals + guest meals for the selected month, counted
+  // on the same confirmed-cooked basis as their bill (so it reconciles with the
+  // meal rate above). Meal cost = those meals × the actual rate; paid/due comes
+  // from the selected month's bill once it's generated.
+  let myOwnMeals = 0;
+  let myGuestMeals = 0;
+  if (user) {
+    const jd = user.joinedAt?.slice(0, 10);
+    for (const d of monthDays) {
+      const e = d.entries[user.id];
+      if (!e || (jd && jd > d.date)) continue;
+      for (const slot of ["breakfast", "lunch", "dinner"] as const) {
+        if (!cookedSlots.has(`${d.date}|${slot}`)) continue;
+        myOwnMeals += e[slot].on ? 1 : 0;
+        myGuestMeals += e[slot].guestCount;
+      }
+    }
+  }
+  const myMeals = myOwnMeals + myGuestMeals;
+  const mealSection = monthBill?.sections.find((s) => s.label === "mealCost");
+  // Prefer the generated bill's meal cost when it exists; otherwise show the
+  // live estimate (my meals × the current actual rate).
+  const myMealCost = mealSection ? mealSection.total : myMeals * actualRate.rate;
+  const myMealPaid = mealSection?.paid ?? 0;
+  const myMealDue = Math.max(myMealCost - myMealPaid, 0);
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -552,6 +603,45 @@ export default function StudentMealsPage() {
             <div className="text-[9px] font-bold text-text-secondary">Avg cost / meal</div>
           </div>
         </div>
+
+        {/* This member's own share for the selected month */}
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Your meals this month
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-btn bg-bg p-2.5 text-center">
+              <div className="text-[15px] font-extrabold">{myMeals}</div>
+              <div className="text-[9px] font-bold text-text-secondary">
+                My meals · {myOwnMeals} eaten + {myGuestMeals} guest
+              </div>
+            </div>
+            <div className="rounded-btn bg-bg p-2.5 text-center">
+              <div className="text-[15px] font-extrabold text-primary">{formatBDT(myMealCost)}</div>
+              <div className="text-[9px] font-bold text-text-secondary">
+                My meal cost{mealSection ? "" : " · estimated"}
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center justify-between rounded-btn bg-bg px-3 py-2">
+            <div className="text-[10px] font-bold text-text-secondary">
+              {mealSection ? "Meal cost status" : "Not billed yet"}
+            </div>
+            {!mealSection ? (
+              <span className="rounded-pill bg-orange-soft px-2.5 py-1 text-[9.5px] font-extrabold text-orange">
+                Due {formatBDT(myMealCost)}
+              </span>
+            ) : myMealDue > 0 ? (
+              <span className="rounded-pill bg-danger-soft px-2.5 py-1 text-[9.5px] font-extrabold text-danger">
+                Due {formatBDT(myMealDue)}
+              </span>
+            ) : (
+              <span className="rounded-pill bg-primary-soft px-2.5 py-1 text-[9.5px] font-extrabold text-primary">
+                Paid {formatBDT(myMealPaid)}
+              </span>
+            )}
+          </div>
+        </div>
         {actualRate.totalShopping === 0 && monthCosts.length > 0 && (
           <div className="mt-2.5 rounded-btn bg-orange-soft px-3 py-2 text-[9.5px] font-bold text-orange">
             Shopping was recorded this month but isn&rsquo;t approved yet — ask your manager to approve it so it
@@ -563,7 +653,16 @@ export default function StudentMealsPage() {
       {/* Boarder meals for selected date */}
       <Card>
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-[13.5px] font-extrabold">Boarder meals</div>
+          <div>
+            <div className="text-[13.5px] font-extrabold">Boarder meals</div>
+            <div className="text-[9.5px] font-semibold text-text-secondary">
+              {selectedDate === today()
+                ? "Today"
+                : selectedDate === addDays(today(), 1)
+                  ? "Tomorrow"
+                  : formatDayMonth(selectedDate)}
+            </div>
+          </div>
           <div className="rounded-pill bg-primary px-2.5 py-1 text-[9.5px] font-extrabold text-white">
             {dayTotal} meals on
           </div>
@@ -777,6 +876,9 @@ export default function StudentMealsPage() {
           </div>
         </Card>
       )}
+
+      {/* Who changed meals / added guest meals, and when — for the selected month */}
+      <ActivityTimeline hostelId={activeHostelId} category="meal" title="Meal activity" month={monthPrefix} />
 
       <GuestMealSheet
         open={guestSheetOpen}

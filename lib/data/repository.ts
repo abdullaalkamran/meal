@@ -305,6 +305,8 @@ export interface DutyRepository {
   /** The member claims a still-open block by spinning. Returns the position
    * (index) of the block they landed on, or -1 if the rotation is full. */
   spin(planId: string, userId: string): Promise<number>;
+  /** A member marks their own duty block finished; visible to everyone. */
+  markDone(planId: string, userId: string): Promise<void>;
   subscribe(hostelId: string, cb: (plans: DutyPlan[]) => void): Unsubscribe;
 }
 

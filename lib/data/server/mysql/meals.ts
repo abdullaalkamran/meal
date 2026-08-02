@@ -29,7 +29,7 @@ import type {
 import { addDays, monthRange, today } from "../../../utils/date";
 import { canToggleMeal } from "../../../utils/mealPolicy";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { currentActor, notify } from "./context";
+import { currentActor, logActivity, notify } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -475,6 +475,14 @@ export const meals: MealRepository = {
         [count, hostelId, date, userId, meal],
         tx
       );
+      const gm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [userId], tx);
+      await logActivity(
+        hostelId,
+        count >= 0 ? "Guest meal added" : "Guest meal removed",
+        `${Math.abs(count)} × ${meal} · ${date} · ${gm?.name ?? "member"}`,
+        tx,
+        "meal"
+      );
     });
   },
 
@@ -506,6 +514,14 @@ export const meals: MealRepository = {
           ? "Your meals have been turned back on by the manager."
           : "Your meals have been turned off by the manager because your bill is unpaid. Pay your bill to resume your meals.",
         tx
+      );
+      const mm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [userId], tx);
+      await logActivity(
+        hostelId,
+        on ? "Meals resumed for member" : "Meals turned off for member",
+        `${mm?.name ?? "member"} · ${from} → ${to}`,
+        tx,
+        "meal"
       );
     });
   },

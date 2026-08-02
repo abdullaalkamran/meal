@@ -37,6 +37,11 @@ const MARKETING_TEAM: Role[] = ["marketing", "superadmin"];
 
 /** repo → method → roles allowed to call it. */
 const ROLE_RULES: Record<string, Record<string, Role[]>> = {
+  // Writing an audit entry is staff-only so members can't forge history;
+  // reading (listByHostel) stays open to any signed-in member of the hostel.
+  activity: {
+    log: [...HOSTEL_STAFF, "superadmin"],
+  },
   users: {
     // Creating arbitrary users (with an arbitrary role) — owners add a
     // hostel's manager/cook this way.

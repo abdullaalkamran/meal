@@ -557,6 +557,14 @@ export const guestMeals: GuestMealRepository = {
       `A member has requested ${req.qty} guest meal${req.qty > 1 ? "s" : ""} (${req.meal}) for ${req.date}. Review it in Approvals.`,
       undefined
     );
+    const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.userId]);
+    await logActivity(
+      req.hostelId,
+      "Guest meal requested",
+      `${req.qty} × ${req.meal} · ${req.date} · ${m?.name ?? "member"}`,
+      undefined,
+      "meal"
+    );
   },
 
   async decide(id, status) {
@@ -568,6 +576,14 @@ export const guestMeals: GuestMealRepository = {
       );
       if (!req) return;
       await run("UPDATE guest_meal_requests SET status = ? WHERE id = ?", [status, id], tx);
+      const gm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.user_id], tx);
+      await logActivity(
+        req.hostel_id,
+        status === "approved" ? "Guest meal approved" : "Guest meal denied",
+        `${req.qty} × ${req.meal} · ${toDay(req.day)} · ${gm?.name ?? "member"}`,
+        tx,
+        "meal"
+      );
       if (status !== "approved") return;
       const day = toDay(req.day);
       await ensureEntries(req.hostel_id, day, req.user_id, tx);
@@ -706,9 +722,9 @@ export const activity: ActivityRepository = {
   async listByHostel(hostelId) {
     const rows = await all<{
       id: string; hostel_id: string; actor_id: string; actor_name: string;
-      action: string; detail: string | null; created_at: string;
+      action: string; detail: string | null; category: string | null; created_at: string;
     }>(
-      "SELECT id, hostel_id, actor_id, actor_name, action, detail, created_at FROM activity_logs WHERE hostel_id = ? ORDER BY created_at DESC",
+      "SELECT id, hostel_id, actor_id, actor_name, action, detail, category, created_at FROM activity_logs WHERE hostel_id = ? ORDER BY created_at DESC",
       [hostelId]
     );
     return rows.map<ActivityLog>((r) => ({
@@ -718,12 +734,13 @@ export const activity: ActivityRepository = {
       actorName: r.actor_name,
       action: r.action,
       detail: r.detail ?? undefined,
+      ...(r.category ? { category: r.category as ActivityLog["category"] } : {}),
       createdAt: toIso(r.created_at),
     }));
   },
 
   async log(entry) {
-    await logActivity(entry.hostelId, entry.action, entry.detail);
+    await logActivity(entry.hostelId, entry.action, entry.detail, undefined, entry.category);
   },
 
   subscribe: serverOnly,

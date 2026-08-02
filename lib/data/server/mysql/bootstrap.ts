@@ -211,6 +211,12 @@ async function ensureDutyGroupSizeColumn(): Promise<void> {
   await run("ALTER TABLE duty_plans ADD COLUMN group_size INT NOT NULL DEFAULT 1 AFTER budget_per_day");
 }
 
+/** Adds the per-member "duty done" flag to databases that predate it. */
+async function ensureDutyDoneColumn(): Promise<void> {
+  if (await columnExists("duty_plan_members", "done")) return;
+  await run("ALTER TABLE duty_plan_members ADD COLUMN done BOOLEAN NOT NULL DEFAULT FALSE AFTER spun");
+}
+
 async function ensureHostelVerifiedColumn(): Promise<void> {
   if (await columnExists("hostels", "verified")) return;
   await run("ALTER TABLE hostels ADD COLUMN verified BOOLEAN NOT NULL DEFAULT FALSE AFTER meal_toggle_cutoff");
@@ -231,6 +237,12 @@ async function ensureGenderColumns(): Promise<void> {
 async function ensureHostelRulesColumn(): Promise<void> {
   if (await columnExists("hostels", "rules")) return;
   await run("ALTER TABLE hostels ADD COLUMN rules TEXT NULL AFTER verified");
+}
+
+/** Adds the page-section category to activity_logs on databases that predate it. */
+async function ensureActivityCategoryColumn(): Promise<void> {
+  if (await columnExists("activity_logs", "category")) return;
+  await run("ALTER TABLE activity_logs ADD COLUMN category VARCHAR(20) NULL AFTER detail");
 }
 
 /** Replaces the old single meals_default_off flag with three per-meal
@@ -541,9 +553,11 @@ export function ensureReady(): Promise<void> {
       await ensureShoppingCostEditTables();
       await ensureAdvanceRentColumns();
       await ensureDutyGroupSizeColumn();
+      await ensureDutyDoneColumn();
       await ensureHostelVerifiedColumn();
       await ensureGenderColumns();
       await ensureHostelRulesColumn();
+      await ensureActivityCategoryColumn();
       await ensureMealsDefaultOffColumn();
       await ensureHostelStreetColumn();
       await ensureAvatarImageColumn();

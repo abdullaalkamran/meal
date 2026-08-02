@@ -315,6 +315,8 @@ CREATE TABLE duty_plan_members (
   plan_id VARCHAR(64) NOT NULL,
   user_id VARCHAR(64) NOT NULL,
   spun    BOOLEAN     NOT NULL DEFAULT FALSE,
+  -- DutyPlan.done[userId]: member marked their duty block finished.
+  done    BOOLEAN     NOT NULL DEFAULT FALSE,
   PRIMARY KEY (plan_id, user_id),
   CONSTRAINT fk_duty_members_plan FOREIGN KEY (plan_id) REFERENCES duty_plans(id) ON DELETE CASCADE,
   CONSTRAINT fk_duty_members_user FOREIGN KEY (user_id) REFERENCES users(id)      ON DELETE CASCADE
@@ -800,6 +802,9 @@ CREATE TABLE activity_logs (
   actor_name VARCHAR(191) NOT NULL,
   action     VARCHAR(191) NOT NULL,
   detail     TEXT         NULL,
+  -- Which page section this belongs to (ActivityCategory): meal/bill/shopping/
+  -- member/hostel. NULL on rows written before the column existed.
+  category   VARCHAR(20)  NULL,
   created_at DATETIME(3)  NOT NULL,
   INDEX idx_activity_hostel (hostel_id, created_at),
   CONSTRAINT fk_activity_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE

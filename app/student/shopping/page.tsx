@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
-import { AlertTriangle, BookOpen, ChevronRight, ClipboardList, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Bell, BookOpen, CalendarClock, Check, ChevronLeft, ChevronRight, ClipboardList, ShoppingBag } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
@@ -20,12 +20,14 @@ import { Icon } from "@/components/ui/Icon";
 import { SpinWheel } from "@/components/ui/SpinWheel";
 import { ProductCard } from "@/components/store/ProductCard";
 import { MenuEditSheet } from "@/components/hostel/MenuEditSheet";
+import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
 import { repo, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { formatMonthLabel, formatShortDate, today } from "@/lib/utils/date";
+import { addDays, formatMonthLabel, formatShortDate, today } from "@/lib/utils/date";
+import { downloadDutyReminder } from "@/lib/utils/dutyReminder";
 
 export default function StudentShoppingPage() {
-  const { user, activeHostelId } = useSession();
+  const { user, hostel, activeHostelId } = useSession();
   const users = useUsers(activeHostelId);
   const plans = useDutyPlans(activeHostelId);
   const swaps = useSwaps(activeHostelId);
@@ -33,9 +35,22 @@ export default function StudentShoppingPage() {
   const { toast } = useToast();
   const [cost, setCost] = useState("");
   const [items, setItems] = useState("");
-  const [history, setHistory] = useState<ShoppingCost[]>([]);
+  const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const swapSectionRef = useRef<HTMLDivElement>(null);
+  // Which month's shopping records to browse — defaults to the current month,
+  // steppable back to see previous months.
+  const [recordYear, setRecordYear] = useState(() => new Date().getFullYear());
+  const [recordMonth, setRecordMonth] = useState(() => new Date().getMonth() + 1);
+  const recordMonthStr = `${recordYear}-${String(recordMonth).padStart(2, "0")}`;
+  const stepRecordMonth = (delta: number) => {
+    let m = recordMonth + delta;
+    let y = recordYear;
+    if (m < 1) { m = 12; y -= 1; }
+    else if (m > 12) { m = 1; y += 1; }
+    setRecordMonth(m);
+    setRecordYear(y);
+  };
 
   const plan = plans.find(
     (p) => p.type === "shopping" && p.memberIds.includes(user?.id ?? "") && p.endDate >= today()
@@ -58,9 +73,12 @@ export default function StudentShoppingPage() {
   useEffect(() => {
     if (!activeHostelId) return;
     repo.shoppingCosts.listByHostel(activeHostelId).then((list) =>
-      setHistory([...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5))
+      setAllCosts([...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
     );
   }, [activeHostelId, cost]);
+
+  // Records for the selected month (any date of the cost falls in that month).
+  const monthRecords = allCosts.filter((c) => c.dates.some((d) => d.startsWith(recordMonthStr)));
 
   const nameOf = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   const blockOf = (id: string) => plan?.blocks.find((b) => b.userIds.includes(id));
@@ -90,6 +108,24 @@ export default function StudentShoppingPage() {
   const resolveSwap = async (swapId: string, status: "accepted" | "denied" | "cancelled") => {
     await repo.swaps.resolve(swapId, status);
     toast(status === "accepted" ? "Swap completed" : status === "denied" ? "Swap denied" : "Swap cancelled");
+  };
+
+  // Duty status for the signed-in member's block.
+  const tomorrow = addDays(today(), 1);
+  const isDutyTomorrow = !!myBlock && myBlock.dates.includes(tomorrow);
+  const myDone = !!(user && plan?.done?.[user.id]);
+  const dutyStarted = !!myBlock && today() >= myBlock.dates[0];
+  const canMarkDone = !!myBlock && !!hasSpun && dutyStarted && !myDone;
+  // A duty block is still swappable only if it hasn't already passed and no one
+  // in it has marked it done — you can't hand your duty to someone who's
+  // finished (or whose days are gone).
+  const isSwappable = (b: { userIds: string[]; dates: string[] }) =>
+    b.dates.at(-1)! >= today() && !b.userIds.some((id) => plan?.done?.[id]);
+
+  const markMyDutyDone = async () => {
+    if (!plan || !user) return;
+    await repo.duties.markDone(plan.id, user.id);
+    toast("Marked your shopping duty as done — everyone can see it now");
   };
 
   const pendingShortages = shortages.filter((s) => s.status === "pending");
@@ -198,13 +234,45 @@ export default function StudentShoppingPage() {
             ? "A shopping duty rotation is already running for the rest of the hostel — you'll join the next one, once this one wraps up."
             : "No active shopping duty rotation right now."}
         </Card>
+        <ActivityTimeline hostelId={activeHostelId} category="shopping" title="Shopping activity" />
       </div>
     );
   }
 
+  // Blocks this member could hand their duty to — others' blocks that haven't
+  // passed and aren't already marked done.
+  const swapTargets = plan.blocks.filter(
+    (b) => b.userIds.length > 0 && !b.userIds.includes(user?.id ?? "") && isSwappable(b)
+  );
+
   return (
     <div className="flex flex-col gap-5 pt-2">
       <div className="text-[17.5px] font-extrabold tracking-tight">Shopping</div>
+
+      {isDutyTomorrow && myBlock && (
+        <div className="rounded-card border border-orange/30 bg-orange-soft p-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange text-white">
+              <Icon icon={Bell} size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-extrabold text-orange">Tomorrow is your shopping duty</div>
+              <div className="text-[10.5px] font-semibold text-text">
+                {formatShortDate(myBlock.dates[0])}
+                {myBlock.dates.length > 1 ? ` – ${formatShortDate(myBlock.dates.at(-1)!)}` : ""} · get ready to shop.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => downloadDutyReminder(myBlock.dates, hostel?.name)}
+            className="mt-3 flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-btn bg-orange text-[12px] font-extrabold text-white"
+          >
+            <Icon icon={CalendarClock} size={15} />
+            Set a phone reminder
+          </button>
+        </div>
+      )}
 
       {shortageAlerts}
 
@@ -266,7 +334,7 @@ export default function StudentShoppingPage() {
                 Edit today&rsquo;s menu
               </button>
             )}
-            {!myOutgoing && !myIncoming && (
+            {!myOutgoing && !myIncoming && isSwappable(myBlock) && (
               <button
                 type="button"
                 onClick={() =>
@@ -276,6 +344,21 @@ export default function StudentShoppingPage() {
               >
                 Request duty swap
               </button>
+            )}
+            {myDone ? (
+              <div className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-btn bg-white/20 text-[12px] font-extrabold text-white">
+                <Icon icon={Check} size={15} /> Duty completed
+              </div>
+            ) : (
+              canMarkDone && (
+                <button
+                  type="button"
+                  onClick={markMyDutyDone}
+                  className="mt-2 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-btn bg-white/90 text-[12px] font-extrabold text-[#92400E]"
+                >
+                  <Icon icon={Check} size={15} /> Mark my duty as done
+                </button>
+              )
             )}
           </div>
         )
@@ -313,13 +396,11 @@ export default function StudentShoppingPage() {
           </Card>
         )}
 
-        {hasSpun && !myOutgoing && !myIncoming && (
+        {hasSpun && !myOutgoing && !myIncoming && !myDone && dutyStarted === false && swapTargets.length > 0 && (
           <Card>
             <div className="mb-3 text-[13.5px] font-extrabold">Request a swap</div>
             <div className="flex flex-col gap-2">
-              {plan.blocks
-                .filter((b) => b.userIds.length > 0 && !b.userIds.includes(user?.id ?? ""))
-                .map((b) => (
+              {swapTargets.map((b) => (
                   <div
                     key={b.userIds.join("-")}
                     className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
@@ -405,7 +486,19 @@ export default function StudentShoppingPage() {
             const isMe = b.userIds.includes(user?.id ?? "");
             const isToday = b.dates.includes(today());
             const isDone = b.dates.at(-1)! < today();
-            const status = !claimed ? "Open" : isMe ? "You" : isToday ? "Today" : isDone ? "Done" : "Taken";
+            // Someone in this block actively marked it finished.
+            const markedDone = b.userIds.some((id) => plan.done?.[id]);
+            const status = markedDone
+              ? "✓ Done"
+              : !claimed
+                ? "Open"
+                : isMe
+                  ? "You"
+                  : isToday
+                    ? "Today"
+                    : isDone
+                      ? "Done"
+                      : "Taken";
             return (
               <div
                 key={i}
@@ -426,13 +519,15 @@ export default function StudentShoppingPage() {
                 <div
                   className={clsx(
                     "shrink-0 rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold",
-                    status === "You"
+                    status === "✓ Done"
                       ? "bg-primary text-white"
-                      : status === "Today"
-                        ? "bg-orange-soft text-orange"
-                        : status === "Open"
-                          ? "bg-primary-soft text-primary"
-                          : "bg-bg text-text-secondary"
+                      : status === "You"
+                        ? "bg-primary text-white"
+                        : status === "Today"
+                          ? "bg-orange-soft text-orange"
+                          : status === "Open"
+                            ? "bg-primary-soft text-primary"
+                            : "bg-bg text-text-secondary"
                   )}
                 >
                   {status}
@@ -443,13 +538,41 @@ export default function StudentShoppingPage() {
         </div>
       </div>
 
-      {history.length > 0 && (
-        <div>
-          <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-            Recent shopping
+      {/* Shopping records — browse any month */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+            Shopping records
           </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => stepRecordMonth(-1)}
+              aria-label="Previous month"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-border"
+            >
+              <Icon icon={ChevronLeft} size={13} />
+            </button>
+            <div className="min-w-[92px] text-center text-[11px] font-extrabold">
+              {formatMonthLabel(recordMonthStr)}
+            </div>
+            <button
+              type="button"
+              onClick={() => stepRecordMonth(1)}
+              aria-label="Next month"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-border"
+            >
+              <Icon icon={ChevronRight} size={13} />
+            </button>
+          </div>
+        </div>
+        {monthRecords.length === 0 ? (
+          <Card className="text-center text-[11px] font-semibold text-text-secondary">
+            No shopping recorded in {formatMonthLabel(recordMonthStr)}.
+          </Card>
+        ) : (
           <div className="flex flex-col gap-2">
-            {history.map((h) => (
+            {monthRecords.map((h) => (
               <Card key={h.id} className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-soft text-blue">
                   <Icon icon={ShoppingBag} size={15} />
@@ -462,6 +585,11 @@ export default function StudentShoppingPage() {
                         Added by manager
                       </span>
                     )}
+                    {h.status === "pending" && (
+                      <span className="rounded-pill bg-bg px-1.5 py-0.5 text-[8px] font-extrabold text-text-secondary">
+                        Pending
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] font-semibold text-text-secondary">
                     {formatShortDate(h.dates[0])}
@@ -472,8 +600,11 @@ export default function StudentShoppingPage() {
               </Card>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Who submitted/approved/recorded shopping costs, and when */}
+      <ActivityTimeline hostelId={activeHostelId} category="shopping" title="Shopping activity" />
 
       <MenuEditSheet open={menuOpen} onClose={() => setMenuOpen(false)} hostelId={activeHostelId} />
     </div>

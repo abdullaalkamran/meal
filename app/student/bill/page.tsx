@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { BillHistorySheet } from "@/components/hostel/BillHistorySheet";
+import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
 import { printReport } from "@/lib/reports/export";
@@ -65,6 +66,7 @@ export default function StudentBillPage() {
         <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
           No bill generated for {formatMonthLabel(monthStr)} yet.
         </Card>
+        <ActivityTimeline hostelId={activeHostelId} category="bill" title="Bill activity" month={monthStr} />
       </div>
     );
   }
@@ -275,6 +277,9 @@ export default function StudentBillPage() {
           </div>
         </div>
       )}
+
+      {/* Who recorded/verified payments & bill changes, and when */}
+      <ActivityTimeline hostelId={activeHostelId} category="bill" title="Bill activity" month={monthStr} />
 
       <PayBillSheet open={payOpen} onClose={() => setPayOpen(false)} bill={bill} />
       <BillHistorySheet

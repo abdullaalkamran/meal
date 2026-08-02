@@ -139,8 +139,13 @@ export interface PasswordResetOtp {
   createdAt: string;
 }
 
+/** Which part of the app an audited action belongs to — used to route it to the
+ * right in-context history timeline (Meals / Bill / Shopping pages). */
+export type ActivityCategory = "meal" | "bill" | "shopping" | "member" | "hostel";
+
 /** One audited hostel action (expense recorded, bills generated, member
- * banned, settings changed, …) — the owner's activity log. */
+ * banned, settings changed, payment verified, …) — shown to every member as an
+ * accountability trail of who did what and when. */
 export interface ActivityLog {
   id: string;
   hostelId: string;
@@ -148,6 +153,9 @@ export interface ActivityLog {
   actorName: string;
   action: string;
   detail?: string;
+  /** The page section this belongs to; absent on legacy rows (shown under
+   * "Other"/hostel history). */
+  category?: ActivityCategory;
   createdAt: string;
 }
 
@@ -329,6 +337,10 @@ export interface DutyPlan {
    * capacity when members spin to claim it. Defaults to 1. */
   groupSize?: number;
   spun: Record<string, boolean>;
+  /** Members who have marked their duty block finished ("I've done my shopping
+   * duty"), keyed by userId — everyone sees it in the rotation. Missing/false =
+   * not yet marked done. */
+  done?: Record<string, boolean>;
   /** Daily shopping budget, e.g. 2500 (৳/day) — only meaningful for type 'shopping'. */
   budgetPerDay?: number;
   createdAt: string;

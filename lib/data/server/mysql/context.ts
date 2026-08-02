@@ -7,6 +7,7 @@
 // actor bound to the request that set it, however the awaits interleave.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { ActivityCategory } from "../../types";
 import type { Queryable } from "./connection";
 import { all, fromIso, run } from "./connection";
 import { newId } from "./ids";
@@ -34,12 +35,13 @@ export async function logActivity(
   hostelId: string | null | undefined,
   action: string,
   detail?: string,
-  on?: Queryable
+  on?: Queryable,
+  category?: ActivityCategory
 ): Promise<void> {
   if (!hostelId) return;
   const actor = currentActor();
   await run(
-    "INSERT INTO activity_logs (id, hostel_id, actor_id, actor_name, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO activity_logs (id, hostel_id, actor_id, actor_name, action, detail, category, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     [
       newId("act"),
       hostelId,
@@ -47,6 +49,7 @@ export async function logActivity(
       actor?.name ?? "System",
       action,
       detail ?? null,
+      category ?? null,
       fromIso(new Date().toISOString()),
     ],
     on

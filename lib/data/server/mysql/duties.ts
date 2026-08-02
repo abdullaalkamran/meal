@@ -22,7 +22,7 @@ import type {
   SwapRepository,
 } from "../../repository";
 import { all, fromIso, one, run, toDay, toIso, transaction, type Queryable } from "./connection";
-import { currentActor, notify, notifyHostelStaff } from "./context";
+import { currentActor, logActivity, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 import { offeredOnDay, sealDays } from "./meals";
 import { addDays, today } from "../../../utils/date";
@@ -64,8 +64,8 @@ async function loadPlans(where: string, params: unknown[], on?: Queryable): Prom
   const ids = rows.map((r) => r.id);
   const ph = ids.map(() => "?").join(",");
   const [members, blocks] = await Promise.all([
-    all<{ plan_id: string; user_id: string; spun: number }>(
-      `SELECT plan_id, user_id, spun FROM duty_plan_members WHERE plan_id IN (${ph})`, ids, on
+    all<{ plan_id: string; user_id: string; spun: number; done: number }>(
+      `SELECT plan_id, user_id, spun, done FROM duty_plan_members WHERE plan_id IN (${ph})`, ids, on
     ),
     all<{ id: string; plan_id: string; position: number }>(
       `SELECT id, plan_id, position FROM duty_blocks WHERE plan_id IN (${ph}) ORDER BY position`, ids, on
@@ -91,11 +91,15 @@ async function loadPlans(where: string, params: unknown[], on?: Queryable): Prom
   };
   const membersByPlan = new Map<string, string[]>();
   const spunByPlan = new Map<string, Record<string, boolean>>();
+  const doneByPlan = new Map<string, Record<string, boolean>>();
   for (const m of members) {
     push(membersByPlan, m.plan_id, m.user_id);
     const spun = spunByPlan.get(m.plan_id) ?? {};
     spun[m.user_id] = m.spun === 1;
     spunByPlan.set(m.plan_id, spun);
+    const done = doneByPlan.get(m.plan_id) ?? {};
+    done[m.user_id] = m.done === 1;
+    doneByPlan.set(m.plan_id, done);
   }
   const membersByBlock = new Map<string, string[]>();
   for (const bm of blockMembers) push(membersByBlock, bm.block_id, bm.user_id);
@@ -120,6 +124,7 @@ async function loadPlans(where: string, params: unknown[], on?: Queryable): Prom
     blocks: blocksByPlan.get(r.id) ?? [],
     groupSize: Number(r.group_size) || 1,
     spun: spunByPlan.get(r.id) ?? {},
+    done: doneByPlan.get(r.id) ?? {},
     ...(r.budget_per_day == null ? {} : { budgetPerDay: Number(r.budget_per_day) }),
     createdAt: toIso(r.created_at),
   }));
@@ -217,6 +222,20 @@ export const duties: DutyRepository = {
       await run("UPDATE duty_plan_members SET spun = 1 WHERE plan_id = ? AND user_id = ?", [planId, userId], tx);
       return pick.position;
     });
+  },
+
+  async markDone(planId, userId) {
+    const actor = currentActor();
+    if (actor && actor.id !== userId) throw new Error("You can only mark your own duty as done.");
+    await run("UPDATE duty_plan_members SET done = 1 WHERE plan_id = ? AND user_id = ?", [planId, userId]);
+    const plan = await one<{ hostel_id: string; type: string }>(
+      "SELECT hostel_id, type FROM duty_plans WHERE id = ?",
+      [planId]
+    );
+    if (plan?.type === "shopping") {
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [userId]);
+      await logActivity(plan.hostel_id, "Shopping duty completed", m?.name ?? "member", undefined, "shopping");
+    }
   },
 
   subscribe: serverOnly,

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { clsx } from "clsx";
 import { Icon } from "./Icon";
 import { today } from "@/lib/utils/date";
@@ -18,6 +19,20 @@ const MONTHS = [
   "Oct",
   "Nov",
   "Dec",
+];
+const MONTHS_FULL = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -55,9 +70,26 @@ export function Calendar({
   renderDots,
   dayClass,
 }: CalendarProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstWeekday = new Date(year, month - 1, 1).getDay();
   const todayStr = today();
+
+  // Step by one month, rolling the year over at the ends — so the arrows read
+  // as "previous month / next month", the pattern people expect from a
+  // calendar (the old arrows stepped the YEAR, which was the confusing part).
+  const stepMonth = (delta: number) => {
+    let m = month + delta;
+    let y = year;
+    if (m < 1) {
+      m = 12;
+      y -= 1;
+    } else if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    onMonthChange(y, m);
+  };
 
   const cells: (number | null)[] = [
     ...Array(firstWeekday).fill(null),
@@ -66,39 +98,80 @@ export function Calendar({
 
   return (
     <div>
+      {/* Month + year with previous/next-month arrows; tap the label to jump */}
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => onMonthChange(year - 1, month)}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border"
+          onClick={() => stepMonth(-1)}
+          aria-label="Previous month"
+          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border"
         >
-          <Icon icon={ChevronLeft} size={15} />
+          <Icon icon={ChevronLeft} size={16} />
         </button>
-        <div className="text-[13.5px] font-extrabold">{year}</div>
         <button
           type="button"
-          onClick={() => onMonthChange(year + 1, month)}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border"
+          onClick={() => setPickerOpen((o) => !o)}
+          className="flex items-center gap-1.5 rounded-pill px-3 py-1.5 text-[14px] font-extrabold"
         >
-          <Icon icon={ChevronRight} size={15} />
+          {MONTHS_FULL[month - 1]} {year}
+          <Icon
+            icon={ChevronDown}
+            size={15}
+            className={clsx("text-text-secondary transition-transform", pickerOpen && "rotate-180")}
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => stepMonth(1)}
+          aria-label="Next month"
+          className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border"
+        >
+          <Icon icon={ChevronRight} size={16} />
         </button>
       </div>
 
-      <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
-        {MONTHS.map((m, i) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onMonthChange(year, i + 1)}
-            className={clsx(
-              "shrink-0 cursor-pointer rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold",
-              month === i + 1 ? "bg-primary text-white" : "bg-bg text-text-secondary"
-            )}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
+      {/* Tap-to-open jump panel: pick a year, then any month — all 12 visible */}
+      {pickerOpen && (
+        <div className="mb-3 rounded-card border border-border bg-bg/60 p-3">
+          <div className="mb-2.5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => onMonthChange(year - 1, month)}
+              aria-label="Previous year"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-card"
+            >
+              <Icon icon={ChevronLeft} size={14} />
+            </button>
+            <div className="text-[13px] font-extrabold">{year}</div>
+            <button
+              type="button"
+              onClick={() => onMonthChange(year + 1, month)}
+              aria-label="Next year"
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-card"
+            >
+              <Icon icon={ChevronRight} size={14} />
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {MONTHS.map((m, i) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  onMonthChange(year, i + 1);
+                  setPickerOpen(false);
+                }}
+                className={clsx(
+                  "cursor-pointer rounded-pill py-2 text-[11px] font-extrabold transition-colors",
+                  month === i + 1 ? "bg-primary text-white" : "bg-card text-text-secondary"
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-1.5 grid grid-cols-7 gap-1">
         {WEEKDAYS.map((w, i) => (

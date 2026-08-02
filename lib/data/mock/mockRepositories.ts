@@ -43,7 +43,7 @@ import type {
   PromotionRepository,
   UserRepository,
 } from "../repository";
-import type { Bill, BillSection, BillTarget, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
+import type { ActivityCategory, Bill, BillSection, BillTarget, Coupon, Expense, MealDay, MealEditRequest, MealSlot, Order, OrderItem, PasswordResetOtp, Payment, Product, Role, ServiceListing, ShoppingCostEditRequest, SmtpSettings, StudyAbroadItem, User } from "../types";
 import { getVapidPublicKey, sendToSubscription } from "../../push/webpush";
 import { addDays, currentMonth, formatMonthLabel, formatShortDate, today } from "../../utils/date";
 import { canToggleMeal } from "../../utils/mealPolicy";
@@ -199,7 +199,7 @@ export function setActingUser(user: { id: string; name: string } | undefined) {
   actingUser = user ?? null;
 }
 
-function logActivity(hostelId: string, action: string, detail?: string) {
+function logActivity(hostelId: string, action: string, detail?: string, category?: ActivityCategory) {
   if (!hostelId) return;
   store.data.activityLogs.push({
     id: nextId("act"),
@@ -208,6 +208,7 @@ function logActivity(hostelId: string, action: string, detail?: string) {
     actorName: actingUser?.name ?? "System",
     action,
     detail,
+    ...(category ? { category } : {}),
     createdAt: new Date().toISOString(),
   });
   store.emit(`activity:${hostelId}`);
@@ -1197,6 +1198,13 @@ const meals: MealRepository = {
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);
     entry[meal].guestCount = Math.max(0, entry[meal].guestCount + count);
+    const gname = store.data.users.find((u) => u.id === userId)?.name ?? "member";
+    logActivity(
+      hostelId,
+      count >= 0 ? "Guest meal added" : "Guest meal removed",
+      `${Math.abs(count)} × ${meal} · ${date} · ${gname}`,
+      "meal"
+    );
     store.emit(`mealDay:${hostelId}`);
   },
   async setMemberMealsForRange(hostelId, userId, from, to, on) {
@@ -1230,6 +1238,13 @@ const meals: MealRepository = {
       store.emit(`notifications:${userId}`);
       emitUser(userId);
     }
+    const mmName = store.data.users.find((u) => u.id === userId)?.name ?? "member";
+    logActivity(
+      hostelId,
+      on ? "Meals resumed for member" : "Meals turned off for member",
+      `${mmName} · ${from} → ${to}`,
+      "meal"
+    );
     store.emit(`mealDay:${hostelId}`);
   },
   async setMemberFutureMeals(hostelId, userId, meal, off) {
@@ -1395,6 +1410,7 @@ const duties: DutyRepository = {
       // for pre-assigned cleaning duty.
       blocks: plan.blocks.map((b) => ({ ...b, userIds: [...b.userIds] })),
       spun: Object.fromEntries(plan.memberIds.map((id) => [id, false])),
+      done: {},
       createdAt: new Date().toISOString(),
     };
     store.data.dutyPlans.push(created);
@@ -1432,6 +1448,23 @@ const duties: DutyRepository = {
     plan.spun[userId] = true;
     store.emit(`duties:${plan.hostelId}`);
     return pick;
+  },
+  async markDone(planId, userId) {
+    if (actingUser && actingUser.id !== userId) {
+      throw new Error("You can only mark your own duty as done.");
+    }
+    const plan = store.data.dutyPlans.find((p) => p.id === planId);
+    if (!plan) return;
+    plan.done = { ...(plan.done ?? {}), [userId]: true };
+    if (plan.type === "shopping") {
+      logActivity(
+        plan.hostelId,
+        "Shopping duty completed",
+        store.data.users.find((u) => u.id === userId)?.name ?? "member",
+        "shopping"
+      );
+    }
+    store.emit(`duties:${plan.hostelId}`);
   },
   subscribe(hostelId, cb) {
     const fire = () => cb(store.data.dutyPlans.filter((p) => p.hostelId === hostelId));
@@ -1508,6 +1541,12 @@ const shoppingCosts: ShoppingCostRepository = {
       "Shopping cost to approve",
       `A member submitted a ৳${cost.amount} shopping cost for approval. Review it in Finance.`
     );
+    logActivity(
+      cost.hostelId,
+      "Shopping cost submitted",
+      `৳${cost.amount} by ${store.data.users.find((u) => u.id === cost.userId)?.name ?? "member"}`,
+      "shopping"
+    );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
   async recordForMember(cost) {
@@ -1525,12 +1564,24 @@ const shoppingCosts: ShoppingCostRepository = {
       "Shopping cost recorded for you",
       `The manager recorded a ৳${cost.amount} shopping cost as yours. It counts toward this month's meal rate.`
     );
+    logActivity(
+      cost.hostelId,
+      "Shopping cost recorded",
+      `৳${cost.amount} for ${store.data.users.find((u) => u.id === cost.userId)?.name ?? "member"}`,
+      "shopping"
+    );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
   async decide(id, status) {
     const cost = store.data.shoppingCosts.find((c) => c.id === id);
     if (!cost) return;
     cost.status = status;
+    logActivity(
+      cost.hostelId,
+      status === "approved" ? "Shopping cost approved" : "Shopping cost denied",
+      `৳${cost.amount} · ${store.data.users.find((u) => u.id === cost.userId)?.name ?? "member"}`,
+      "shopping"
+    );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
 };
@@ -1766,6 +1817,12 @@ const bills: BillRepository = {
     const breakdown = computePaymentBreakdown(bill, payment.targets, payment.amount);
     applyPaymentBreakdown(bill, breakdown, payment.amount);
     store.data.payments.push({ ...payment, id: nextId("pay"), verified: true, breakdown });
+    logActivity(
+      bill.hostelId,
+      "Payment recorded",
+      `৳${payment.amount} ${payment.method} from ${store.data.users.find((u) => u.id === bill.userId)?.name ?? "member"}`,
+      "bill"
+    );
     store.emit(`bill:${bill.userId}`);
   },
   async listPendingVerification(hostelId, month) {
@@ -1778,14 +1835,17 @@ const bills: BillRepository = {
     const payment = store.data.payments.find((p) => p.id === paymentId);
     if (!payment || payment.verified) return; // already decided (or gone) — nothing to do.
     const bill = store.data.bills.find((b) => b.id === payment.billId);
+    const memberName = bill ? store.data.users.find((u) => u.id === bill.userId)?.name ?? "member" : "member";
     if (status === "verified") {
       // Apply the exact split computed at submission time — the balance
       // moves for the first time right here, not when the member submitted.
       if (bill) applyPaymentBreakdown(bill, payment.breakdown ?? {}, payment.amount);
       payment.verified = true;
+      if (bill) logActivity(bill.hostelId, "Payment verified", `৳${payment.amount} from ${memberName}`, "bill");
     } else {
       // Declined: nothing was ever applied to the bill, so just drop the claim.
       store.data.payments = store.data.payments.filter((p) => p.id !== paymentId);
+      if (bill) logActivity(bill.hostelId, "Payment rejected", `৳${payment.amount} from ${memberName}`, "bill");
     }
     if (bill) store.emit(`bill:${bill.userId}`);
   },
@@ -1820,6 +1880,12 @@ const bills: BillRepository = {
       from: "mealCost",
       to: destination === "refund" ? undefined : destination,
     });
+    logActivity(
+      bill.hostelId,
+      destination === "refund" ? "Meal credit refunded" : "Meal credit moved to cover dues",
+      `৳${applied} · ${store.data.users.find((u) => u.id === bill.userId)?.name ?? "member"}`,
+      "bill"
+    );
     store.emit(`bill:${bill.userId}`);
   },
   async listAdjustments(billId) {
@@ -1856,7 +1922,7 @@ const bills: BillRepository = {
       store.emit(`bill:${userId}`);
     }
     store.data.users = store.data.users.map((u) => (u.id === userId ? { ...u, advanceHeld: 0 } : u));
-    logActivity(hostelId, "Advance rent applied on leaving", `৳${held}`);
+    logActivity(hostelId, "Advance rent applied on leaving", `৳${held}`, "bill");
   },
   async generateBills(hostelId, month, options) {
     const hostel = store.data.hostels.find((h) => h.id === hostelId);
@@ -2088,7 +2154,7 @@ const bills: BillRepository = {
       store.emit(`expenses:${hostelId}`);
     }
 
-    logActivity(hostelId, "Bills generated", `${month} · ${bills.length} member bills`);
+    logActivity(hostelId, "Bills generated", `${month} · ${bills.length} member bills`, "bill");
     store.emit(`bills:${hostelId}`);
     for (const b of bills) store.emit(`bill:${b.userId}`);
     return bills;
@@ -2503,14 +2569,14 @@ const expenses: ExpenseRepository = {
   },
   async add(expense) {
     store.data.expenses.push({ ...expense, id: nextId("exp") });
-    logActivity(expense.hostelId, "Expense recorded", `${expense.category} · ৳${expense.amount}${expense.note ? ` — ${expense.note}` : ""}`);
+    logActivity(expense.hostelId, "Expense recorded", `${expense.category} · ৳${expense.amount}${expense.note ? ` — ${expense.note}` : ""}`, "bill");
     store.emit(`expenses:${expense.hostelId}`);
   },
   async remove(id) {
     const expense = store.data.expenses.find((e) => e.id === id);
     if (!expense) return;
     store.data.expenses = store.data.expenses.filter((e) => e.id !== id);
-    logActivity(expense.hostelId, "Expense removed", `${expense.category} · ৳${expense.amount}`);
+    logActivity(expense.hostelId, "Expense removed", `${expense.category} · ৳${expense.amount}`, "bill");
     store.emit(`expenses:${expense.hostelId}`);
   },
   subscribe(hostelId, cb) {
@@ -2888,6 +2954,12 @@ const guestMeals: GuestMealRepository = {
       "Guest meal request",
       `A member has requested ${req.qty} guest meal${req.qty > 1 ? "s" : ""} (${req.meal}) for ${req.date}. Review it in Approvals.`
     );
+    logActivity(
+      req.hostelId,
+      "Guest meal requested",
+      `${req.qty} × ${req.meal} · ${req.date} · ${store.data.users.find((u) => u.id === req.userId)?.name ?? "member"}`,
+      "meal"
+    );
     store.emit(`guestMeals:${req.hostelId}`);
   },
   async decide(id, status) {
@@ -2900,6 +2972,12 @@ const guestMeals: GuestMealRepository = {
       entry[req.meal].guestCount = Math.max(0, entry[req.meal].guestCount + req.qty);
       store.emit(`mealDay:${req.hostelId}`);
     }
+    logActivity(
+      req.hostelId,
+      status === "approved" ? "Guest meal approved" : "Guest meal denied",
+      `${req.qty} × ${req.meal} · ${req.date} · ${store.data.users.find((u) => u.id === req.userId)?.name ?? "member"}`,
+      "meal"
+    );
     store.emit(`guestMeals:${req.hostelId}`);
   },
   subscribe(hostelId, cb) {
