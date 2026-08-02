@@ -38,6 +38,7 @@ export default function StudentShoppingPage() {
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [rotationOpen, setRotationOpen] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
   const swapSectionRef = useRef<HTMLDivElement>(null);
   // Which month's shopping records to browse — defaults to the current month,
   // steppable back to see previous months.
@@ -359,9 +360,13 @@ export default function StudentShoppingPage() {
             {!myOutgoing && !myIncoming && isSwappable(myBlock) && (
               <button
                 type="button"
-                onClick={() =>
-                  swapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
-                }
+                onClick={() => {
+                  setSwapOpen(true);
+                  setTimeout(
+                    () => swapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+                    50
+                  );
+                }}
                 className="mt-2 min-h-11 w-full cursor-pointer rounded-btn border border-white/40 text-[12px] font-extrabold text-white"
               >
                 Request duty swap
@@ -420,9 +425,26 @@ export default function StudentShoppingPage() {
 
         {hasSpun && !myOutgoing && !myIncoming && !myDone && dutyStarted === false && swapTargets.length > 0 && (
           <Card>
-            <div className="mb-3 text-[13.5px] font-extrabold">Request a swap</div>
-            <div className="flex flex-col gap-2">
-              {swapTargets.map((b) => (
+            <button
+              type="button"
+              onClick={() => setSwapOpen((o) => !o)}
+              className="flex w-full cursor-pointer items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <div className="text-[13.5px] font-extrabold">Request a swap</div>
+                <span className="rounded-pill bg-bg px-2 py-0.5 text-[9px] font-extrabold text-text-secondary">
+                  {swapTargets.length} available
+                </span>
+              </div>
+              <Icon
+                icon={ChevronDown}
+                size={16}
+                className={clsx("shrink-0 text-text-secondary transition-transform", swapOpen && "rotate-180")}
+              />
+            </button>
+            {swapOpen && (
+              <div className="mt-3 flex flex-col gap-2">
+                {swapTargets.map((b) => (
                   <div
                     key={b.userIds.join("-")}
                     className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
@@ -444,7 +466,8 @@ export default function StudentShoppingPage() {
                     </button>
                   </div>
                 ))}
-            </div>
+              </div>
+            )}
           </Card>
         )}
       </div>

@@ -591,6 +591,23 @@ export const mealEdits: MealEditRepository = {
 
   async request(req) {
     await transaction(async (tx) => {
+      // Only one active poll per (member, day): drop any still-pending request
+      // (and its poll announcement) for the same member+date first, so a second
+      // request replaces it instead of piling up a duplicate members must vote
+      // on twice.
+      const dupes = await all<{ id: string }>(
+        "SELECT id FROM meal_edit_requests WHERE hostel_id = ? AND target_user_id = ? AND day = ? AND status = 'pending'",
+        [req.hostelId, req.targetUserId, req.date],
+        tx
+      );
+      for (const d of dupes) {
+        await run("DELETE FROM meal_edit_requests WHERE id = ?", [d.id], tx);
+        await run(
+          "DELETE FROM announcements WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?",
+          [d.id],
+          tx
+        );
+      }
       const id = newId("mealedit");
       await run(
         `INSERT INTO meal_edit_requests (id, hostel_id, target_user_id, day, reason, requested_by, status, created_at)
@@ -620,8 +637,8 @@ export const mealEdits: MealEditRepository = {
         [requestId, userId, choice, now()],
         tx
       );
-      const req = await one<MealEditRow>(
-        "SELECT id, hostel_id, status FROM meal_edit_requests WHERE id = ?",
+      const req = await one<{ id: string; hostel_id: string; target_user_id: string; day: string; status: string }>(
+        "SELECT id, hostel_id, target_user_id, day, status FROM meal_edit_requests WHERE id = ?",
         [requestId],
         tx
       );
@@ -639,15 +656,25 @@ export const mealEdits: MealEditRepository = {
       );
       const total = boarders?.n ?? 0;
       if (total > 0 && (yes?.n ?? 0) / total >= 0.5) {
-        await run("UPDATE meal_edit_requests SET status = 'approved' WHERE id = ?", [requestId], tx);
-        await run(
-          `UPDATE announcements
-              SET kind = 'meal-edit-resolved', title = 'Meal edit approved',
-                  body = 'Members approved the request — the manager can now edit that meal.'
-            WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?`,
-          [requestId],
+        // Approve this request AND any leftover pending duplicate for the same
+        // member+day (older data made before one-poll-per-day was enforced), so
+        // the correction is authorised once and no stale poll lingers.
+        const toResolve = await all<{ id: string }>(
+          "SELECT id FROM meal_edit_requests WHERE hostel_id = ? AND target_user_id = ? AND day = ? AND status = 'pending'",
+          [req.hostel_id, req.target_user_id, req.day],
           tx
         );
+        for (const r of toResolve) {
+          await run("UPDATE meal_edit_requests SET status = 'approved' WHERE id = ?", [r.id], tx);
+          await run(
+            `UPDATE announcements
+                SET kind = 'meal-edit-resolved', title = 'Meal edit approved',
+                    body = 'Members approved the request — the manager can now edit that meal.'
+              WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?`,
+            [r.id],
+            tx
+          );
+        }
       }
     });
   },

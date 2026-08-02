@@ -2344,6 +2344,27 @@ const mealEdits: MealEditRepository = {
     return store.data.mealEditRequests.filter((r) => r.hostelId === hostelId);
   },
   async request(req) {
+    // Only one active poll per (member, day): drop any still-pending request
+    // (and its poll announcement) for the same member+date, so a second request
+    // replaces it instead of piling up a duplicate.
+    const dupeIds = new Set(
+      store.data.mealEditRequests
+        .filter(
+          (r) =>
+            r.hostelId === req.hostelId &&
+            r.targetUserId === req.targetUserId &&
+            r.date === req.date &&
+            r.status === "pending"
+        )
+        .map((r) => r.id)
+    );
+    if (dupeIds.size > 0) {
+      store.data.mealEditRequests = store.data.mealEditRequests.filter((r) => !dupeIds.has(r.id));
+      store.data.announcements = store.data.announcements.filter(
+        (a) =>
+          !(a.kind === "meal-edit-poll" && dupeIds.has((a.payload as { requestId?: string })?.requestId ?? ""))
+      );
+    }
     const created: MealEditRequest = {
       ...req,
       id: nextId("mealedit"),
@@ -2388,16 +2409,27 @@ const mealEdits: MealEditRepository = {
         (v) => v.requestId === requestId && v.choice === "yes"
       ).length;
       if (boarders.length > 0 && yesVotes / boarders.length >= 0.5) {
-        request.status = "approved";
-        const ann = store.data.announcements.find(
-          (a) =>
-            a.kind === "meal-edit-poll" &&
-            (a.payload as { requestId?: string })?.requestId === requestId
+        // Approve this request AND any leftover pending duplicate for the same
+        // member+day (older data), so no stale poll lingers after approval.
+        const toResolve = store.data.mealEditRequests.filter(
+          (r) =>
+            r.hostelId === request.hostelId &&
+            r.targetUserId === request.targetUserId &&
+            r.date === request.date &&
+            r.status === "pending"
         );
-        if (ann) {
-          ann.kind = "meal-edit-resolved";
-          ann.title = "Meal edit approved";
-          ann.body = "Members approved the request — the manager can now edit that meal.";
+        for (const r of toResolve) {
+          r.status = "approved";
+          const ann = store.data.announcements.find(
+            (a) =>
+              a.kind === "meal-edit-poll" &&
+              (a.payload as { requestId?: string })?.requestId === r.id
+          );
+          if (ann) {
+            ann.kind = "meal-edit-resolved";
+            ann.title = "Meal edit approved";
+            ann.body = "Members approved the request — the manager can now edit that meal.";
+          }
         }
       }
     }
