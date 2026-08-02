@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
-import { AlertTriangle, Bell, BookOpen, CalendarClock, Check, ChevronLeft, ChevronRight, ClipboardList, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Bell, BookOpen, CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, ShoppingBag } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useUsers } from "@/hooks/useUsers";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
@@ -37,6 +37,7 @@ export default function StudentShoppingPage() {
   const [items, setItems] = useState("");
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [rotationOpen, setRotationOpen] = useState(false);
   const swapSectionRef = useRef<HTMLDivElement>(null);
   // Which month's shopping records to browse — defaults to the current month,
   // steppable back to see previous months.
@@ -254,6 +255,8 @@ export default function StudentShoppingPage() {
   const swapTargets = plan.blocks.filter(
     (b) => b.userIds.length > 0 && !b.userIds.includes(user?.id ?? "") && isSwappable(b)
   );
+  // Members who haven't spun to claim a slot yet.
+  const notSpun = plan.memberIds.filter((id) => !plan.spun?.[id]);
 
   return (
     <div className="flex flex-col gap-5 pt-2">
@@ -496,9 +499,32 @@ export default function StudentShoppingPage() {
       )}
 
       <div>
-        <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
-          Rotation · {formatMonthLabel(plan.startDate.slice(0, 7))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setRotationOpen((o) => !o)}
+          className="mb-2 flex w-full cursor-pointer items-center justify-between gap-2"
+        >
+          <div className="flex items-center gap-2">
+            <div className="text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+              Rotation · {formatMonthLabel(plan.startDate.slice(0, 7))}
+            </div>
+            {notSpun.length > 0 ? (
+              <span className="rounded-pill bg-orange-soft px-2 py-0.5 text-[9px] font-extrabold text-orange">
+                {notSpun.length} not claimed yet
+              </span>
+            ) : (
+              <span className="rounded-pill bg-primary-soft px-2 py-0.5 text-[9px] font-extrabold text-primary">
+                All claimed
+              </span>
+            )}
+          </div>
+          <Icon
+            icon={ChevronDown}
+            size={16}
+            className={clsx("shrink-0 text-text-secondary transition-transform", rotationOpen && "rotate-180")}
+          />
+        </button>
+        {rotationOpen && (
         <div className="flex flex-col gap-2">
           {plan.blocks.map((b, i) => {
             const claimed = b.userIds.length > 0;
@@ -555,6 +581,7 @@ export default function StudentShoppingPage() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Shopping records + responsible persons — browse any month */}
