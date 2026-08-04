@@ -251,12 +251,23 @@ export function MealsScreen({
   };
   const statsByUser = new Map<
     string,
-    { cost: number; meals: number; ratingSum: number; ratingCount: number }
+    { cost: number; meals: number; ratingSum: number; ratingCount: number; countedDates: Set<string> }
   >();
   for (const c of monthCosts) {
-    const entry = statsByUser.get(c.userId) ?? { cost: 0, meals: 0, ratingSum: 0, ratingCount: 0 };
+    const entry =
+      statsByUser.get(c.userId) ??
+      { cost: 0, meals: 0, ratingSum: 0, ratingCount: 0, countedDates: new Set<string>() };
     entry.cost += c.amount;
-    entry.meals += c.dates.reduce((sum, d) => sum + mealsServedOn(d), 0);
+    // A member can submit more than one cost entry covering the same
+    // responsible day (e.g. a follow-up receipt) — count that day's meals
+    // into the rate once, not once per entry, or the rate looks cheaper
+    // than reality the more entries someone submits.
+    for (const d of c.dates) {
+      if (!entry.countedDates.has(d)) {
+        entry.countedDates.add(d);
+        entry.meals += mealsServedOn(d);
+      }
+    }
     for (const r of allRatings) {
       if (r.target === "menu" && c.dates.includes(r.date)) {
         entry.ratingSum += r.stars;
