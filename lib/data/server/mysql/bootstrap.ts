@@ -463,6 +463,33 @@ async function ensureAnnouncementDismissalsTable(): Promise<void> {
   );
 }
 
+/** Removes stale duplicate meal-edit polls left over from before the
+ * one-poll-per-member-per-day fix (2026-08-02) — a member+day could
+ * previously accumulate more than one pending request/announcement, and the
+ * older ones never got resolved since nothing pointed at them again. Keeps
+ * only the newest pending request per (hostel, member, day) and deletes the
+ * rest along with their poll announcements. Idempotent: a no-op once clean,
+ * since new duplicates can no longer form. */
+async function ensureNoDuplicateMealEditPolls(): Promise<void> {
+  const stale = await all<{ id: string }>(
+    `SELECT r1.id FROM meal_edit_requests r1
+       JOIN meal_edit_requests r2
+         ON r1.hostel_id = r2.hostel_id
+        AND r1.target_user_id = r2.target_user_id
+        AND r1.day = r2.day
+        AND r1.status = 'pending'
+        AND r2.status = 'pending'
+        AND (r1.created_at < r2.created_at OR (r1.created_at = r2.created_at AND r1.id < r2.id))`
+  );
+  for (const r of stale) {
+    await run("DELETE FROM meal_edit_requests WHERE id = ?", [r.id]);
+    await run(
+      "DELETE FROM announcements WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?",
+      [r.id]
+    );
+  }
+}
+
 /** Creates quick_service_settings on databases that predate it. */
 async function ensureQuickServiceSettingsTable(): Promise<void> {
   if (!(await tableExists("quick_service_settings"))) {
@@ -574,6 +601,7 @@ export function ensureReady(): Promise<void> {
       await ensureQuickServiceSettingsTable();
       await ensureAvailabilityAreasEntityEnum();
       await ensureAnnouncementDismissalsTable();
+      await ensureNoDuplicateMealEditPolls();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.
