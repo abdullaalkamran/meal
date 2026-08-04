@@ -465,13 +465,40 @@ async function ensureAnnouncementDismissalsTable(): Promise<void> {
 
 /** Removes stale duplicate meal-edit polls left over from before the
  * one-poll-per-member-per-day fix (2026-08-02) — a member+day could
- * previously accumulate more than one pending request/announcement, and the
- * older ones never got resolved since nothing pointed at them again. Keeps
- * only the newest pending request per (hostel, member, day) and deletes the
- * rest along with their poll announcements. Idempotent: a no-op once clean,
- * since new duplicates can no longer form. */
+ * previously accumulate more than one request/announcement, and the extras
+ * never got resolved since nothing pointed at them again. Idempotent: a
+ * no-op once clean, since new duplicates can no longer form. Two cases: */
 async function ensureNoDuplicateMealEditPolls(): Promise<void> {
-  const stale = await all<{ id: string }>(
+  // 1. A pending request whose sibling (same hostel/member/day) already got
+  // approved — each duplicate crossed its OWN 50% threshold independently
+  // under the pre-fix code, so more than one could resolve, leaving any
+  // others stuck pending forever even though the edit was already
+  // authorised. Resolve them the same way an approval normally does.
+  const alreadyDecided = await all<{ id: string }>(
+    `SELECT DISTINCT r1.id FROM meal_edit_requests r1
+       JOIN meal_edit_requests r2
+         ON r1.hostel_id = r2.hostel_id
+        AND r1.target_user_id = r2.target_user_id
+        AND r1.day = r2.day
+        AND r1.id != r2.id
+        AND r2.status = 'approved'
+      WHERE r1.status = 'pending'`
+  );
+  for (const r of alreadyDecided) {
+    await run("UPDATE meal_edit_requests SET status = 'approved' WHERE id = ?", [r.id]);
+    await run(
+      `UPDATE announcements
+          SET kind = 'meal-edit-resolved', title = 'Meal edit approved',
+              body = 'Members approved the request — the manager can now edit that meal.'
+        WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?`,
+      [r.id]
+    );
+  }
+
+  // 2. Two or more still-pending requests for the same member+day with no
+  // approved sibling yet (case 1 already promoted those) — keep only the
+  // newest, drop the rest and their announcements as superseded resubmissions.
+  const stalePending = await all<{ id: string }>(
     `SELECT r1.id FROM meal_edit_requests r1
        JOIN meal_edit_requests r2
          ON r1.hostel_id = r2.hostel_id
@@ -481,7 +508,7 @@ async function ensureNoDuplicateMealEditPolls(): Promise<void> {
         AND r2.status = 'pending'
         AND (r1.created_at < r2.created_at OR (r1.created_at = r2.created_at AND r1.id < r2.id))`
   );
-  for (const r of stale) {
+  for (const r of stalePending) {
     await run("DELETE FROM meal_edit_requests WHERE id = ?", [r.id]);
     await run(
       "DELETE FROM announcements WHERE kind = 'meal-edit-poll' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.requestId')) = ?",
