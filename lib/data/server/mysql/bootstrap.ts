@@ -515,6 +515,41 @@ async function ensureNoDuplicateMealEditPolls(): Promise<void> {
       [r.id]
     );
   }
+
+  // 3. Any meal-edit-poll announcement whose OWN linked request is missing or
+  // already decided — a data-integrity gap independent of the sibling cases
+  // above (e.g. the request row was removed some other way without its
+  // announcement following). Nothing will ever cast a vote that moves these
+  // forward, so resolve or remove them directly by following the actual
+  // link instead of inferring from a sibling row.
+  const orphans = await all<{ id: string; reqStatus: string | null }>(
+    `SELECT a.id AS id, r.status AS reqStatus
+       FROM announcements a
+       LEFT JOIN meal_edit_requests r
+         ON r.id = JSON_UNQUOTE(JSON_EXTRACT(a.payload, '$.requestId'))
+      WHERE a.kind = 'meal-edit-poll'`
+  );
+  for (const o of orphans) {
+    if (o.reqStatus === "pending") continue; // still a live, legitimate poll
+    if (o.reqStatus === "approved") {
+      await run(
+        `UPDATE announcements SET kind = 'meal-edit-resolved', title = 'Meal edit approved',
+            body = 'Members approved the request — the manager can now edit that meal.'
+          WHERE id = ?`,
+        [o.id]
+      );
+    } else if (o.reqStatus === "denied") {
+      await run(
+        `UPDATE announcements SET kind = 'meal-edit-resolved', title = 'Meal edit denied',
+            body = 'Members denied the request.'
+          WHERE id = ?`,
+        [o.id]
+      );
+    } else {
+      // No matching request row at all — nothing left to resolve to.
+      await run("DELETE FROM announcements WHERE id = ?", [o.id]);
+    }
+  }
 }
 
 /** Creates quick_service_settings on databases that predate it. */
