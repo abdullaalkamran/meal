@@ -38,13 +38,17 @@ const BILL_PEEK_MS = 8000;
 export function HomeHero({
   bill,
   mealRate,
-  mealsOn,
+  mealSummary,
+  myShoppingCost,
 }: {
   bill: Bill | undefined;
   mealRate: number;
-  /** This month's live meal count (from the member's own meals), shown before
-   * a bill exists. Falls back to the bill's count. */
-  mealsOn?: number | null;
+  /** This month's own meals + live billed cost — updates as soon as the
+   * manager confirms cooking, without waiting for a bill to be (re)generated. */
+  mealSummary: { mealsOn: number; billedMeals: number; cost: number } | null;
+  /** What I've personally spent on approved shopping this month — credited
+   * against my own meal cost, same as a generated bill would. */
+  myShoppingCost: number;
 }) {
   // Open on the bill card first; after a peek it flips to the promo carousel,
   // which then auto-advances one card at a time. Tapping "My bill & credit"
@@ -143,7 +147,34 @@ export function HomeHero({
     return () => clearTimeout(timer);
   }, [mode]);
 
-  const due = bill ? bill.grandTotal - bill.paid : 0;
+  // Meal cost is computed live (this month's billed meals × rate, minus my
+  // own approved shopping spend — same credit a generated bill would give)
+  // rather than read from the bill row, so it moves the moment the manager
+  // confirms cooking instead of waiting for the next "Generate bills" run.
+  // Whatever's already been paid against a generated bill's meal-cost
+  // section is still honoured.
+  const mealCostPaid = bill?.sections.find((s) => s.label === "mealCost")?.paid ?? 0;
+  const mealCostSoFar = (mealSummary?.cost ?? 0) - myShoppingCost;
+  const mealDue = mealCostSoFar - mealCostPaid;
+
+  // Rent + everything else stays tied to the last generated bill — there's
+  // no live-computable equivalent (it depends on room assignment and
+  // manager-entered expenses, not on meals/cooking).
+  const roomRent = bill?.sections.find((s) => s.label === "roomRent");
+  const otherSections = bill?.sections.filter((s) => s.label === "serviceCharge" || s.label === "cookSalary") ?? [];
+  const rentDue = (roomRent?.total ?? 0) - (roomRent?.paid ?? 0);
+  const otherTotal = otherSections.reduce((sum, s) => sum + s.total, 0);
+  const otherDue = otherTotal - otherSections.reduce((sum, s) => sum + s.paid, 0);
+
+  const previousDue = (bill?.previousBalance ?? 0) - (bill?.previousBalancePaid ?? 0);
+  // A meal-cost credit (shopping spend exceeding what's owed for meals) must
+  // never silently reduce what's shown as owed for rent/other bills here —
+  // that's an explicit manager decision (settleMealCredit), not something
+  // this headline figure does automatically. Only positive dues contribute;
+  // the true (possibly negative) mealDue is still shown in its own section
+  // above so the student can see the credit exists.
+  const grandTotal = Math.max(mealCostSoFar, 0) + (roomRent?.total ?? 0) + otherTotal + (bill?.previousBalance ?? 0);
+  const due = Math.max(mealDue, 0) + rentDue + otherDue + previousDue;
 
   return (
     <div>
@@ -247,7 +278,7 @@ export function HomeHero({
               <Icon icon={ChevronRight} size={18} />
             </div>
             <div className="mb-3 flex items-center gap-2.5">
-              <div className="text-[22px] font-extrabold">{formatBDT(bill?.grandTotal ?? 0)}</div>
+              <div className="text-[22px] font-extrabold">{formatBDT(grandTotal)}</div>
               {due > 0 && (
                 <div className="rounded-pill bg-danger px-2.5 py-1 text-[10px] font-extrabold">
                   {formatBDT(due)} Outstanding
@@ -259,22 +290,57 @@ export function HomeHero({
                 </div>
               )}
             </div>
-            <div className="flex gap-6 border-t border-white/20 pt-3">
-              <div>
-                <div className="text-[9.5px] font-bold text-white/60">Meals</div>
-                <div className="text-[12.5px] font-extrabold">{mealsOn ?? bill?.mealsCount ?? 0}</div>
+            <div className="flex gap-4 border-t border-white/20 pt-3">
+              {/* Meal cost — live, moves as soon as the manager confirms cooking */}
+              <div className="flex-1">
+                <div className="mb-1.5 text-[9px] font-extrabold uppercase tracking-wide text-white/50">
+                  Meal cost
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  <div>
+                    <div className="text-[9px] font-bold text-white/60">Meals eaten</div>
+                    <div className="text-[12px] font-extrabold">{mealSummary?.mealsOn ?? 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-bold text-white/60">Avg /meal</div>
+                    <div className="text-[12px] font-extrabold">{formatBDT(mealRate)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-bold text-white/60">My shopping</div>
+                    <div className="text-[12px] font-extrabold">{formatBDT(myShoppingCost)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-bold text-white/60">{mealDue < 0 ? "Credit" : "Due"}</div>
+                    <div className="text-[12px] font-extrabold">{formatBDT(Math.abs(mealDue))}</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-[9.5px] font-bold text-white/60">Actual rate/meal</div>
-                <div className="text-[12.5px] font-extrabold">{formatBDT(mealRate)}</div>
-              </div>
-              <div>
-                <div className="text-[9.5px] font-bold text-white/60">Paid</div>
-                <div className="text-[12.5px] font-extrabold">{formatBDT(bill?.paid ?? 0)}</div>
-              </div>
-              <div>
-                <div className="text-[9.5px] font-bold text-white/60">{due < 0 ? "Credit" : "Due"}</div>
-                <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(due))}</div>
+
+              <div className="w-px shrink-0 bg-white/20" />
+
+              {/* Rent & other bills — from the last generated bill */}
+              <div className="flex-1">
+                <div className="mb-1.5 text-[9px] font-extrabold uppercase tracking-wide text-white/50">
+                  Rent &amp; bills
+                </div>
+                {bill ? (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-bold text-white/70">Seat rent</div>
+                      <div className="text-[12px] font-extrabold">
+                        {rentDue > 0 ? formatBDT(rentDue) : "Paid"}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-bold text-white/70">Other bills</div>
+                      <div className="text-[12px] font-extrabold">
+                        {otherDue > 0 ? formatBDT(otherDue) : "Paid"}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[10px] font-semibold text-white/60">Not generated yet</div>
+                )}
               </div>
             </div>
           </div>

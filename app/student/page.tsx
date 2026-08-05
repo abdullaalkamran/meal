@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, ChevronRight, Megaphone, ShoppingCart } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
@@ -26,7 +26,7 @@ import { HomeHero } from "@/components/student/HomeHero";
 import { MealRosterSheet } from "@/components/student/MealRosterSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { today, currentMonth, greeting, formatDayMonth } from "@/lib/utils/date";
-import type { MealSlot } from "@/lib/data";
+import { repo, type MealSlot, type ShoppingCost } from "@/lib/data";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
 import { useQuickServices } from "@/hooks/useQuickServices";
@@ -43,9 +43,22 @@ export default function StudentHomePage() {
   const { announcements, dismiss: dismissAnnouncement } = useActionableAnnouncements(activeHostelId, user?.id);
   const plans = useDutyPlans(activeHostelId);
   const { bill } = useBill(activeHostelId, user?.id, currentMonth());
-  // This month's own meal count, live — so the hero shows it before any bill
-  // is generated (the bill's mealsCount is 0 until then).
-  const mealsOn = useMemberMealSummary(activeHostelId, user?.id)?.mealsOn ?? null;
+  // This month's own meals + billed cost, live — so the hero's meal-cost
+  // section updates the moment the manager confirms cooking, rather than
+  // waiting for a bill to be (re)generated.
+  const mealSummary = useMemberMealSummary(activeHostelId, user?.id);
+  const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
+  useEffect(() => {
+    if (!activeHostelId) return;
+    repo.shoppingCosts.listByHostel(activeHostelId).then(setAllCosts);
+  }, [activeHostelId]);
+  // What I've personally spent on approved shopping this month — credited
+  // against my own meal cost below, same as a generated bill would.
+  const myShoppingThisMonth = allCosts
+    .filter(
+      (c) => c.userId === user?.id && c.status === "approved" && c.dates.some((d) => d.startsWith(currentMonth()))
+    )
+    .reduce((sum, c) => sum + c.amount, 0);
   const menu = useMenu(activeHostelId, today());
   const rooms = useRooms(activeHostelId);
   const boarders = useUsers(activeHostelId).filter((u) => u.role !== "cook" && u.role !== "owner");
@@ -117,7 +130,12 @@ export default function StudentHomePage() {
       </div>
 
       {/* Hero: promo slider ⇄ current bill & credit (toggle in the header) */}
-      <HomeHero bill={bill ?? undefined} mealRate={actualRate.rate} mealsOn={mealsOn} />
+      <HomeHero
+        bill={bill ?? undefined}
+        mealRate={actualRate.rate}
+        mealSummary={mealSummary}
+        myShoppingCost={myShoppingThisMonth}
+      />
 
       {/* Announcements + unread personal notifications (pinned until clicked) */}
       {(visibleAnnouncements.length > 0 || unreadNotifications.length > 0) && (
