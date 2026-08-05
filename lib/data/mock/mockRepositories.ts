@@ -1274,7 +1274,10 @@ const meals: MealRepository = {
           ...d.entries,
           [userId]: {
             ...e,
-            [meal]: { ...e[meal], on: off ? false : offered },
+            // Turning future meals off also cancels any guest meals already
+            // booked on those days — a member with no meal of their own has
+            // no one there to cover a guest either.
+            [meal]: { ...e[meal], on: off ? false : offered, guestCount: off ? 0 : e[meal].guestCount },
           },
         },
       };

@@ -553,8 +553,11 @@ export const meals: MealRepository = {
       const tomorrow = addDays(today(), 1);
       const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
       if (off) {
+        // Turning future meals off also cancels any guest meals already
+        // booked on those days — a member with no meal of their own has no
+        // one there to cover a guest either.
         await run(
-          "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ? AND meal = ?",
+          "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ? AND meal = ?",
           [hostelId, userId, fromDay, meal],
           tx
         );
