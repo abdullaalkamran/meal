@@ -167,14 +167,15 @@ export function HomeHero({
   const otherDue = otherTotal - otherSections.reduce((sum, s) => sum + s.paid, 0);
 
   const previousDue = (bill?.previousBalance ?? 0) - (bill?.previousBalancePaid ?? 0);
-  // A meal-cost credit (shopping spend exceeding what's owed for meals) must
-  // never silently reduce what's shown as owed for rent/other bills here —
-  // that's an explicit manager decision (settleMealCredit), not something
-  // this headline figure does automatically. Only positive dues contribute;
-  // the true (possibly negative) mealDue is still shown in its own section
-  // above so the student can see the credit exists.
-  const grandTotal = Math.max(mealCostSoFar, 0) + (roomRent?.total ?? 0) + otherTotal + (bill?.previousBalance ?? 0);
-  const due = Math.max(mealDue, 0) + rentDue + otherDue + previousDue;
+  // The headline total is rent + other bills + previous balance ONLY — meal
+  // cost/credit never folds in here, full stop. Meal money is collected
+  // purely on members' behalf (the hostel keeps no share of it), so it's a
+  // completely separate account from what's owed to the owner/utilities/
+  // cook; moving a meal credit to cover another category is the manager's
+  // explicit call (settleMealCredit), never automatic. The true mealDue
+  // (possibly a credit) is shown only in its own section above.
+  const grandTotal = (roomRent?.total ?? 0) + otherTotal + (bill?.previousBalance ?? 0);
+  const due = rentDue + otherDue + previousDue;
 
   return (
     <div>

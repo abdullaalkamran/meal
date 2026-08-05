@@ -40,7 +40,12 @@ export interface MemberMonthlyReport {
   previousDue: number; // unpaid carry-over from earlier months
   billTotal: number; // grand total on the month's bill (0 if not generated)
   paid: number;
-  outstanding: number; // billTotal − paid (0 if no bill)
+  /** What's still unpaid for rent + service charge + cook salary + previous
+   * balance — deliberately EXCLUDES meal cost. Meal cost is money collected
+   * purely on members' behalf (the hostel keeps no share of it), so a due or
+   * credit there is a completely separate account from what's owed to the
+   * owner/utilities/cook — see `mealBalance` for that side. */
+  outstanding: number;
 }
 
 export interface MonthlyMealReport {
@@ -107,6 +112,8 @@ export async function buildMonthlyMealReport(
     const bill = bills.find((b) => b.userId === u.id);
     const section = (label: string) =>
       bill?.sections.find((s) => s.label === label)?.total ?? 0;
+    const sectionPaid = (label: string) =>
+      bill?.sections.find((s) => s.label === label)?.paid ?? 0;
     const room = rooms.find((r) => r.occupantIds.includes(u.id));
 
     // Service charge itemized exactly as billed; before bills exist, the only
@@ -118,6 +125,19 @@ export async function buildMonthlyMealReport(
         ? [{ label: "Monthly service charge (set by owner)", amount: ownerCharge }]
         : [];
 
+    const rentTotal = bill ? section("roomRent") : room?.seatRent ?? 0;
+    const serviceTotal = bill ? section("serviceCharge") : serviceItems.reduce((sum, i) => sum + i.amount, 0);
+    const cookSalaryTotal = section("cookSalary");
+    const previousDue = bill ? Math.max(bill.previousBalance - bill.previousBalancePaid, 0) : 0;
+    // Rent/service/cook-salary/previous-balance due only — meal cost (whether
+    // a due or a credit) never folds into this figure; it's the manager's
+    // explicit call to settle a meal credit against another category.
+    const outstanding =
+      Math.max(rentTotal - sectionPaid("roomRent"), 0) +
+      Math.max(serviceTotal - sectionPaid("serviceCharge"), 0) +
+      Math.max(cookSalaryTotal - sectionPaid("cookSalary"), 0) +
+      previousDue;
+
     return {
       userId: u.id,
       name: u.name,
@@ -127,21 +147,19 @@ export async function buildMonthlyMealReport(
       mealCost,
       shoppingSpent,
       mealBalance: shoppingSpent - mealCost,
-      rent: bill ? section("roomRent") : room?.seatRent ?? 0,
+      rent: rentTotal,
       rentItems: bill
         ? bill.sections.find((s) => s.label === "roomRent")?.items ?? []
         : room?.seatRent
           ? [{ label: `Room ${room.number} (seat) · ${formatMonthLabel(month)}`, amount: room.seatRent }]
           : [],
-      serviceCharge: bill
-        ? section("serviceCharge")
-        : serviceItems.reduce((sum, i) => sum + i.amount, 0),
+      serviceCharge: serviceTotal,
       serviceItems,
-      cookSalary: section("cookSalary"),
-      previousDue: bill ? Math.max(bill.previousBalance - bill.previousBalancePaid, 0) : 0,
+      cookSalary: cookSalaryTotal,
+      previousDue,
       billTotal: bill?.grandTotal ?? 0,
       paid: bill?.paid ?? 0,
-      outstanding: bill ? Math.max(bill.grandTotal - bill.paid, 0) : 0,
+      outstanding,
     };
   });
 
