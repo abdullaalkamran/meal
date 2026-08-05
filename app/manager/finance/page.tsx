@@ -167,7 +167,17 @@ function ManagerFinancePage() {
   // isn't needed for a message the member reads on their phone.
   const shareOnWhatsApp = (b: Bill) => {
     const memberName = nameOf(b.userId);
-    const due = b.grandTotal - b.paid;
+    // Meal cost is this month's own live-settled account (members square it up
+    // among themselves) — never listed here, and never counted into this
+    // message's total/due either. Only rent/service/cook-salary (owed to the
+    // owner/utilities/cook) and any carried-over previous-month due belong on
+    // a payment reminder.
+    const nonMealSections = b.sections.filter((s) => s.label !== "mealCost");
+    const otherTotal = nonMealSections.reduce((sum, s) => sum + s.total, 0);
+    const otherPaid = nonMealSections.reduce((sum, s) => sum + s.paid, 0);
+    const total = otherTotal + b.previousBalance;
+    const paid = otherPaid + b.previousBalancePaid;
+    const due = total - paid;
     const previousDue = b.previousBalance - b.previousBalancePaid;
     const lines = [
       `Assalamu Alaikum, Dear ${memberName},`,
@@ -175,16 +185,18 @@ function ManagerFinancePage() {
       `Here is your bill summary for ${hostel?.name ?? "the hostel"} — ${formatMonthLabel(b.month)}:`,
       "",
       // Every line item, exactly as billed — same detail as the Bill page.
-      ...b.sections.flatMap((s) => [
+      ...nonMealSections.flatMap((s) => [
         `${SECTION_LABEL[s.label]}: ${formatBDT(s.total)}`,
         ...s.items.map((item) => `  - ${item.label}: ${formatBDT(item.amount)}`),
       ]),
-      ...(previousDue !== 0
-        ? [previousDue > 0 ? `Previous balance: ${formatBDT(previousDue)}` : `Previous credit: ${formatBDT(-previousDue)}`]
+      // Only mentioned when there's actually a due — the month it's from,
+      // named explicitly rather than a generic "previous balance".
+      ...(previousDue > 0
+        ? [`${formatMonthLabel(previousMonth(b.month))} due: ${formatBDT(previousDue)}`]
         : []),
       "",
-      `Total: ${formatBDT(b.grandTotal)}`,
-      `Paid: ${formatBDT(b.paid)}`,
+      `Total: ${formatBDT(total)}`,
+      `Paid: ${formatBDT(paid)}`,
       due > 0 ? `Due: ${formatBDT(due)}` : due < 0 ? `Credit: ${formatBDT(-due)}` : "Status: Fully paid",
       "",
       due > 0 ? "Please settle the due amount at your earliest convenience. Thank you." : "Thank you.",
