@@ -10,6 +10,7 @@ import { MonthNav } from "@/components/ui/MonthNav";
 import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { BillHistorySheet } from "@/components/hostel/BillHistorySheet";
 import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
+import { PrintLetterhead } from "@/components/hostel/PrintLetterhead";
 import { formatBDT } from "@/lib/utils/currency";
 import { formatMonthLabel, formatShortDate, previousMonth } from "@/lib/utils/date";
 import { printReport } from "@/lib/reports/export";
@@ -38,7 +39,7 @@ const METHOD_TONE: Record<string, string> = {
 };
 
 export default function StudentBillPage() {
-  const { user, activeHostelId } = useSession();
+  const { user, hostel, activeHostelId } = useSession();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -85,11 +86,66 @@ export default function StudentBillPage() {
 
       {monthNav}
 
-      <div className="report-print-area flex flex-col gap-5">
-      <div className="hidden text-[13px] font-extrabold print:block">
-        {formatMonthLabel(bill.month)} Bill · {user?.name}
+      <div className="invoice-print-area flex flex-col gap-5">
+      {/* Print-only payslip — a clean document instead of the app's own
+          colorful cards, so "Print / Save as PDF" produces something that
+          reads as a real financial record. */}
+      <div className="hidden rounded-card border border-border bg-card p-5 print:block print:border-0 print:p-0">
+        <PrintLetterhead
+          hostelName={hostel?.name}
+          title="Payslip"
+          meta={[`Bill #${bill.id.slice(-10).toUpperCase()}`, formatMonthLabel(bill.month), user?.name ?? ""]}
+        />
+        <div className="mb-4 flex flex-col gap-0.5">
+          <div className="grid grid-cols-[1fr_auto] gap-2 border-b border-border pb-2 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
+            <div>Description</div>
+            <div className="text-right">Amount</div>
+          </div>
+          {bill.sections.map((section) => (
+            <div key={section.label} className="border-b border-border py-1.5">
+              <div className="flex items-center justify-between text-[10.5px] font-extrabold">
+                <span>{SECTION_META[section.label].label}</span>
+                <span>{formatBDT(section.total)}</span>
+              </div>
+              {section.items.map((item, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary"
+                >
+                  <div>{item.label}</div>
+                  <div className="text-right">{formatBDT(item.amount)}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+          {previousDue !== 0 && (
+            <div className="flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold">
+              <span>{previousDue > 0 ? "Previous balance" : "Previous credit"}</span>
+              <span>{formatBDT(Math.abs(previousDue))}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+          <div className="flex justify-between text-[14px] font-extrabold">
+            <span>Total</span>
+            <span>{formatBDT(bill.grandTotal)}</span>
+          </div>
+          <div className="flex justify-between text-[11px] font-semibold text-text-secondary">
+            <span>Paid</span>
+            <span>{formatBDT(bill.paid)}</span>
+          </div>
+          <div className="flex justify-between text-[12px] font-extrabold">
+            <span>{due < 0 ? "Credit" : "Due"}</span>
+            <span>{formatBDT(Math.abs(due))}</span>
+          </div>
+        </div>
+        <div className="mt-4 text-[9px] font-semibold text-text-secondary">
+          Generated {new Date().toLocaleDateString()} · MyDorm
+        </div>
       </div>
 
+      {/* On-screen app UI — hidden when printing */}
+      <div className="flex flex-col gap-5 print:hidden">
       <div
         className="rounded-card p-5 text-white"
         style={{
@@ -187,6 +243,7 @@ export default function StudentBillPage() {
         <div className="text-[13.5px] font-extrabold">Total</div>
         <div className="text-[15px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
       </Card>
+      </div>
       </div>
 
       <div className="flex gap-2.5">

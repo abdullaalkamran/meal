@@ -228,6 +228,11 @@ body.font-bn {
     size: A4 landscape;
     margin: 10mm;
   }
+  /* A clean white page instead of the app's gray canvas behind the document. */
+  html,
+  body {
+    background: #fff !important;
+  }
   body * {
     visibility: hidden;
   }

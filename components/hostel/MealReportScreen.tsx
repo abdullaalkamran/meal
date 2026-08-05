@@ -16,6 +16,7 @@ import {
   type MonthlyMealReport,
 } from "@/lib/reports/monthlyMealReport";
 import { downloadReportCsv, printReport } from "@/lib/reports/export";
+import { PrintLetterhead } from "@/components/hostel/PrintLetterhead";
 
 const money = (n: number) => formatBDT(Math.round(n * 100) / 100);
 
@@ -90,6 +91,97 @@ function MemberReportCard({ m }: { m: MemberMonthlyReport }) {
   );
 }
 
+/** Print-only payslip for a single member's report — a clean document
+ * instead of the app's own rounded/badged card, shown only inside
+ * `.invoice-print-area` (`scope="own"`'s print target). */
+function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hostelName?: string; month: string }) {
+  const rentLabel = m.rentItems.length ? "Room rent" : null;
+  return (
+    <div className="hidden rounded-card border border-border bg-card p-5 print:block print:border-0 print:p-0">
+      <PrintLetterhead hostelName={hostelName} title="Monthly Report" meta={[formatMonthLabel(month), m.name]} />
+      <div className="mb-4 flex flex-col gap-0.5">
+        <div className="grid grid-cols-[1fr_auto] gap-2 border-b border-border pb-2 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
+          <div>Description</div>
+          <div className="text-right">Amount</div>
+        </div>
+        <div className="border-b border-border py-1.5">
+          <div className="flex items-center justify-between text-[10.5px] font-extrabold">
+            <span>Meal cost</span>
+            <span>{money(m.mealCost)}</span>
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary">
+            <div>{m.totalMeals} meals eaten</div>
+            <div className="text-right">{money(m.mealCost)}</div>
+          </div>
+          {m.shoppingSpent > 0 && (
+            <div className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary">
+              <div>Shopping spent (credit)</div>
+              <div className="text-right">−{money(m.shoppingSpent)}</div>
+            </div>
+          )}
+        </div>
+        {rentLabel && (
+          <div className="border-b border-border py-1.5">
+            <div className="flex items-center justify-between text-[10.5px] font-extrabold">
+              <span>{rentLabel}</span>
+              <span>{money(m.rent)}</span>
+            </div>
+            {m.rentItems.map((item, i) => (
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary">
+                <div>{item.label}</div>
+                <div className="text-right">{money(item.amount)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {m.serviceCharge > 0 && (
+          <div className="border-b border-border py-1.5">
+            <div className="flex items-center justify-between text-[10.5px] font-extrabold">
+              <span>Service charge</span>
+              <span>{money(m.serviceCharge)}</span>
+            </div>
+            {m.serviceItems.map((item, i) => (
+              <div key={i} className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary">
+                <div>{item.label}</div>
+                <div className="text-right">{money(item.amount)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {m.cookSalary > 0 && (
+          <div className="flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold">
+            <span>Cook salary</span>
+            <span>{money(m.cookSalary)}</span>
+          </div>
+        )}
+        {m.previousDue !== 0 && (
+          <div className="flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold">
+            <span>{m.previousDue > 0 ? "Previous balance" : "Previous credit"}</span>
+            <span>{money(Math.abs(m.previousDue))}</span>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+        <div className="flex justify-between text-[14px] font-extrabold">
+          <span>Bill total</span>
+          <span>{money(m.billTotal)}</span>
+        </div>
+        <div className="flex justify-between text-[11px] font-semibold text-text-secondary">
+          <span>Paid</span>
+          <span>{money(m.paid)}</span>
+        </div>
+        <div className="flex justify-between text-[12px] font-extrabold">
+          <span>Outstanding</span>
+          <span>{money(m.outstanding)}</span>
+        </div>
+      </div>
+      <div className="mt-4 text-[9px] font-semibold text-text-secondary">
+        Generated {new Date().toLocaleDateString()} · MyDorm
+      </div>
+    </div>
+  );
+}
+
 /** Spreadsheet view for managers/owners: cost names across the header, member
  * names down the (sticky) left column, one account row per member, and a
  * totals row at the bottom. */
@@ -141,17 +233,17 @@ function MembersTable({
   };
 
   return (
-    <div className="overflow-x-auto rounded-card border border-border bg-card shadow-chip">
+    <div className="overflow-x-auto rounded-card border border-border bg-card shadow-chip print:rounded-none print:border-0 print:shadow-none">
       <table className="w-full min-w-max border-collapse text-left">
         <thead>
-          <tr className="bg-bg">
-            <th className="sticky left-0 z-10 bg-bg px-3 py-2.5 text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary">
+          <tr className="bg-bg print:bg-transparent">
+            <th className="sticky left-0 z-10 bg-bg px-3 py-2.5 text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary print:static print:bg-transparent print:border print:border-border">
               Member
             </th>
             {cols.map((c) => (
               <th
                 key={c.header}
-                className="whitespace-nowrap px-3 py-2.5 text-right text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary"
+                className="whitespace-nowrap px-3 py-2.5 text-right text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary print:border print:border-border"
               >
                 {c.header}
               </th>
@@ -161,7 +253,7 @@ function MembersTable({
         <tbody>
           {members.map((m) => (
             <tr key={m.userId} className="border-t border-border">
-              <td className="sticky left-0 z-10 bg-card px-3 py-2.5">
+              <td className="sticky left-0 z-10 bg-card px-3 py-2.5 print:static print:bg-transparent print:border print:border-border">
                 <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-extrabold">
                   {m.name}
                   {m.isManager && (
@@ -173,16 +265,24 @@ function MembersTable({
                 <div className="text-[9px] font-semibold text-text-secondary">{m.room}</div>
               </td>
               {cols.map((c) => (
-                <td key={c.header} className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-bold">
+                <td
+                  key={c.header}
+                  className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-bold print:border print:border-border"
+                >
                   {cell(c, m)}
                 </td>
               ))}
             </tr>
           ))}
-          <tr className="border-t-2 border-border bg-bg">
-            <td className="sticky left-0 z-10 bg-bg px-3 py-2.5 text-[10.5px] font-extrabold">Total</td>
+          <tr className="border-t-2 border-border bg-bg print:bg-transparent">
+            <td className="sticky left-0 z-10 bg-bg px-3 py-2.5 text-[10.5px] font-extrabold print:static print:bg-transparent print:border print:border-border">
+              Total
+            </td>
             {cols.map((c) => (
-              <td key={c.header} className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-extrabold">
+              <td
+                key={c.header}
+                className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-extrabold print:border print:border-border"
+              >
                 {c.header === "Meal credit/due"
                   ? balanceCell(sum(c.value))
                   : c.money
@@ -243,13 +343,25 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
 
       <MonthNav value={month} onChange={setMonth} />
 
-      <div className="report-print-area flex flex-col gap-5">
-        <div className="hidden text-[13px] font-extrabold print:block">
-          Monthly meal report · {report?.hostelName} · {formatMonthLabel(month)}
-          {scope === "own" && user ? ` · ${user.name}` : ""}
-        </div>
+      <div className={`${scope === "own" ? "invoice-print-area" : "report-print-area"} flex flex-col gap-5`}>
+        {scope === "own" ? (
+          // Print-only payslip — a clean document instead of the on-screen
+          // card, shown only inside .invoice-print-area (portrait).
+          visibleMembers.map((m) => (
+            <MemberPayslip key={m.userId} m={m} hostelName={report?.hostelName} month={month} />
+          ))
+        ) : (
+          <div className="hidden print:block">
+            <PrintLetterhead
+              hostelName={report?.hostelName}
+              title="Monthly Meal Settlement Report"
+              meta={[formatMonthLabel(month)]}
+            />
+          </div>
+        )}
 
-        <Card>
+        <div className={scope === "own" ? "print:hidden" : ""}>
+        <Card className="print:rounded-none print:border-0 print:p-0 print:shadow-none">
           <div className="mb-3 text-[13.5px] font-extrabold">
             {formatMonthLabel(month)} · hostel summary
           </div>
@@ -265,13 +377,13 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
             ))}
           </div>
           {report && !report.billsGenerated && (
-            <div className="mt-3 rounded-btn bg-orange-soft px-3 py-2 text-[10px] font-bold text-orange">
+            <div className="mt-3 rounded-btn bg-orange-soft px-3 py-2 text-[10px] font-bold text-orange print:hidden">
               Bills for {formatMonthLabel(month)} haven&rsquo;t been generated yet — rent and
               service charge below are the standing amounts, and outstanding shows 0 until then.
             </div>
           )}
           {scope === "all" && (
-            <div className="mt-3 rounded-btn bg-bg px-3 py-2 text-[10px] font-semibold text-text-secondary">
+            <div className="mt-3 rounded-btn bg-bg px-3 py-2 text-[10px] font-semibold text-text-secondary print:hidden">
               The manager collects from members with a meal <b>due</b> and pays out members with a
               meal <b>credit</b> (shopping spend above their eaten cost).
             </div>
@@ -291,6 +403,7 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       <div className="flex gap-2.5">
