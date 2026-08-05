@@ -9,6 +9,7 @@ import {
   Flame,
   HelpCircle,
   Lock,
+  MessageCircle,
   Package,
   ShoppingCart,
   Sparkles,
@@ -40,6 +41,7 @@ import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests
 import { repo, type Bill, type BillSection, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
+import { toWhatsAppNumber } from "@/lib/utils/phone";
 import { PermissionGate } from "@/components/manager/PermissionGate";
 import { hasManagerPermission } from "@/lib/auth/permissions";
 
@@ -158,6 +160,38 @@ function ManagerFinancePage() {
   useEffect(loadFormerBills, [activeHostelId, formerIdsKey, bills]);
 
   const nameOf = (id: string) => allHostelUsers.find((u) => u.id === id)?.name ?? id;
+  const phoneOf = (id: string) => allHostelUsers.find((u) => u.id === id)?.phone;
+
+  // Formal text-message summary of a member's bill, ready to open pre-filled
+  // in WhatsApp — no PDF, this app has no PDF-generation library and one
+  // isn't needed for a message the member reads on their phone.
+  const shareOnWhatsApp = (b: Bill) => {
+    const memberName = nameOf(b.userId).split(" ")[0];
+    const due = b.grandTotal - b.paid;
+    const previousDue = b.previousBalance - b.previousBalancePaid;
+    const lines = [
+      `Assalamu Alaikum, ${memberName},`,
+      "",
+      `Here is your bill summary for ${hostel?.name ?? "the hostel"} — ${formatMonthLabel(b.month)}:`,
+      "",
+      ...b.sections.map((s) => `${SECTION_LABEL[s.label]}: ${formatBDT(s.total)}`),
+      ...(previousDue !== 0
+        ? [previousDue > 0 ? `Previous balance: ${formatBDT(previousDue)}` : `Previous credit: ${formatBDT(-previousDue)}`]
+        : []),
+      "",
+      `Total: ${formatBDT(b.grandTotal)}`,
+      `Paid: ${formatBDT(b.paid)}`,
+      due > 0 ? `Due: ${formatBDT(due)}` : due < 0 ? `Credit: ${formatBDT(-due)}` : "Status: Fully paid",
+      "",
+      due > 0 ? "Please settle the due amount at your earliest convenience. Thank you." : "Thank you.",
+      "",
+      `— ${hostel?.name ?? "Hostel"} Management`,
+    ];
+    const phone = phoneOf(b.userId);
+    const waNumber = phone ? toWhatsAppNumber(phone) : "";
+    const url = `https://wa.me/${waNumber}?text=${encodeURIComponent(lines.join("\n"))}`;
+    window.open(url, "_blank");
+  };
 
   const sectionSummaries = SECTION_ORDER.map((label) => {
     let receivable = 0;
@@ -477,6 +511,14 @@ function ManagerFinancePage() {
                         className="mt-1 flex min-h-10 w-full cursor-pointer items-center justify-center rounded-btn border border-border text-[11.5px] font-extrabold text-text-secondary"
                       >
                         Bill history — all months
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => shareOnWhatsApp(b)}
+                        className="mt-1 flex min-h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-btn border border-border text-[11.5px] font-extrabold text-text-secondary"
+                      >
+                        <Icon icon={MessageCircle} size={14} /> Share on WhatsApp
                       </button>
 
                       {(due > 0 || anyCategoryDue) && canSuspendMeals && (
