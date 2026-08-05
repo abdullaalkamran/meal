@@ -40,7 +40,7 @@ import { PayBillSheet } from "@/components/student/PayBillSheet";
 import { useShoppingCostEditRequests } from "@/hooks/useShoppingCostEditRequests";
 import { repo, type Bill, type BillSection, type ShoppingCost } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth, formatMonthLabel, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
+import { currentMonth, formatMonthLabel, formatShortDate, lastDayOfMonth, previousMonth, today } from "@/lib/utils/date";
 import { toWhatsAppNumber } from "@/lib/utils/phone";
 import { PermissionGate } from "@/components/manager/PermissionGate";
 import { hasManagerPermission } from "@/lib/auth/permissions";
@@ -198,8 +198,10 @@ function ManagerFinancePage() {
       `Total: ${formatBDT(total)}`,
       `Paid: ${formatBDT(paid)}`,
       due > 0 ? `Due: ${formatBDT(due)}` : due < 0 ? `Credit: ${formatBDT(-due)}` : "Status: Fully paid",
+      ...(b.dueDate ? [`Last date of payment: ${formatShortDate(b.dueDate)}`] : []),
       "",
       due > 0 ? "Please settle the due amount at your earliest convenience. Thank you." : "Thank you.",
+      "Please log in to your account and check the Billing page for full details.",
       "",
       `— ${hostel?.name ?? "Hostel"} Management`,
     ];
