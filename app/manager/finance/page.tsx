@@ -166,15 +166,19 @@ function ManagerFinancePage() {
   // in WhatsApp — no PDF, this app has no PDF-generation library and one
   // isn't needed for a message the member reads on their phone.
   const shareOnWhatsApp = (b: Bill) => {
-    const memberName = nameOf(b.userId).split(" ")[0];
+    const memberName = nameOf(b.userId);
     const due = b.grandTotal - b.paid;
     const previousDue = b.previousBalance - b.previousBalancePaid;
     const lines = [
-      `Assalamu Alaikum, ${memberName},`,
+      `Assalamu Alaikum, Dear ${memberName},`,
       "",
       `Here is your bill summary for ${hostel?.name ?? "the hostel"} — ${formatMonthLabel(b.month)}:`,
       "",
-      ...b.sections.map((s) => `${SECTION_LABEL[s.label]}: ${formatBDT(s.total)}`),
+      // Every line item, exactly as billed — same detail as the Bill page.
+      ...b.sections.flatMap((s) => [
+        `${SECTION_LABEL[s.label]}: ${formatBDT(s.total)}`,
+        ...s.items.map((item) => `  - ${item.label}: ${formatBDT(item.amount)}`),
+      ]),
       ...(previousDue !== 0
         ? [previousDue > 0 ? `Previous balance: ${formatBDT(previousDue)}` : `Previous credit: ${formatBDT(-previousDue)}`]
         : []),
