@@ -873,7 +873,13 @@ export const bills: BillRepository = {
         const prevBill = prevByUser.get(u.id);
         // Carry the full remaining, both signs: a due (+) or a credit (−).
         const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
-        const grandTotal = round2(sections.reduce((s, x) => s + x.total, 0) + previousBalance);
+        // A credit on one section (typically mealCost, since shopping spend can
+        // exceed what a member owes for meals) must NOT silently offset a due on
+        // another section (rent/service/salary) here — that's an explicit manager
+        // decision (settleMealCredit), not something generation does on its own.
+        // Only each section's own positive due contributes to what's owed;
+        // previousBalance (a genuine carried cash position) still applies as-is.
+        const grandTotal = round2(sections.reduce((s, x) => s + Math.max(x.total, 0), 0) + previousBalance);
 
         const billId = existing?.id ?? newId("bill");
         const dueDate = options?.dueDate ?? existing?.dueDate;

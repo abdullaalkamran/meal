@@ -2112,7 +2112,12 @@ const bills: BillRepository = {
         .filter((b) => b.hostelId === hostelId && b.userId === u.id && b.month < month)
         .sort((a, b) => b.month.localeCompare(a.month))[0];
       const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
-      const grandTotal = round2(sections.reduce((sum, s) => sum + s.total, 0) + previousBalance);
+      // A credit on one section (typically mealCost) must NOT silently offset a
+      // due on another section (rent/service/salary) — that's an explicit
+      // manager decision (settleMealCredit), not something generation does on
+      // its own. Only each section's own positive due contributes to what's
+      // owed; previousBalance (a genuine carried cash position) still applies.
+      const grandTotal = round2(sections.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + previousBalance);
 
       return {
         id: existing?.id ?? nextId("bill"),
