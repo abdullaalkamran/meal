@@ -539,9 +539,10 @@ export const cookAttendance: CookAttendanceRepository = {
       const report = await one<AttendanceRow>(`SELECT ${ATT_COLS} FROM cook_attendance_reports WHERE id = ?`, [reportId], tx);
       if (!report) return;
       await run("UPDATE cook_attendance_reports SET status = 'confirmed_absent' WHERE id = ?", [reportId], tx);
-      // The meal is cancelled for everyone that day.
+      // The meal is cancelled for everyone that day — clear guest counts too,
+      // or they'd keep showing up in "Today's cooking" though nothing's cooked.
       await run(
-        "UPDATE meal_entries SET is_on = 0 WHERE hostel_id = ? AND day = ? AND meal = ?",
+        "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND day = ? AND meal = ?",
         [report.hostel_id, toDay(report.day), report.meal],
         tx
       );

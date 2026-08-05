@@ -2324,8 +2324,11 @@ const cookAttendance: CookAttendanceRepository = {
     if (!report) return;
     report.status = "confirmed_absent";
     const day = ensureMealDay(report.hostelId, report.date);
+    // Nothing is being cooked — clear guest counts too, or they'd keep
+    // showing up in "Today's cooking" even though the meal is cancelled.
     Object.values(day.entries).forEach((entry) => {
       entry[report.meal as MealSlot].on = false;
+      entry[report.meal as MealSlot].guestCount = 0;
     });
     const ann = store.data.announcements.find(
       (a) => a.kind === "cook-absence-poll" && (a.payload as { reportId?: string })?.reportId === reportId
