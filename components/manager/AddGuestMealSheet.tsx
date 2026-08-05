@@ -41,7 +41,7 @@ export function AddGuestMealSheet({
   const { toast } = useToast();
   const [action, setAction] = useState<"add" | "remove">("add");
   const [meal, setMeal] = useState<MealSlot>("lunch");
-  const [qty, setQty] = useState(1);
+  const [rawQty, setRawQty] = useState(1);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -49,20 +49,25 @@ export function AddGuestMealSheet({
       queueMicrotask(() => {
         setAction("add");
         setMeal(offeredMeals[0] ?? "lunch");
-        setQty(1);
+        setRawQty(1);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, member?.id]);
 
   const actual = useActualMealRate(hostelId, date.slice(0, 7));
-  const total = actual.rate * qty;
 
   if (!member) return null;
 
   const currentGuests = day?.entries[member.id]?.[meal]?.guestCount ?? 0;
   const canRemove = currentGuests > 0;
   const effectiveAction = action === "remove" && !canRemove ? "add" : action;
+  // Can never remove more guests than actually exist for this date+meal —
+  // derived from the raw stepper value rather than synced back into it, so
+  // switching meals/modes can't leave a stale, too-high qty sitting in state.
+  const maxQty = effectiveAction === "remove" ? currentGuests : 20;
+  const qty = Math.min(rawQty, Math.max(1, maxQty));
+  const total = actual.rate * qty;
 
   const submit = async () => {
     if (!hostelId || saving) return;
@@ -126,7 +131,7 @@ export function AddGuestMealSheet({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setQty((q) => Math.max(1, q - 1))}
+            onClick={() => setRawQty((q) => Math.max(1, q - 1))}
             className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border"
           >
             <Icon icon={Minus} size={15} />
@@ -134,12 +139,18 @@ export function AddGuestMealSheet({
           <div className="flex-1 text-center text-[16px] font-extrabold">{qty}</div>
           <button
             type="button"
-            onClick={() => setQty((q) => Math.min(20, q + 1))}
-            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border"
+            onClick={() => setRawQty((q) => Math.min(maxQty, q + 1))}
+            disabled={qty >= maxQty}
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon icon={Plus} size={15} />
           </button>
         </div>
+        {effectiveAction === "remove" && (
+          <div className="mt-1.5 text-[9.5px] font-semibold text-text-secondary">
+            Only {currentGuests} guest{currentGuests === 1 ? "" : "s"} added for {MEAL_LABEL[meal]} — can&rsquo;t remove more than that.
+          </div>
+        )}
       </div>
 
       <div className="mb-4 rounded-btn bg-bg px-4 py-3">

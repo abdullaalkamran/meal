@@ -42,7 +42,7 @@ export function GuestMealSheet({
   const [fromDate, setFromDate] = useState(defaultDate ?? addDays(today(), 1));
   const [toDate, setToDate] = useState(defaultDate ?? addDays(today(), 1));
   const [guestName, setGuestName] = useState("");
-  const [qty, setQty] = useState(1);
+  const [rawQty, setRawQty] = useState(1);
   const [saving, setSaving] = useState(false);
   const [rangeDays, setRangeDays] = useState<MealDay[]>([]);
 
@@ -55,7 +55,7 @@ export function GuestMealSheet({
       setFromDate(d);
       setToDate(d);
       setGuestName("");
-      setQty(1);
+      setRawQty(1);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultDate]);
@@ -107,6 +107,21 @@ export function GuestMealSheet({
   // Falls back to "add" for rendering/submission the moment the selection no
   // longer has anything to remove, without a setState-in-effect round trip.
   const effectiveAction = action === "remove" && !canRemove ? "add" : action;
+  // The SAME qty is applied to every selected date×meal cell (see submit
+  // below), so removing more than the smallest of them would silently
+  // over-remove that slot (floored at 0 server-side, but not what "remove N"
+  // should mean). Cap qty at whichever selected, non-empty slot has the
+  // fewest guests — untouched empty slots stay unaffected either way.
+  const nonEmptyGuestCounts = dates
+    .flatMap((d) => meals.map((m) => rangeDays.find((day) => day.date === d)?.entries[userId ?? ""]?.[m]?.guestCount ?? 0))
+    .filter((c) => c > 0);
+  const minGuestCount = nonEmptyGuestCounts.length > 0 ? Math.min(...nonEmptyGuestCounts) : 0;
+  const maxQty = effectiveAction === "remove" ? minGuestCount : 20;
+  // Derived from the raw stepper value rather than synced back into it, so
+  // changing the date range/meals/mode can't leave a stale, too-high qty
+  // sitting in state.
+  const qty = Math.min(rawQty, Math.max(1, maxQty));
+
   const cellCount = dates.length * meals.length;
   const total = price * qty * cellCount;
   const directCount = dates.filter((d) => canToggleMeal(d, hostel?.settings.mealToggleCutoff).allowed).length * meals.length;
@@ -239,7 +254,7 @@ export function GuestMealSheet({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setQty((q) => Math.max(1, q - 1))}
+            onClick={() => setRawQty((q) => Math.max(1, q - 1))}
             className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border"
           >
             <Icon icon={Minus} size={15} />
@@ -247,8 +262,9 @@ export function GuestMealSheet({
           <div className="flex-1 text-center text-[16px] font-extrabold">{qty}</div>
           <button
             type="button"
-            onClick={() => setQty((q) => Math.min(20, q + 1))}
-            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border"
+            onClick={() => setRawQty((q) => Math.min(maxQty, q + 1))}
+            disabled={qty >= maxQty}
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Icon icon={Plus} size={15} />
           </button>
@@ -273,7 +289,9 @@ export function GuestMealSheet({
         ) : (
           <div className="text-[9.5px] font-semibold text-text-secondary">
             {existingGuestCount} guest{existingGuestCount === 1 ? "" : "s"} currently added across the
-            selected date(s)/meal(s) — a slot already at 0 is left as is.
+            selected date(s)/meal(s) — a slot already at 0 is left as is. You can remove up to{" "}
+            {minGuestCount} at once (the fewest on any one selected slot), so no slot is ever
+            over-removed.
           </div>
         )}
         {cellCount > 0 && (
