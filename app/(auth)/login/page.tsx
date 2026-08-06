@@ -34,7 +34,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
       <div className="text-center">
         <div className="mb-1 text-[19px] font-extrabold tracking-tight">MyDorm</div>
         <div className="text-[11.5px] font-semibold text-text-secondary">
@@ -109,6 +109,6 @@ export default function LoginPage() {
       </a>
 
       <ForgotPasswordSheet open={forgotOpen} onClose={() => setForgotOpen(false)} />
-    </div>
+    </main>
   );
 }

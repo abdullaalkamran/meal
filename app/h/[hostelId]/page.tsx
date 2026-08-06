@@ -55,7 +55,7 @@ export default function PublicHostelPage() {
   const isMember = !!user && !!user.hostelId && (user.role === "student" || user.role === "manager");
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-5 py-8">
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-5 py-8">
       <div className="text-center text-[13px] font-extrabold tracking-tight text-primary">MyDorm</div>
 
       {/* Hostel header */}
@@ -198,7 +198,7 @@ export default function PublicHostelPage() {
         hostelName={view.name}
         rooms={view.rooms}
       />
-    </div>
+    </main>
   );
 }
 

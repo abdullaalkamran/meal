@@ -114,7 +114,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
       <div>
         <Link
           href="/login"
@@ -210,6 +210,6 @@ export default function SignupPage() {
           {saving ? "Creating…" : role === "student" ? "Create member account" : "Create owner account"}
         </Button>
       </Card>
-    </div>
+    </main>
   );
 }

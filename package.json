@@ -37,5 +37,12 @@
   "devDependencies": {
     "eslint": "^9",
     "eslint-config-next": "16.2.10"
-  }
+  },
+  "browserslist": [
+    "chrome >= 91",
+    "edge >= 91",
+    "firefox >= 90",
+    "safari >= 15",
+    "ios_saf >= 15"
+  ]
 }

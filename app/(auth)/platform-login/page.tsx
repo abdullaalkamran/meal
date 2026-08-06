@@ -33,7 +33,7 @@ export default function PlatformLoginPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 px-5 py-10">
       <div>
         <Link
           href="/login"
@@ -90,6 +90,6 @@ export default function PlatformLoginPage() {
           {busy ? "Signing in…" : "Sign in"}
         </Button>
       </Card>
-    </div>
+    </main>
   );
 }
