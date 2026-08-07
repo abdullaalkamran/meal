@@ -11,10 +11,7 @@
   --color-text-secondary: #6b7288;
   --color-nav-bg: rgba(255, 255, 255, 0.82);
 
-  /* Darkened from #10bfb4 — the original only hit ~2.1-2.3:1 as text-primary
-     on white/card backgrounds (e.g. "Forgot password?" links), well short of
-     WCAG AA's 4.5:1. Same hue, ~5:1 against white/--color-bg. */
-  --color-primary: #067b71;
+  --color-primary: #10bfb4;
   --color-primary-soft: #e0f7f5;
   --color-blue: #4c7df0;
   --color-blue-soft: #eaf0fe;
