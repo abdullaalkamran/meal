@@ -552,6 +552,14 @@ async function ensureNoDuplicateMealEditPolls(): Promise<void> {
   }
 }
 
+/** Adds the "when this slot was decided" timestamp to cook_attendance_reports
+ * on databases that predate it — powers the Cooking Count page's "Completed
+ * at HH:MM" line. */
+async function ensureCookAttendanceResolvedAtColumn(): Promise<void> {
+  if (await columnExists("cook_attendance_reports", "resolved_at")) return;
+  await run("ALTER TABLE cook_attendance_reports ADD COLUMN resolved_at DATETIME(3) NULL AFTER created_at");
+}
+
 /** Creates quick_service_settings on databases that predate it. */
 async function ensureQuickServiceSettingsTable(): Promise<void> {
   if (!(await tableExists("quick_service_settings"))) {
@@ -664,6 +672,7 @@ export function ensureReady(): Promise<void> {
       await ensureAvailabilityAreasEntityEnum();
       await ensureAnnouncementDismissalsTable();
       await ensureNoDuplicateMealEditPolls();
+      await ensureCookAttendanceResolvedAtColumn();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.

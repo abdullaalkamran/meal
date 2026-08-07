@@ -577,6 +577,7 @@ CREATE TABLE cook_attendance_reports (
   status      ENUM('reported','confirmed_absent','resolved_cooked') NOT NULL DEFAULT 'reported',
   reported_by VARCHAR(64) NOT NULL,
   created_at  DATETIME(3) NOT NULL,
+  resolved_at DATETIME(3) NULL,
   -- One canonical status per meal per day per hostel.
   UNIQUE KEY uq_cook_attendance (hostel_id, day, meal),
   CONSTRAINT fk_cook_attendance_hostel FOREIGN KEY (hostel_id) REFERENCES hostels(id) ON DELETE CASCADE

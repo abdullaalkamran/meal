@@ -2251,9 +2251,11 @@ const cookAttendance: CookAttendanceRepository = {
     const report = store.data.cookAttendanceReports.find(
       (r) => r.hostelId === hostelId && r.date === date && r.meal === meal
     );
+    const now = new Date().toISOString();
     if (report) {
       report.status = "resolved_cooked";
       report.reportedBy = confirmedBy;
+      report.resolvedAt = now;
     } else {
       // Confirming a meal directly (no prior dispute) is recorded the same
       // way — one canonical status per meal per day.
@@ -2264,7 +2266,8 @@ const cookAttendance: CookAttendanceRepository = {
         meal,
         status: "resolved_cooked",
         reportedBy: confirmedBy,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        resolvedAt: now,
       });
     }
     store.emit(`cookAttendance:${hostelId}`);
@@ -2286,6 +2289,7 @@ const cookAttendance: CookAttendanceRepository = {
           (r) => r.hostelId === hostelId && r.date === d && r.meal === meal
         );
         if (existing) continue;
+        const now = new Date().toISOString();
         store.data.cookAttendanceReports.push({
           id: nextId("cookattend"),
           hostelId,
@@ -2293,7 +2297,8 @@ const cookAttendance: CookAttendanceRepository = {
           meal,
           status: "resolved_cooked",
           reportedBy: confirmedBy,
-          createdAt: new Date().toISOString(),
+          createdAt: now,
+          resolvedAt: now,
         });
         confirmed += 1;
       }
@@ -2326,6 +2331,7 @@ const cookAttendance: CookAttendanceRepository = {
     const report = store.data.cookAttendanceReports.find((r) => r.id === reportId);
     if (!report) return;
     report.status = "confirmed_absent";
+    report.resolvedAt = new Date().toISOString();
     const day = ensureMealDay(report.hostelId, report.date);
     // Nothing is being cooked — clear guest counts too, or they'd keep
     // showing up in "Today's cooking" even though the meal is cancelled.

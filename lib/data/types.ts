@@ -504,6 +504,10 @@ export interface CookAttendanceReport {
   status: "reported" | "confirmed_absent" | "resolved_cooked";
   reportedBy: string;
   createdAt: string;
+  /** When this slot was last decided (cooked or confirmed absent) — unset
+   * while still "reported"/undecided. Distinct from createdAt, which is set
+   * once at the report's original creation and never moves. */
+  resolvedAt?: string;
 }
 
 export interface CookAttendanceVote {

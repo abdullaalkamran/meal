@@ -416,6 +416,7 @@ export const cookLeave: CookLeaveRepository = {
 interface AttendanceRow {
   id: string; hostel_id: string; day: string; meal: MealSlot;
   status: CookAttendanceReport["status"]; reported_by: string; created_at: string;
+  resolved_at: string | null;
 }
 
 const toReport = (r: AttendanceRow): CookAttendanceReport => ({
@@ -426,9 +427,10 @@ const toReport = (r: AttendanceRow): CookAttendanceReport => ({
   status: r.status,
   reportedBy: r.reported_by,
   createdAt: toIso(r.created_at),
+  resolvedAt: r.resolved_at ? toIso(r.resolved_at) : undefined,
 });
 
-const ATT_COLS = "id, hostel_id, day, meal, status, reported_by, created_at";
+const ATT_COLS = "id, hostel_id, day, meal, status, reported_by, created_at, resolved_at";
 
 export const cookAttendance: CookAttendanceRepository = {
   async listForDate(hostelId, date) {
@@ -478,11 +480,12 @@ export const cookAttendance: CookAttendanceRepository = {
     // Manager/owner only (policy.ts) — records who actually confirmed it,
     // since this is now what gates counting and billing, not a courtesy log.
     const confirmedBy = currentActor()?.id ?? "manager";
+    const ts = now();
     await run(
-      `INSERT INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at)
-       VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?)
-       ON DUPLICATE KEY UPDATE status = 'resolved_cooked', reported_by = VALUES(reported_by)`,
-      [newId("cookattend"), hostelId, date, meal, confirmedBy, now()]
+      `INSERT INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at, resolved_at)
+       VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?, ?)
+       ON DUPLICATE KEY UPDATE status = 'resolved_cooked', reported_by = VALUES(reported_by), resolved_at = VALUES(resolved_at)`,
+      [newId("cookattend"), hostelId, date, meal, confirmedBy, ts, ts]
     );
   },
 
@@ -500,10 +503,11 @@ export const cookAttendance: CookAttendanceRepository = {
           // INSERT IGNORE (not the upsert markCooked uses) — a slot that's
           // already been explicitly decided (cooked, absent, or disputed)
           // must never be silently overwritten by a bulk catch-up.
+          const ts = now();
           const affected = await run(
-            `INSERT IGNORE INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at)
-             VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?)`,
-            [newId("cookattend"), hostelId, d, meal, confirmedBy, now()],
+            `INSERT IGNORE INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at, resolved_at)
+             VALUES (?, ?, ?, ?, 'resolved_cooked', ?, ?, ?)`,
+            [newId("cookattend"), hostelId, d, meal, confirmedBy, ts, ts],
             tx
           );
           confirmed += affected;
@@ -538,7 +542,11 @@ export const cookAttendance: CookAttendanceRepository = {
     await transaction(async (tx) => {
       const report = await one<AttendanceRow>(`SELECT ${ATT_COLS} FROM cook_attendance_reports WHERE id = ?`, [reportId], tx);
       if (!report) return;
-      await run("UPDATE cook_attendance_reports SET status = 'confirmed_absent' WHERE id = ?", [reportId], tx);
+      await run(
+        "UPDATE cook_attendance_reports SET status = 'confirmed_absent', resolved_at = ? WHERE id = ?",
+        [now(), reportId],
+        tx
+      );
       // The meal is cancelled for everyone that day — clear guest counts too,
       // or they'd keep showing up in "Today's cooking" though nothing's cooked.
       await run(
