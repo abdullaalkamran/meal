@@ -50,6 +50,8 @@ import { currentMonth, formatMonthLabel, greeting, today } from "@/lib/utils/dat
 import { useActualMealRate } from "@/hooks/useActualMealRate";
 import { useMemberMealSummary } from "@/hooks/useMemberMealSummary";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useQuickServices } from "@/hooks/useQuickServices";
+import { isAvailableAt } from "@/lib/geo/bangladesh";
 
 const QUICK_ACTIONS = [
   { key: "expense", label: "Record expense", icon: Wallet, tone: "bg-primary-soft text-primary" },
@@ -89,16 +91,16 @@ const QUICK_ACTIONS = [
     tone: "bg-blue-soft text-blue",
     href: "/manager/duty/cleaning",
   },
-  { key: "grocery", label: "Grocery", icon: ShoppingBasket, tone: "bg-primary-soft text-primary", href: "/explore/grocery" },
-  { key: "jobs", label: "Find Job", icon: Briefcase, tone: "bg-primary-soft text-primary", href: "/explore/jobs" },
-  { key: "learning", label: "Learning", icon: GraduationCap, tone: "bg-blue-soft text-blue", href: "/explore/learning" },
-  { key: "studyAbroad", label: "Study abroad", icon: Plane, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]", href: "/explore/study-abroad" },
-  { key: "investment", label: "Investment", icon: TrendingUp, tone: "bg-primary-soft text-primary", href: "/explore/investment" },
-  { key: "books", label: "Buy Books", icon: BookOpen, tone: "bg-orange-soft text-orange", href: "/explore/books" },
-  { key: "findHostel", label: "Find Hostel", icon: BedDouble, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]", href: "/explore/hostels" },
-  { key: "findCook", label: "Find Cook", icon: ChefHat, tone: "bg-orange-soft text-orange", href: "/explore/cooks" },
-  { key: "offers", label: "Shopping offer", icon: Tag, tone: "bg-blue-soft text-blue", href: "/explore/offers" },
-  { key: "community", label: "Hostel community", icon: MessagesSquare, tone: "bg-primary-soft text-primary", href: "/explore/community" },
+  { key: "grocery", label: "Grocery", icon: ShoppingBasket, tone: "bg-primary-soft text-primary", href: "/explore/grocery", quickService: true },
+  { key: "jobs", label: "Find Job", icon: Briefcase, tone: "bg-primary-soft text-primary", href: "/explore/jobs", quickService: true },
+  { key: "learning", label: "Learning", icon: GraduationCap, tone: "bg-blue-soft text-blue", href: "/explore/learning", quickService: true },
+  { key: "studyAbroad", label: "Study abroad", icon: Plane, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]", href: "/explore/study-abroad", quickService: true },
+  { key: "investment", label: "Investment", icon: TrendingUp, tone: "bg-primary-soft text-primary", href: "/explore/investment", quickService: true },
+  { key: "books", label: "Buy Books", icon: BookOpen, tone: "bg-orange-soft text-orange", href: "/explore/books", quickService: true },
+  { key: "findHostel", label: "Find Hostel", icon: BedDouble, tone: "bg-[#7C6CF6]/10 text-[#7C6CF6]", href: "/explore/hostels", quickService: true },
+  { key: "findCook", label: "Find Cook", icon: ChefHat, tone: "bg-orange-soft text-orange", href: "/explore/cooks", quickService: true },
+  { key: "offers", label: "Shopping offer", icon: Tag, tone: "bg-blue-soft text-blue", href: "/explore/offers", quickService: true },
+  { key: "community", label: "Hostel community", icon: MessagesSquare, tone: "bg-primary-soft text-primary", href: "/explore/community", quickService: true },
 ] as const;
 
 // Quick actions that need an owner-granted permission when the viewer is a
@@ -118,9 +120,19 @@ export default function ManagerDashboardPage() {
   const actualRate = useActualMealRate(activeHostelId);
   const myNotifications = useNotifications(user?.id);
   const hasUnread = myNotifications.some((n) => !n.read);
+  // Super Admin's per-quick-action enable/disable + location restriction —
+  // "restrictions only ever narrow": a key missing from settings, or with no
+  // areas set, stays visible everywhere. Same rule the student home page
+  // applies; this dashboard just never checked it before.
+  const quickServiceSettings = useQuickServices();
   const visibleActions = QUICK_ACTIONS.filter((a) => {
     const permission = ACTION_PERMISSION[a.key];
-    return !permission || hasManagerPermission(user, hostel, permission);
+    if (permission && !hasManagerPermission(user, hostel, permission)) return false;
+    if ("quickService" in a && a.quickService) {
+      const s = quickServiceSettings[a.key];
+      return (s?.enabled ?? true) && isAvailableAt(s?.areas, hostel?.address);
+    }
+    return true;
   });
   const { day } = useMealDay(activeHostelId, today());
   const cookLeaveRequests = useCookLeaveRequests(activeHostelId);
