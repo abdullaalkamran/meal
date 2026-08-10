@@ -47,6 +47,9 @@ function ManagerApprovalsPage() {
   const rooms = useRooms(activeHostelId);
   const emptyRooms = rooms.filter((r) => r.occupantIds.length < r.capacity);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  // Locks a guest-meal request's row while its decide() call is in flight —
+  // without this, a double-click applied the guest count twice.
+  const [decidingGuestMealId, setDecidingGuestMealId] = useState<string | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
@@ -278,15 +281,31 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => repo.guestMeals.decide(r.id, "approved")}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    disabled={decidingGuestMealId === r.id}
+                    onClick={async () => {
+                      setDecidingGuestMealId(r.id);
+                      try {
+                        await repo.guestMeals.decide(r.id, "approved");
+                      } finally {
+                        setDecidingGuestMealId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => repo.guestMeals.decide(r.id, "denied")}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    disabled={decidingGuestMealId === r.id}
+                    onClick={async () => {
+                      setDecidingGuestMealId(r.id);
+                      try {
+                        await repo.guestMeals.decide(r.id, "denied");
+                      } finally {
+                        setDecidingGuestMealId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>

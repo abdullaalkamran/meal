@@ -3013,7 +3013,9 @@ const guestMeals: GuestMealRepository = {
   },
   async decide(id, status) {
     const req = store.data.guestMealRequests.find((r) => r.id === id);
-    if (!req) return;
+    // Already decided — a double-click/double-submit must never re-apply the
+    // guest count a second time.
+    if (!req || req.status !== "pending") return;
     req.status = status;
     if (status === "approved") {
       const day = ensureMealDay(req.hostelId, req.date);

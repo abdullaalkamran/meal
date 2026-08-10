@@ -569,12 +569,16 @@ export const guestMeals: GuestMealRepository = {
 
   async decide(id, status) {
     await transaction(async (tx) => {
-      const req = await one<{ hostel_id: string; user_id: string; meal: MealSlot; day: string; qty: number }>(
-        "SELECT hostel_id, user_id, meal, day, qty FROM guest_meal_requests WHERE id = ?",
+      // FOR UPDATE locks the row for the rest of this transaction — a second
+      // concurrent decide() (e.g. a double-click) blocks here until the first
+      // commits, then sees status already changed and no-ops below, instead
+      // of both re-applying the guest count.
+      const req = await one<{ hostel_id: string; user_id: string; meal: MealSlot; day: string; qty: number; status: string }>(
+        "SELECT hostel_id, user_id, meal, day, qty, status FROM guest_meal_requests WHERE id = ? FOR UPDATE",
         [id],
         tx
       );
-      if (!req) return;
+      if (!req || req.status !== "pending") return;
       await run("UPDATE guest_meal_requests SET status = ? WHERE id = ?", [status, id], tx);
       const gm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.user_id], tx);
       await logActivity(
