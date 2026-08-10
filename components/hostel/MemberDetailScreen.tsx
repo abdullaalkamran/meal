@@ -29,12 +29,16 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { StarRating } from "@/components/ui/StarRating";
 import { MonthNav } from "@/components/ui/MonthNav";
+import { Switch } from "@/components/ui/Switch";
 import { RateMemberSheet } from "@/components/manager/RateMemberSheet";
 import { MoveMemberSheet } from "@/components/manager/MoveMemberSheet";
 import { ResetPasswordSheet } from "@/components/hostel/ResetPasswordSheet";
-import { repo, type Bill, type BillSection, type Payment } from "@/lib/data";
+import { repo, type Bill, type BillSection, type MealSlot, type Payment } from "@/lib/data";
+import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel, formatShortDate, lastDayOfMonth } from "@/lib/utils/date";
+
+const FUTURE_MEAL_SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
 const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof Sun }> = {
   mealCost: { label: "Meal cost", icon: Sun },
@@ -63,6 +67,20 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
   // Advance rent can only be settled once the member has actually left —
   // enforced server-side too (bills.applyAdvanceOnLeave throws otherwise).
   const hasApprovedLeave = leaveRequests.some((r) => r.userId === id && r.status === "approved");
+
+  // Standing per-meal default for the member's FUTURE (not-yet-materialised)
+  // days — the same switch the member can flip for themselves on their own
+  // Meals page; a manager can now do it on their behalf (e.g. going on
+  // leave), self-OR-staff-checked server-side in setMemberFutureMeals.
+  const toggleMemberFutureMeal = async (meal: MealSlot, next: boolean) => {
+    if (!activeHostelId || !member) return;
+    await repo.meals.setMemberFutureMeals(activeHostelId, member.id, meal, next);
+    toast(
+      next
+        ? `${member.name.split(" ")[0]}'s future ${MEAL_LABEL[meal].toLowerCase()} turned off`
+        : `${member.name.split(" ")[0]}'s future ${MEAL_LABEL[meal].toLowerCase()} turned back on`
+    );
+  };
 
   const [bill, setBill] = useState<Bill | undefined>();
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -237,6 +255,35 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
           ))}
         </div>
       </div>
+
+      {/* Future meals — standing per-slot default for days not yet decided */}
+      <Card>
+        <div className="mb-1 text-[12.5px] font-extrabold">Future meals</div>
+        <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+          Off means every future day starts off for that meal until {member.name.split(" ")[0]} (or you) turns
+          a specific day back on.
+        </div>
+        <div className="flex flex-col divide-y divide-border">
+          {FUTURE_MEAL_SLOTS.filter((meal) => hostel?.settings.mealsOffered?.[meal] ?? true).map((meal) => {
+            const c = MEAL_COLORS[meal];
+            const off = !!member.futureMealsOff?.[meal];
+            return (
+              <div key={meal} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
+                  <Icon icon={c.icon} size={16} className={c.text} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                  <div className="truncate text-[9.5px] font-semibold text-text-secondary">
+                    {off ? "Off by default" : "On by default"}
+                  </div>
+                </div>
+                <Switch checked={!off} onChange={(v) => toggleMemberFutureMeal(meal, !v)} />
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* Bill breakdown */}
       <div>

@@ -538,6 +538,16 @@ export const meals: MealRepository = {
     const col = FUTURE_OFF_COL[meal];
     if (!col) throw new Error("Invalid meal slot.");
     await transaction(async (tx) => {
+      // Self-service, OR staff doing it on a member's behalf (e.g. going on
+      // leave) — mirrors the same self-OR-staff shape as addGuestMeal.
+      const actor = currentActor();
+      const actorRow = actor
+        ? await one<{ role: string }>("SELECT role FROM users WHERE id = ?", [actor.id], tx)
+        : null;
+      const isStaff = actorRow && ["manager", "owner", "superadmin"].includes(actorRow.role);
+      if (!isStaff && actor?.id !== userId) {
+        throw new Error("You can only change your own future meals.");
+      }
       await run(`UPDATE users SET ${col} = ? WHERE id = ?`, [off ? 1 : 0, userId], tx);
       // Apply now to every future day the member can still change: tomorrow if
       // it's still before tonight's cutoff, otherwise the day after (tomorrow

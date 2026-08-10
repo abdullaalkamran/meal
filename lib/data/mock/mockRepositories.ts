@@ -1248,6 +1248,13 @@ const meals: MealRepository = {
     store.emit(`mealDay:${hostelId}`);
   },
   async setMemberFutureMeals(hostelId, userId, meal, off) {
+    // Self-service, OR staff doing it on a member's behalf (e.g. going on
+    // leave) — mirrors the same self-OR-staff shape as addGuestMeal.
+    const actor = store.data.users.find((u) => u.id === actingUser?.id);
+    const isStaff = actor && (["manager", "owner", "superadmin"] as Role[]).includes(actor.role);
+    if (!isStaff && actingUser?.id !== userId) {
+      throw new Error("You can only change your own future meals.");
+    }
     const idx = store.data.users.findIndex((u) => u.id === userId);
     if (idx !== -1) {
       store.data.users[idx] = {
