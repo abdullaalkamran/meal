@@ -2949,7 +2949,18 @@ const mealStops: MealStopRepository = {
     return store.data.mealStopRequests.filter((r) => r.hostelId === hostelId);
   },
   async request(req) {
-    store.data.mealStopRequests.push({ ...req, id: nextId("stop"), status: "pending" });
+    // Requesting a direction the meal is already in wouldn't change
+    // anything — filter those out, and reject outright if nothing would
+    // actually change.
+    sealMockDays(req.hostelId, req.dateFrom, req.dateFrom);
+    const entry = store.data.mealDays.find((d) => d.hostelId === req.hostelId && d.date === req.dateFrom)?.entries[
+      req.userId
+    ];
+    const meals = req.meals.filter((m) => (entry?.[m]?.on ?? true) !== req.desiredOn);
+    if (meals.length === 0) {
+      throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
+    }
+    store.data.mealStopRequests.push({ ...req, meals, id: nextId("stop"), status: "pending" });
     notifyHostelStaff(
       req.hostelId,
       req.desiredOn ? "Meal resume request" : "Meal stop request",

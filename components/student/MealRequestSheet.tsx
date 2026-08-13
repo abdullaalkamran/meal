@@ -29,6 +29,7 @@ export function MealRequestSheet({
   date,
   defaultOn = false,
   defaultMeals,
+  currentOn,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,30 +38,54 @@ export function MealRequestSheet({
   date?: string;
   defaultOn?: boolean;
   defaultMeals?: MealSlot[];
+  /** The member's actual current on/off state per meal for `date` — a meal
+   * already in the direction being requested is redundant and can't be
+   * selected (turning "on" something that's already on does nothing). */
+  currentOn?: Partial<Record<MealSlot, boolean>>;
 }) {
   const { toast } = useToast();
   const forDay = date ?? today();
   const [desiredOn, setDesiredOn] = useState(defaultOn);
   const [meals, setMeals] = useState<MealSlot[]>(defaultMeals ?? ["lunch", "dinner"]);
   const [reason, setReason] = useState("");
+  const isRedundant = (meal: MealSlot) => currentOn?.[meal] === desiredOn;
 
-  // Re-seed from the caller's presets each time the sheet opens.
+  // Re-seed from the caller's presets each time the sheet opens, dropping any
+  // preset meal that's already in the requested direction.
   useEffect(() => {
     if (!open) return;
     queueMicrotask(() => {
       setDesiredOn(defaultOn);
-      setMeals(defaultMeals ?? ["lunch", "dinner"]);
+      setMeals((defaultMeals ?? ["lunch", "dinner"]).filter((m) => currentOn?.[m] !== defaultOn));
       setReason("");
     });
-  }, [open, defaultOn, defaultMeals]);
+  }, [open, defaultOn, defaultMeals, currentOn]);
+
+  // Flipping the requested direction can turn a selected meal redundant —
+  // drop it rather than let it sit selected but useless.
+  const setDirection = (next: boolean) => {
+    setDesiredOn(next);
+    setMeals((prev) => prev.filter((m) => currentOn?.[m] !== next));
+  };
 
   const toggleMeal = (meal: MealSlot) => {
+    if (isRedundant(meal)) return;
     setMeals((prev) => (prev.includes(meal) ? prev.filter((m) => m !== meal) : [...prev, meal]));
   };
 
+  const changingMeals = meals.filter((m) => currentOn?.[m] !== desiredOn);
+
   const submit = async () => {
-    if (!hostelId || !userId || meals.length === 0) return;
-    await repo.mealStops.request({ hostelId, userId, meals, dateFrom: forDay, dateTo: forDay, reason, desiredOn });
+    if (!hostelId || !userId || changingMeals.length === 0) return;
+    await repo.mealStops.request({
+      hostelId,
+      userId,
+      meals: changingMeals,
+      dateFrom: forDay,
+      dateTo: forDay,
+      reason,
+      desiredOn,
+    });
     toast(desiredOn ? "Request to turn meals on sent for approval" : "Request to turn meals off sent for approval");
     onClose();
   };
@@ -73,7 +98,7 @@ export function MealRequestSheet({
       <div className="mb-4">
         <SegmentedControl
           value={desiredOn ? "on" : "off"}
-          onChange={(v) => setDesiredOn(v === "on")}
+          onChange={(v) => setDirection(v === "on")}
           options={[
             { value: "off", label: "Turn meals off" },
             { value: "on", label: "Turn meals on" },
@@ -84,14 +109,24 @@ export function MealRequestSheet({
       <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
         Which meals
       </div>
-      <div className="mb-4 flex gap-2">
-        {MEALS.map((meal) => (
-          <button key={meal} type="button" onClick={() => toggleMeal(meal)}>
-            <Chip tone="primary" active={meals.includes(meal)}>
-              {MEAL_LABEL[meal]} {meals.includes(meal) ? "✓" : ""}
-            </Chip>
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {MEALS.map((meal) => {
+          const redundant = isRedundant(meal);
+          return (
+            <button
+              key={meal}
+              type="button"
+              onClick={() => toggleMeal(meal)}
+              disabled={redundant}
+              className={redundant ? "cursor-not-allowed opacity-40" : undefined}
+            >
+              <Chip tone="primary" active={meals.includes(meal)}>
+                {MEAL_LABEL[meal]}{" "}
+                {redundant ? `(already ${desiredOn ? "on" : "off"})` : meals.includes(meal) ? "✓" : ""}
+              </Chip>
+            </button>
+          );
+        })}
       </div>
 
       <div className="mb-2 text-[10.5px] font-extrabold uppercase tracking-wide text-text-secondary">
@@ -110,7 +145,7 @@ export function MealRequestSheet({
         className="mb-4 h-20 w-full resize-none rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-semibold"
       />
 
-      <Button fullWidth onClick={submit} disabled={meals.length === 0}>
+      <Button fullWidth onClick={submit} disabled={changingMeals.length === 0}>
         Send request
       </Button>
     </Sheet>

@@ -441,13 +441,28 @@ export const mealStops: MealStopRepository = {
 
   async request(req) {
     await transaction(async (tx) => {
+      // Requesting a direction the meal is already in wouldn't change
+      // anything — filter those out, and reject outright if nothing would
+      // actually change.
+      await ensureEntries(req.hostelId, req.dateFrom, req.userId, tx);
+      const current = await all<{ meal: MealSlot; is_on: number }>(
+        "SELECT meal, is_on FROM meal_entries WHERE hostel_id = ? AND day = ? AND user_id = ?",
+        [req.hostelId, req.dateFrom, req.userId],
+        tx
+      );
+      const onByMeal = new Map(current.map((r) => [r.meal, toBool(r.is_on)]));
+      const meals = (req.meals ?? []).filter((m) => onByMeal.get(m) !== req.desiredOn);
+      if (meals.length === 0) {
+        throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
+      }
+
       const id = newId("stop");
       await run(
         "INSERT INTO meal_stop_requests (id, hostel_id, user_id, date_from, date_to, reason, desired_on, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
         [id, req.hostelId, req.userId, req.dateFrom, req.dateTo, req.reason ?? null, req.desiredOn ? 1 : 0],
         tx
       );
-      for (const m of req.meals ?? []) {
+      for (const m of meals) {
         await run("INSERT IGNORE INTO meal_stop_meals (request_id, meal) VALUES (?, ?)", [id, m], tx);
       }
       await notifyHostelStaff(

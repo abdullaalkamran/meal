@@ -82,6 +82,19 @@ export default function StudentMealsPage() {
   // A day with no stored entry yet defaults OFF for a slot whose future
   // switch is on.
   const defaultOn = (meal: MealSlot) => !futureOff[meal];
+  // The member's actual current state per meal for the day being viewed —
+  // passed to the request sheet so it can refuse to submit a direction that
+  // wouldn't change anything (e.g. requesting "on" for a meal that's already
+  // on). Mirrors the same effective-on formula the render loop below uses.
+  const currentOnByMeal = (["breakfast", "lunch", "dinner"] as MealSlot[]).reduce<Partial<Record<MealSlot, boolean>>>(
+    (acc, meal) => {
+      const entry = user && day?.entries[user.id]?.[meal];
+      const closed = !((day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true);
+      acc[meal] = !closed && !notYetJoined && (entry?.on ?? defaultOn(meal));
+      return acc;
+    },
+    {}
+  );
 
   // Is THIS member's whole day off? Used to colour-fill the calendar so they
   // can see which days their meals are stopped (and from when). A sealed/
@@ -908,6 +921,7 @@ export default function StudentMealsPage() {
         date={selectedDate}
         defaultOn={reqSheet?.on ?? false}
         defaultMeals={reqSheet?.meals}
+        currentOn={currentOnByMeal}
       />
     </div>
   );
