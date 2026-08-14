@@ -208,21 +208,24 @@ export const shoppingCosts: ShoppingCostRepository = {
   },
 
   async decide(id, status) {
-    const row = await one<{ hostel_id: string; amount: number; user_id: string }>(
-      "SELECT hostel_id, amount, user_id FROM shopping_costs WHERE id = ?",
-      [id]
-    );
-    await run("UPDATE shopping_costs SET status = ? WHERE id = ?", [status, id]);
-    if (row) {
-      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [row.user_id]);
+    await transaction(async (tx) => {
+      const row = await one<{ hostel_id: string; amount: number; user_id: string; status: string }>(
+        "SELECT hostel_id, amount, user_id, status FROM shopping_costs WHERE id = ? FOR UPDATE",
+        [id],
+        tx
+      );
+      // Already decided — a double-click must never re-log the decision.
+      if (!row || row.status !== "pending") return;
+      await run("UPDATE shopping_costs SET status = ? WHERE id = ?", [status, id], tx);
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [row.user_id], tx);
       await logActivity(
         row.hostel_id,
         status === "approved" ? "Shopping cost approved" : "Shopping cost denied",
         `৳${Number(row.amount)} · ${m?.name ?? "member"}`,
-        undefined,
+        tx,
         "shopping"
       );
-    }
+    });
   },
 };
 
@@ -272,8 +275,10 @@ export const shortages: ShortageRepository = {
   },
 
   async resolve(id, resolvedBy) {
+    // The status condition makes this atomic — a double-click's second
+    // UPDATE simply matches zero rows instead of re-applying anything.
     await run(
-      "UPDATE shortage_requests SET status = 'resolved', resolved_by = ?, resolved_at = ? WHERE id = ?",
+      "UPDATE shortage_requests SET status = 'resolved', resolved_by = ?, resolved_at = ? WHERE id = ? AND status = 'pending'",
       [resolvedBy, fromIso(new Date().toISOString()), id]
     );
   },
@@ -524,7 +529,7 @@ export const bills: BillRepository = {
   async decidePayment(paymentId, status) {
     await transaction(async (tx) => {
       const payment = await one<{ id: string; bill_id: string; amount: number; verified: number }>(
-        "SELECT id, bill_id, amount, verified FROM payments WHERE id = ?",
+        "SELECT id, bill_id, amount, verified FROM payments WHERE id = ? FOR UPDATE",
         [paymentId],
         tx
       );

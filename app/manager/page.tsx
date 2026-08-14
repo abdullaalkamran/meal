@@ -147,6 +147,9 @@ export default function ManagerDashboardPage() {
   const [pendingPayments, setPendingPayments] = useState(0);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
   const [todaysShoppingCost, setTodaysShoppingCost] = useState<ShoppingCost | undefined>(undefined);
+  // Locks the cook-leave card while its decide() call is in flight — without
+  // this, a double-click could re-apply an already-decided request.
+  const [decidingCookLeave, setDecidingCookLeave] = useState(false);
 
   const myEntry = user && day?.entries[user.id];
   const myMealsOnCount = myEntry
@@ -313,15 +316,33 @@ export default function ManagerDashboardPage() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => user && repo.cookLeave.decide(pendingCookLeave.id, "approved", user.id)}
-              className="min-h-11 flex-1 cursor-pointer rounded-btn bg-primary text-[12.5px] font-extrabold text-white"
+              disabled={decidingCookLeave}
+              onClick={async () => {
+                if (!user) return;
+                setDecidingCookLeave(true);
+                try {
+                  await repo.cookLeave.decide(pendingCookLeave.id, "approved", user.id);
+                } finally {
+                  setDecidingCookLeave(false);
+                }
+              }}
+              className="min-h-11 flex-1 cursor-pointer rounded-btn bg-primary text-[12.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               Approve leave
             </button>
             <button
               type="button"
-              onClick={() => user && repo.cookLeave.decide(pendingCookLeave.id, "denied", user.id)}
-              className="min-h-11 flex-1 cursor-pointer rounded-btn border border-border text-[12.5px] font-extrabold"
+              disabled={decidingCookLeave}
+              onClick={async () => {
+                if (!user) return;
+                setDecidingCookLeave(true);
+                try {
+                  await repo.cookLeave.decide(pendingCookLeave.id, "denied", user.id);
+                } finally {
+                  setDecidingCookLeave(false);
+                }
+              }}
+              className="min-h-11 flex-1 cursor-pointer rounded-btn border border-border text-[12.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
             >
               Decline
             </button>

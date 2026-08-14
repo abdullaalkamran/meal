@@ -271,6 +271,17 @@ export const swaps: SwapRepository = {
         [id, swap.hostelId, swap.planId, swap.fromUserId, swap.toUserId, now()],
         tx
       );
+      const [fromU, toU] = await Promise.all([
+        one<{ name: string }>("SELECT name FROM users WHERE id = ?", [swap.fromUserId], tx),
+        one<{ name: string }>("SELECT name FROM users WHERE id = ?", [swap.toUserId], tx),
+      ]);
+      await logActivity(
+        swap.hostelId,
+        "Duty swap requested",
+        `${fromU?.name ?? "A member"} → ${toU?.name ?? "another member"}`,
+        tx,
+        "shopping"
+      );
       await postAnnouncement(
         swap.hostelId, "swap-request", "Shopping duty swap requested",
         "A member wants to swap shopping duty dates with you.",
@@ -283,13 +294,33 @@ export const swaps: SwapRepository = {
 
   async resolve(swapId, status) {
     await transaction(async (tx) => {
-      const swap = await one<{ id: string; plan_id: string; from_user_id: string; to_user_id: string }>(
-        "SELECT id, plan_id, from_user_id, to_user_id FROM swap_requests WHERE id = ?",
+      const swap = await one<{
+        id: string; hostel_id: string; plan_id: string; from_user_id: string; to_user_id: string; status: string;
+      }>(
+        "SELECT id, hostel_id, plan_id, from_user_id, to_user_id, status FROM swap_requests WHERE id = ? FOR UPDATE",
         [swapId],
         tx
       );
-      if (!swap) return;
+      // Already decided — re-applying "accepted" a second time would swap
+      // the two blocks' dates right back, silently undoing the exchange.
+      if (!swap || swap.status !== "pending") return;
       await run("UPDATE swap_requests SET status = ? WHERE id = ?", [status, swapId], tx);
+
+      const [fromU, toU] = await Promise.all([
+        one<{ name: string }>("SELECT name FROM users WHERE id = ?", [swap.from_user_id], tx),
+        one<{ name: string }>("SELECT name FROM users WHERE id = ?", [swap.to_user_id], tx),
+      ]);
+      const fromName = fromU?.name ?? "A member";
+      const toName = toU?.name ?? "another member";
+      const swapLabel = { accepted: "accepted", denied: "denied", cancelled: "cancelled" }[status];
+      await logActivity(
+        swap.hostel_id,
+        `Duty swap ${swapLabel}`,
+        status === "cancelled" ? `${fromName} → ${toName}` : `${toName} ${swapLabel} ${fromName}'s request`,
+        tx,
+        "shopping"
+      );
+
       if (status !== "accepted") return;
 
       // Accepting exchanges the two members' duty dates.
@@ -387,12 +418,14 @@ export const cookLeave: CookLeaveRepository = {
 
   async decide(id, status, decidedBy) {
     await transaction(async (tx) => {
-      const req = await one<{ hostel_id: string; date_from: string; date_to: string }>(
-        "SELECT hostel_id, date_from, date_to FROM cook_leave_requests WHERE id = ?",
+      const req = await one<{ hostel_id: string; date_from: string; date_to: string; status: string }>(
+        "SELECT hostel_id, date_from, date_to, status FROM cook_leave_requests WHERE id = ? FOR UPDATE",
         [id],
         tx
       );
-      if (!req) return;
+      // Already decided — a double-click must never post a duplicate
+      // "cook on leave" announcement.
+      if (!req || req.status !== "pending") return;
       await run(
         "UPDATE cook_leave_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?",
         [status, decidedBy, now(), id],
@@ -540,8 +573,14 @@ export const cookAttendance: CookAttendanceRepository = {
 
   async confirmAbsent(reportId) {
     await transaction(async (tx) => {
-      const report = await one<AttendanceRow>(`SELECT ${ATT_COLS} FROM cook_attendance_reports WHERE id = ?`, [reportId], tx);
-      if (!report) return;
+      const report = await one<AttendanceRow>(
+        `SELECT ${ATT_COLS} FROM cook_attendance_reports WHERE id = ? FOR UPDATE`,
+        [reportId],
+        tx
+      );
+      // Already resolved — a double-click must never re-clear guest counts or
+      // re-rewrite the announcement.
+      if (!report || report.status !== "reported") return;
       await run(
         "UPDATE cook_attendance_reports SET status = 'confirmed_absent', resolved_at = ? WHERE id = ?",
         [now(), reportId],

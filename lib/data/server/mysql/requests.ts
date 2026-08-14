@@ -113,7 +113,9 @@ export const joinRequests: JoinRequestRepository = {
   async decide(id, status, roomId) {
     await transaction(async (tx) => {
       const req = await one<JoinRow>(`SELECT ${JOIN_COLS} FROM join_requests WHERE id = ? FOR UPDATE`, [id], tx);
-      if (!req) return;
+      // Already decided — a double-click must never re-attach the member or
+      // re-send the approval/decline notification a second time.
+      if (!req || req.status !== "pending") return;
       await run("UPDATE join_requests SET status = ? WHERE id = ?", [status, id], tx);
 
       if (status === "approved" && roomId) {
@@ -256,8 +258,18 @@ export const transfers: TransferRepository = {
     });
   },
 
-  async advance(id, decidedBy, approve) {
+  async advance(id, decidedBy, approve, fromStage) {
     await transaction(async (tx) => {
+      // Lock the row and confirm it's still at the stage the caller saw —
+      // otherwise a double-click (or a second, now-stale approval) would
+      // advance it a second time and skip straight past a review stage
+      // nobody actually signed off on.
+      const locked = await one<{ stage: string }>(
+        "SELECT stage FROM transfer_requests WHERE id = ? FOR UPDATE",
+        [id],
+        tx
+      );
+      if (!locked || locked.stage !== fromStage) return;
       const [t] = await loadTransfers("id = ?", [id], tx);
       if (!t) return;
       // requested = the member's CURRENT hostel (manager) reviews the leave;
@@ -379,8 +391,9 @@ export const leaveRequests: LeaveRequestRepository = {
 
   async decide(id, status, decidedBy) {
     await transaction(async (tx) => {
-      const req = await one<LeaveRow>(`SELECT ${LEAVE_COLS} FROM leave_requests WHERE id = ?`, [id], tx);
-      if (!req) return;
+      const req = await one<LeaveRow>(`SELECT ${LEAVE_COLS} FROM leave_requests WHERE id = ? FOR UPDATE`, [id], tx);
+      // Already decided — a double-click must never re-notify twice.
+      if (!req || req.status !== "pending") return;
       await run(
         "UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?",
         [status, decidedBy, now(), id],
@@ -465,6 +478,15 @@ export const mealStops: MealStopRepository = {
       for (const m of meals) {
         await run("INSERT IGNORE INTO meal_stop_meals (request_id, meal) VALUES (?, ?)", [id, m], tx);
       }
+      const reqRange = `${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}`;
+      const rq = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.userId], tx);
+      await logActivity(
+        req.hostelId,
+        req.desiredOn ? "Meal-on request sent" : "Meal-off request sent",
+        `${rq?.name ?? "member"} · ${meals.join(", ")} · ${reqRange}`,
+        tx,
+        "meal"
+      );
       await notifyHostelStaff(
         req.hostelId,
         req.desiredOn ? "Meal resume request" : "Meal stop request",
@@ -481,32 +503,40 @@ export const mealStops: MealStopRepository = {
     await transaction(async (tx) => {
       const req = await one<{
         id: string; hostel_id: string; user_id: string;
-        date_from: string; date_to: string; desired_on: number;
+        date_from: string; date_to: string; desired_on: number; status: string;
       }>(
-        "SELECT id, hostel_id, user_id, date_from, date_to, desired_on FROM meal_stop_requests WHERE id = ?",
+        "SELECT id, hostel_id, user_id, date_from, date_to, desired_on, status FROM meal_stop_requests WHERE id = ? FOR UPDATE",
         [id],
         tx
       );
-      if (!req) return;
+      // Already decided — a double-click must never re-notify or re-log twice.
+      if (!req || req.status !== "pending") return;
       await run("UPDATE meal_stop_requests SET status = ? WHERE id = ?", [status, id], tx);
+      const slots = (
+        await all<{ meal: MealSlot }>("SELECT meal FROM meal_stop_meals WHERE request_id = ?", [id], tx)
+      ).map((m) => m.meal);
+      const range = `${toDay(req.date_from)}${toDay(req.date_to) !== toDay(req.date_from) ? ` – ${toDay(req.date_to)}` : ""}`;
+      const rq = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [req.user_id], tx);
       if (status !== "approved") {
         if (status === "denied") {
-          const from = toDay(req.date_from);
-          const to = toDay(req.date_to);
           await notify(
             req.user_id,
             "Meal request declined",
-            `Your meal request for ${from}${to !== from ? ` – ${to}` : ""} was declined.`,
+            `Your meal request for ${range} was declined.`,
             tx
+          );
+          await logActivity(
+            req.hostel_id,
+            "Meal request denied",
+            `${rq?.name ?? "member"} · ${slots.join(", ")} · ${range}`,
+            tx,
+            "meal"
           );
         }
         return;
       }
 
       const wantOn = toBool(req.desired_on);
-      const slots = (
-        await all<{ meal: MealSlot }>("SELECT meal FROM meal_stop_meals WHERE request_id = ?", [id], tx)
-      ).map((m) => m.meal);
       let day = toDay(req.date_from);
       const last = toDay(req.date_to);
       while (day <= last) {
@@ -531,6 +561,13 @@ export const mealStops: MealStopRepository = {
         wantOn ? "Meal request approved" : "Meal stop approved",
         `Your request for ${toDay(req.date_from)}${last !== toDay(req.date_from) ? ` – ${last}` : ""} was approved.`,
         tx
+      );
+      await logActivity(
+        req.hostel_id,
+        "Meal request approved",
+        `${rq?.name ?? "member"} · ${slots.join(", ")} · ${range}`,
+        tx,
+        "meal"
       );
     });
   },

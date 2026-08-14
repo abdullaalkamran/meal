@@ -1167,6 +1167,8 @@ const meals: MealRepository = {
     const day = ensureMealDay(hostelId, date);
     const entry = ensureMealEntry(day, userId);
     entry[meal].on = on;
+    const tname = store.data.users.find((u) => u.id === userId)?.name ?? "member";
+    logActivity(hostelId, on ? "Meal turned on" : "Meal turned off", `${tname} · ${meal} · ${date}`, "meal");
     store.emit(`mealDay:${hostelId}`);
   },
   /** Approved change applied by a manager/owner — bypasses the member cutoff. */
@@ -1264,6 +1266,13 @@ const meals: MealRepository = {
       emitUser(userId);
       store.emit(`users:${hostelId}`);
     }
+    const fname = store.data.users.find((u) => u.id === userId)?.name ?? "member";
+    logActivity(
+      hostelId,
+      off ? "Future meal turned off" : "Future meal turned back on",
+      `${fname} · ${meal}`,
+      "meal"
+    );
     // Apply now to every future day the member can still change: tomorrow if
     // it's still before tonight's cutoff, otherwise the day after. Today is
     // never touched; unmaterialised days inherit the new default when sealed.
@@ -1495,6 +1504,9 @@ const swaps: SwapRepository = {
       status: "pending",
       createdAt: new Date().toISOString(),
     });
+    const fromName = store.data.users.find((u) => u.id === swap.fromUserId)?.name ?? "A member";
+    const toName = store.data.users.find((u) => u.id === swap.toUserId)?.name ?? "another member";
+    logActivity(swap.hostelId, "Duty swap requested", `${fromName} → ${toName}`, "shopping");
     store.data.announcements.push({
       id: nextId("ann"),
       hostelId: swap.hostelId,
@@ -1511,7 +1523,9 @@ const swaps: SwapRepository = {
   },
   async resolve(swapId, status) {
     const swap = store.data.swapRequests.find((s) => s.id === swapId);
-    if (!swap) return;
+    // Already decided — re-applying "accepted" a second time would swap the
+    // two blocks' dates right back, silently undoing the exchange.
+    if (!swap || swap.status !== "pending") return;
     swap.status = status;
     if (status === "accepted") {
       const plan = store.data.dutyPlans.find((p) => p.id === swap.planId);
@@ -1526,6 +1540,15 @@ const swaps: SwapRepository = {
         store.emit(`duties:${plan.hostelId}`);
       }
     }
+    const fromName = store.data.users.find((u) => u.id === swap.fromUserId)?.name ?? "A member";
+    const toName = store.data.users.find((u) => u.id === swap.toUserId)?.name ?? "another member";
+    const swapLabel = { accepted: "accepted", denied: "denied", cancelled: "cancelled" }[status];
+    logActivity(
+      swap.hostelId,
+      `Duty swap ${swapLabel}`,
+      status === "cancelled" ? `${fromName} → ${toName}` : `${toName} ${swapLabel} ${fromName}'s request`,
+      "shopping"
+    );
     store.emit(`swaps:${swap.hostelId}`);
   },
   subscribe(hostelId, cb) {
@@ -1584,7 +1607,8 @@ const shoppingCosts: ShoppingCostRepository = {
   },
   async decide(id, status) {
     const cost = store.data.shoppingCosts.find((c) => c.id === id);
-    if (!cost) return;
+    // Already decided — a double-click must never re-log the decision.
+    if (!cost || cost.status !== "pending") return;
     cost.status = status;
     logActivity(
       cost.hostelId,
@@ -1715,7 +1739,8 @@ const shortages: ShortageRepository = {
   },
   async resolve(id, resolvedBy) {
     const s = store.data.shortageRequests.find((x) => x.id === id);
-    if (!s) return;
+    // Already resolved — nothing left to do on a repeat click.
+    if (!s || s.status !== "pending") return;
     s.status = "resolved";
     s.resolvedBy = resolvedBy;
     s.resolvedAt = new Date().toISOString();
@@ -2202,7 +2227,9 @@ const cookLeave: CookLeaveRepository = {
   },
   async decide(id, status, decidedBy) {
     const req = store.data.cookLeaveRequests.find((r) => r.id === id);
-    if (!req) return;
+    // Already decided — a double-click must never post a duplicate
+    // "cook on leave" announcement.
+    if (!req || req.status !== "pending") return;
     req.status = status;
     req.decidedBy = decidedBy;
     req.decidedAt = new Date().toISOString();
@@ -2336,7 +2363,9 @@ const cookAttendance: CookAttendanceRepository = {
   },
   async confirmAbsent(reportId) {
     const report = store.data.cookAttendanceReports.find((r) => r.id === reportId);
-    if (!report) return;
+    // Already resolved — a double-click must never re-clear guest counts or
+    // re-rewrite the announcement.
+    if (!report || report.status !== "reported") return;
     report.status = "confirmed_absent";
     report.resolvedAt = new Date().toISOString();
     const day = ensureMealDay(report.hostelId, report.date);
@@ -2663,9 +2692,12 @@ const transfers: TransferRepository = {
     store.emit(`transfers:${req.fromHostelId}`);
     store.emit(`transfers:${req.toHostelId}`);
   },
-  async advance(id, decidedBy, approve) {
+  async advance(id, decidedBy, approve, fromStage) {
     const t = store.data.transferRequests.find((x) => x.id === id);
-    if (!t) return;
+    // The request must still be at the stage the caller saw — otherwise a
+    // double-click (or a second, now-stale approval) would advance it a
+    // second time and skip straight past the stage nobody actually reviewed.
+    if (!t || t.stage !== fromStage) return;
     // requested = the member's current hostel (manager) reviews; approving
     // passes it to the owner (owner_review), whose approval finalises the move.
     const next: Record<string, string> = {
@@ -2754,7 +2786,9 @@ const joinRequests: JoinRequestRepository = {
   },
   async decide(id, status, roomId) {
     const req = store.data.joinRequests.find((r) => r.id === id);
-    if (!req) return;
+    // Already decided — a double-click must never re-attach the member or
+    // re-send the approval/decline notification a second time.
+    if (!req || req.status !== "pending") return;
     req.status = status;
 
     const pushNotification = (userId: string, title: string, body: string) => {
@@ -2918,7 +2952,8 @@ const leaveRequests: LeaveRequestRepository = {
   },
   async decide(id, status, decidedBy) {
     const req = store.data.leaveRequests.find((r) => r.id === id);
-    if (!req) return;
+    // Already decided — a double-click must never re-notify twice.
+    if (!req || req.status !== "pending") return;
     req.status = status;
     req.decidedBy = decidedBy;
     req.decidedAt = new Date().toISOString();
@@ -2961,6 +2996,14 @@ const mealStops: MealStopRepository = {
       throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
     }
     store.data.mealStopRequests.push({ ...req, meals, id: nextId("stop"), status: "pending" });
+    const rname = store.data.users.find((u) => u.id === req.userId)?.name ?? "member";
+    const reqRange = `${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}`;
+    logActivity(
+      req.hostelId,
+      req.desiredOn ? "Meal-on request sent" : "Meal-off request sent",
+      `${rname} · ${meals.join(", ")} · ${reqRange}`,
+      "meal"
+    );
     notifyHostelStaff(
       req.hostelId,
       req.desiredOn ? "Meal resume request" : "Meal stop request",
@@ -2970,7 +3013,8 @@ const mealStops: MealStopRepository = {
   },
   async decide(id, status) {
     const req = store.data.mealStopRequests.find((r) => r.id === id);
-    if (!req) return;
+    // Already decided — a double-click must never re-notify or re-log twice.
+    if (!req || req.status !== "pending") return;
     req.status = status;
     if (status === "approved") {
       // Apply the requested direction (on OR off) — a closed slot can't be
@@ -2992,14 +3036,17 @@ const mealStops: MealStopRepository = {
     }
     // Tell the member the outcome.
     const range = `${req.dateFrom}${req.dateTo !== req.dateFrom ? ` – ${req.dateTo}` : ""}`;
+    const rqname = store.data.users.find((u) => u.id === req.userId)?.name ?? "member";
     if (status === "approved") {
       notifyUser(
         req.userId,
         req.desiredOn ? "Meal request approved" : "Meal stop approved",
         `Your request to turn meals ${req.desiredOn ? "on" : "off"} for ${range} was approved.`
       );
+      logActivity(req.hostelId, "Meal request approved", `${rqname} · ${req.meals.join(", ")} · ${range}`, "meal");
     } else if (status === "denied") {
       notifyUser(req.userId, "Meal request declined", `Your meal request for ${range} was declined.`);
+      logActivity(req.hostelId, "Meal request denied", `${rqname} · ${req.meals.join(", ")} · ${range}`, "meal");
     }
     store.emit(`mealStops:${req.hostelId}`);
   },

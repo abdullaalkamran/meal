@@ -31,6 +31,9 @@ export default function OwnerMorePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [pickingFinanceHostel, setPickingFinanceHostel] = useState(false);
   const [financeHostelId, setFinanceHostelId] = useState<string | null>(null);
+  // Locks a transfer's row while its advance() call is in flight — without
+  // this, a double-click could re-advance an already-decided transfer.
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (hostels.length === 0) return;
@@ -50,11 +53,16 @@ export default function OwnerMorePage() {
 
   const decide = async (id: string, approve: boolean) => {
     if (!user) return;
-    await repo.transfers.advance(id, user.id, approve);
-    setTransfers((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, stage: approve ? "approved" : "denied" } : t))
-    );
-    toast(approve ? "Transfer approved — migration complete" : "Transfer rejected");
+    setDecidingId(id);
+    try {
+      await repo.transfers.advance(id, user.id, approve, "owner_review");
+      setTransfers((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, stage: approve ? "approved" : "denied" } : t))
+      );
+      toast(approve ? "Transfer approved — migration complete" : "Transfer rejected");
+    } finally {
+      setDecidingId(null);
+    }
   };
 
   return (
@@ -78,10 +86,15 @@ export default function OwnerMorePage() {
                 {t.reason}
               </div>
               <div className="flex gap-2">
-                <Button fullWidth onClick={() => decide(t.id, true)}>
+                <Button fullWidth disabled={decidingId === t.id} onClick={() => decide(t.id, true)}>
                   Approve &amp; migrate
                 </Button>
-                <Button fullWidth variant="secondary" onClick={() => decide(t.id, false)}>
+                <Button
+                  fullWidth
+                  variant="secondary"
+                  disabled={decidingId === t.id}
+                  onClick={() => decide(t.id, false)}
+                >
                   Reject
                 </Button>
               </div>

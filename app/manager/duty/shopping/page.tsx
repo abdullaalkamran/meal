@@ -14,6 +14,7 @@ import { repo } from "@/lib/data";
 import { buildOpenBlocks } from "@/lib/duty";
 import { today } from "@/lib/utils/date";
 import { PermissionGate } from "@/components/manager/PermissionGate";
+import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
 
 function ManagerShoppingDutyPage() {
   const { activeHostelId } = useSession();
@@ -203,6 +204,8 @@ function ManagerShoppingDutyPage() {
           </div>
         </Card>
       )}
+
+      <ActivityTimeline hostelId={activeHostelId} category="shopping" title="Shopping activity" />
     </div>
   );
 }

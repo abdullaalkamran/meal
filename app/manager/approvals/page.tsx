@@ -50,6 +50,10 @@ function ManagerApprovalsPage() {
   // Locks a guest-meal request's row while its decide() call is in flight —
   // without this, a double-click applied the guest count twice.
   const [decidingGuestMealId, setDecidingGuestMealId] = useState<string | null>(null);
+  // Same in-flight lock, shared across every other approve/decide button below
+  // (join, meal-stop, cook-leave, transfer, leave, payment, shopping-cost) —
+  // only one of these is ever mid-flight at a time, so one shared id suffices.
+  const [decidingId, setDecidingId] = useState<string | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
@@ -76,9 +80,22 @@ function ManagerApprovalsPage() {
     return bill ? nameOf(bill.userId) : "Member";
   };
   const approveJoin = async (requestId: string, roomId: string) => {
-    await repo.joinRequests.decide(requestId, "approved", roomId);
-    toast("Member approved and assigned");
-    setApprovingId(null);
+    setDecidingId(requestId);
+    try {
+      await repo.joinRequests.decide(requestId, "approved", roomId);
+      toast("Member approved and assigned");
+      setApprovingId(null);
+    } finally {
+      setDecidingId(null);
+    }
+  };
+  const declineJoin = async (requestId: string) => {
+    setDecidingId(requestId);
+    try {
+      await repo.joinRequests.decide(requestId, "denied");
+    } finally {
+      setDecidingId(null);
+    }
   };
 
   const total =
@@ -167,8 +184,9 @@ function ManagerApprovalsPage() {
                           <button
                             key={room.id}
                             type="button"
+                            disabled={decidingId === r.id}
                             onClick={() => approveJoin(r.id, room.id)}
-                            className={`rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold ${
+                            className={`rounded-pill px-3 py-1.5 text-[10.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50 ${
                               preferred ? "bg-primary text-white" : "bg-primary-soft text-primary"
                             }`}
                           >
@@ -189,8 +207,9 @@ function ManagerApprovalsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => repo.joinRequests.decide(r.id, "denied")}
-                      className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                      disabled={decidingId === r.id}
+                      onClick={() => declineJoin(r.id)}
+                      className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Decline
                     </button>
@@ -234,15 +253,31 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => repo.mealStops.decide(r.id, "approved")}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      setDecidingId(r.id);
+                      try {
+                        await repo.mealStops.decide(r.id, "approved");
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => repo.mealStops.decide(r.id, "denied")}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      setDecidingId(r.id);
+                      try {
+                        await repo.mealStops.decide(r.id, "denied");
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -336,15 +371,33 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => user && repo.cookLeave.decide(r.id, "approved", user.id)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(r.id);
+                      try {
+                        await repo.cookLeave.decide(r.id, "approved", user.id);
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => user && repo.cookLeave.decide(r.id, "denied", user.id)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(r.id);
+                      try {
+                        await repo.cookLeave.decide(r.id, "denied", user.id);
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -372,15 +425,33 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => user && repo.transfers.advance(t.id, user.id, true)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    disabled={decidingId === t.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(t.id);
+                      try {
+                        await repo.transfers.advance(t.id, user.id, true, "requested");
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => user && repo.transfers.advance(t.id, user.id, false)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    disabled={decidingId === t.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(t.id);
+                      try {
+                        await repo.transfers.advance(t.id, user.id, false, "requested");
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Reject
                   </button>
@@ -422,15 +493,33 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => user && repo.leaveRequests.decide(r.id, "approved", user.id)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(r.id);
+                      try {
+                        await repo.leaveRequests.decide(r.id, "approved", user.id);
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => user && repo.leaveRequests.decide(r.id, "denied", user.id)}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    disabled={decidingId === r.id}
+                    onClick={async () => {
+                      if (!user) return;
+                      setDecidingId(r.id);
+                      try {
+                        await repo.leaveRequests.decide(r.id, "denied", user.id);
+                      } finally {
+                        setDecidingId(null);
+                      }
+                    }}
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -470,23 +559,35 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={decidingId === p.id}
                     onClick={async () => {
-                      await repo.bills.decidePayment(p.id, "verified");
-                      toast("Payment verified");
-                      refreshPayments();
+                      setDecidingId(p.id);
+                      try {
+                        await repo.bills.decidePayment(p.id, "verified");
+                        toast("Payment verified");
+                        refreshPayments();
+                      } finally {
+                        setDecidingId(null);
+                      }
                     }}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Verify payment
                   </button>
                   <button
                     type="button"
+                    disabled={decidingId === p.id}
                     onClick={async () => {
-                      await repo.bills.decidePayment(p.id, "declined");
-                      toast("Payment declined");
-                      refreshPayments();
+                      setDecidingId(p.id);
+                      try {
+                        await repo.bills.decidePayment(p.id, "declined");
+                        toast("Payment declined");
+                        refreshPayments();
+                      } finally {
+                        setDecidingId(null);
+                      }
                     }}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -525,23 +626,35 @@ function ManagerApprovalsPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={decidingId === c.id}
                     onClick={async () => {
-                      await repo.shoppingCosts.decide(c.id, "approved");
-                      toast("Shopping expense approved");
-                      refreshShoppingCosts();
+                      setDecidingId(c.id);
+                      try {
+                        await repo.shoppingCosts.decide(c.id, "approved");
+                        toast("Shopping expense approved");
+                        refreshShoppingCosts();
+                      } finally {
+                        setDecidingId(null);
+                      }
                     }}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white"
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn bg-primary text-[11.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Approve
                   </button>
                   <button
                     type="button"
+                    disabled={decidingId === c.id}
                     onClick={async () => {
-                      await repo.shoppingCosts.decide(c.id, "denied");
-                      toast("Shopping expense declined");
-                      refreshShoppingCosts();
+                      setDecidingId(c.id);
+                      try {
+                        await repo.shoppingCosts.decide(c.id, "denied");
+                        toast("Shopping expense declined");
+                        refreshShoppingCosts();
+                      } finally {
+                        setDecidingId(null);
+                      }
                     }}
-                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold"
+                    className="min-h-10 flex-1 cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>

@@ -426,6 +426,14 @@ export const meals: MealRepository = {
         [on ? 1 : 0, hostelId, date, userId, meal],
         tx
       );
+      const tm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [userId], tx);
+      await logActivity(
+        hostelId,
+        on ? "Meal turned on" : "Meal turned off",
+        `${tm?.name ?? "member"} · ${meal} · ${date}`,
+        tx,
+        "meal"
+      );
     });
   },
 
@@ -586,6 +594,14 @@ export const meals: MealRepository = {
           tx
         );
       }
+      const fm = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [userId], tx);
+      await logActivity(
+        hostelId,
+        off ? "Future meal turned off" : "Future meal turned back on",
+        `${fm?.name ?? "member"} · ${meal}`,
+        tx,
+        "meal"
+      );
     });
   },
 

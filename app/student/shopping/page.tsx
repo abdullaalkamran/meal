@@ -44,6 +44,11 @@ export default function StudentShoppingPage() {
   // steppable back to see previous months.
   const [recordYear, setRecordYear] = useState(() => new Date().getFullYear());
   const [recordMonth, setRecordMonth] = useState(() => new Date().getMonth() + 1);
+  // Locks the swap card / a shortage row while its resolve() call is in
+  // flight — without this, a double-click could re-apply an already-decided
+  // swap (which would silently undo it) or shortage.
+  const [resolvingSwap, setResolvingSwap] = useState(false);
+  const [resolvingShortageId, setResolvingShortageId] = useState<string | null>(null);
   const recordMonthStr = `${recordYear}-${String(recordMonth).padStart(2, "0")}`;
   const stepRecordMonth = (delta: number) => {
     let m = recordMonth + delta;
@@ -118,8 +123,13 @@ export default function StudentShoppingPage() {
   };
 
   const resolveSwap = async (swapId: string, status: "accepted" | "denied" | "cancelled") => {
-    await repo.swaps.resolve(swapId, status);
-    toast(status === "accepted" ? "Swap completed" : status === "denied" ? "Swap denied" : "Swap cancelled");
+    setResolvingSwap(true);
+    try {
+      await repo.swaps.resolve(swapId, status);
+      toast(status === "accepted" ? "Swap completed" : status === "denied" ? "Swap denied" : "Swap cancelled");
+    } finally {
+      setResolvingSwap(false);
+    }
   };
 
   // Duty status for the signed-in member's block.
@@ -144,8 +154,13 @@ export default function StudentShoppingPage() {
 
   const resolveShortage = async (id: string) => {
     if (!user) return;
-    await repo.shortages.resolve(id, user.id);
-    toast("Shortage marked as bought");
+    setResolvingShortageId(id);
+    try {
+      await repo.shortages.resolve(id, user.id);
+      toast("Shortage marked as bought");
+    } finally {
+      setResolvingShortageId(null);
+    }
   };
 
   const submitCost = async () => {
@@ -224,8 +239,9 @@ export default function StudentShoppingPage() {
           {myBlock && (
             <button
               type="button"
+              disabled={resolvingShortageId === s.id}
               onClick={() => resolveShortage(s.id)}
-              className="min-h-10 w-full cursor-pointer rounded-btn bg-danger text-[12px] font-extrabold text-white"
+              className="min-h-10 w-full cursor-pointer rounded-btn bg-danger text-[12px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               Mark shortage bought
             </button>
@@ -398,10 +414,15 @@ export default function StudentShoppingPage() {
               {groupNameOf(myIncoming.fromUserId)} wants to swap duty dates with you
             </div>
             <div className="flex gap-2">
-              <Button fullWidth onClick={() => resolveSwap(myIncoming.id, "accepted")}>
+              <Button fullWidth disabled={resolvingSwap} onClick={() => resolveSwap(myIncoming.id, "accepted")}>
                 Accept
               </Button>
-              <Button fullWidth variant="secondary" onClick={() => resolveSwap(myIncoming.id, "denied")}>
+              <Button
+                fullWidth
+                variant="secondary"
+                disabled={resolvingSwap}
+                onClick={() => resolveSwap(myIncoming.id, "denied")}
+              >
                 Deny
               </Button>
             </div>
@@ -415,8 +436,9 @@ export default function StudentShoppingPage() {
             </div>
             <button
               type="button"
+              disabled={resolvingSwap}
               onClick={() => resolveSwap(myOutgoing.id, "cancelled")}
-              className="text-[11px] font-extrabold text-danger"
+              className="text-[11px] font-extrabold text-danger disabled:cursor-not-allowed disabled:opacity-50"
             >
               Cancel
             </button>

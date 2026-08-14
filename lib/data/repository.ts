@@ -483,7 +483,11 @@ export interface ExpenseRepository {
 export interface TransferRepository {
   listByHostel(hostelId: string): Promise<HostelTransferRequest[]>;
   request(req: Omit<HostelTransferRequest, "id" | "stage" | "timeline">): Promise<void>;
-  advance(id: string, decidedBy: string, approve: boolean): Promise<void>;
+  /** `fromStage` must match the request's CURRENT stage — guards against a
+   * double-click (or stale UI) re-advancing a request that already moved on,
+   * which would otherwise skip straight past a review stage nobody actually
+   * signed off on. */
+  advance(id: string, decidedBy: string, approve: boolean, fromStage: HostelTransferRequest["stage"]): Promise<void>;
   cancel(id: string): Promise<void>;
   subscribe(hostelId: string, cb: (list: HostelTransferRequest[]) => void): Unsubscribe;
 }

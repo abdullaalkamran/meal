@@ -88,6 +88,9 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   const [historyKey, setHistoryKey] = useState(0);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [detailsMeal, setDetailsMeal] = useState<MealSlot | null>(null);
+  // Locks a report's row while its confirmAbsent() call is in flight —
+  // without this, a double-click could re-apply the effect twice.
+  const [confirmingAbsentId, setConfirmingAbsentId] = useState<string | null>(null);
   const { toast } = useToast();
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -342,8 +345,16 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => repo.cookAttendance.confirmAbsent(report.id)}
-                  className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white"
+                  disabled={confirmingAbsentId === report.id}
+                  onClick={async () => {
+                    setConfirmingAbsentId(report.id);
+                    try {
+                      await repo.cookAttendance.confirmAbsent(report.id);
+                    } finally {
+                      setConfirmingAbsentId(null);
+                    }
+                  }}
+                  className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Confirm Absent
                 </button>
