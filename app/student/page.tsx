@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, ChevronRight, Megaphone, ShoppingCart } from "lucide-react";
+import { AlertTriangle, Bell, ChevronRight, Megaphone, ShoppingCart } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
+import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
 import { useActionableAnnouncements, canDismissAnnouncement } from "@/hooks/useActionableAnnouncements";
 import { useDutyPlans } from "@/hooks/useDutyPlans";
 import { useBill } from "@/hooks/useBill";
@@ -15,6 +16,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
+import { useToast } from "@/components/ui/Toast";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { LeaveRequestSheet } from "@/components/student/LeaveRequestSheet";
@@ -35,8 +37,27 @@ import { isAvailableAt } from "@/lib/geo/bangladesh";
 
 export default function StudentHomePage() {
   const { user, hostel, activeHostelId } = useSession();
+  const { toast } = useToast();
   const actualRate = useActualMealRate(activeHostelId);
   const { day } = useMealDay(activeHostelId, today());
+  // Meals offered today that the manager hasn't confirmed cooked or not yet —
+  // live, so the banner clears the moment the manager decides.
+  const todayReports = useCookAttendanceForDate(activeHostelId, today());
+  const unconfirmedMeals = (["breakfast", "lunch", "dinner"] as MealSlot[]).filter((meal) => {
+    const offered = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+    if (!offered) return false;
+    const report = todayReports.find((r) => r.meal === meal);
+    return report?.status !== "resolved_cooked" && report?.status !== "confirmed_absent";
+  });
+  const [askedToday, setAskedToday] = useState(false);
+  const askManagerToConfirmToday = async () => {
+    if (!activeHostelId) return;
+    setAskedToday(true);
+    await Promise.all(
+      unconfirmedMeals.map((meal) => repo.cookAttendance.askToConfirm(activeHostelId, today(), meal))
+    );
+    toast("Asked the manager to confirm today's meals.");
+  };
   // Only what still needs THIS user's attention — voted polls and
   // resolved shortages/swaps drop out here but stay visible in the full
   // history on the notifications page.
@@ -186,6 +207,33 @@ export default function StudentHomePage() {
             Manage notification preferences
           </button>
         </div>
+      )}
+
+      {/* Manager hasn't confirmed whether today's meal(s) were cooked yet */}
+      {unconfirmedMeals.length > 0 && (
+        <Card className="border border-orange/30 bg-orange-soft">
+          <div className="mb-1 flex items-center gap-2">
+            <Icon icon={AlertTriangle} size={16} className="text-orange" />
+            <div className="text-[12.5px] font-extrabold text-orange">
+              {unconfirmedMeals.length === 1
+                ? `${MEAL_LABEL[unconfirmedMeals[0]]} not confirmed yet`
+                : "Today's meals not confirmed yet"}
+            </div>
+          </div>
+          <div className="mb-3 text-[11px] font-semibold text-text-secondary">
+            The manager hasn&rsquo;t confirmed whether {unconfirmedMeals.map((m) => MEAL_LABEL[m].toLowerCase()).join(", ")}{" "}
+            {unconfirmedMeals.length === 1 ? "was" : "were"}{" "}
+            actually cooked yet — unconfirmed meals don&rsquo;t count toward the meal rate or bills.
+          </div>
+          <button
+            type="button"
+            disabled={askedToday}
+            onClick={askManagerToConfirmToday}
+            className="flex min-h-10 w-full items-center justify-center rounded-btn bg-orange text-[12px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {askedToday ? "Manager asked" : "Ask manager to confirm"}
+          </button>
+        </Card>
       )}
 
       {/* Today's meals + menu */}

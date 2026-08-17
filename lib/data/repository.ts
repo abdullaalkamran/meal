@@ -425,6 +425,16 @@ export interface CookAttendanceRepository {
   vote(reportId: string, userId: string, choice: CookAttendanceVote["choice"]): Promise<void>;
   listVotes(reportId: string): Promise<CookAttendanceVote[]>;
   confirmAbsent(reportId: string): Promise<void>;
+  /** Reverts an already-decided report ("resolved_cooked" or
+   * "confirmed_absent") back to "reported", re-opening it for a fresh
+   * decision. Undoing a confirmed-absent does NOT restore members' meal
+   * on/off state — that was zeroed out with no snapshot kept, so the UI
+   * must warn the manager it isn't fully reversible. */
+  undoDecision(reportId: string): Promise<void>;
+  /** A member nudging the manager/owner that this (date, meal) hasn't been
+   * confirmed cooked or not yet — just a notification, no report/announcement
+   * is created or changed. */
+  askToConfirm(hostelId: string, date: string, meal: MealSlot): Promise<void>;
   subscribe(hostelId: string, cb: () => void): Unsubscribe;
 }
 

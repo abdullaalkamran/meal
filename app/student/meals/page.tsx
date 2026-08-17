@@ -20,6 +20,7 @@ import { StarRating } from "@/components/ui/StarRating";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
+import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type CookAttendanceReport, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
@@ -121,6 +122,18 @@ export default function StudentMealsPage() {
   const plans = useDutyPlans(activeHostelId);
   const [manager, setManager] = useState<User | undefined>(undefined);
   const [shopper, setShopper] = useState<User | undefined>(undefined);
+  // Whether the manager has confirmed cooked/not-cooked for the day being
+  // viewed — live, so it updates the moment the manager decides.
+  const dayReports = useCookAttendanceForDate(activeHostelId, selectedDate);
+  // Tracks which meals were already nudged this visit, so the button can't be
+  // spammed — it just relabels to "Asked" rather than re-firing.
+  const [askedMeals, setAskedMeals] = useState<Set<MealSlot>>(new Set());
+  const askManagerToConfirm = async (meal: MealSlot) => {
+    if (!activeHostelId) return;
+    setAskedMeals((prev) => new Set(prev).add(meal));
+    await repo.cookAttendance.askToConfirm(activeHostelId, selectedDate, meal);
+    toast(`Asked the manager to confirm ${MEAL_LABEL[meal].toLowerCase()}.`);
+  };
 
   useEffect(() => {
     if (!activeHostelId) return;
@@ -423,6 +436,36 @@ export default function StudentMealsPage() {
                       ? "This hostel doesn't offer this meal"
                       : menu?.dishes[meal]?.join(" · ") || "Menu not set yet"}
                   </div>
+                  {!closed && !notYetJoined && selectedDate <= today() && (() => {
+                    const cookReport = dayReports.find((r) => r.meal === meal);
+                    if (cookReport?.status === "resolved_cooked") {
+                      return (
+                        <div className="mt-0.5 text-[9px] font-bold text-primary">
+                          ✓ Confirmed cooked by manager
+                        </div>
+                      );
+                    }
+                    if (cookReport?.status === "confirmed_absent") {
+                      return (
+                        <div className="mt-0.5 text-[9px] font-bold text-danger">
+                          Manager confirmed: not cooked
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold text-orange">Not confirmed by manager yet</span>
+                        <button
+                          type="button"
+                          disabled={askedMeals.has(meal)}
+                          onClick={() => askManagerToConfirm(meal)}
+                          className="text-[9px] font-extrabold text-primary underline disabled:cursor-not-allowed disabled:text-text-secondary disabled:no-underline"
+                        >
+                          {askedMeals.has(meal) ? "Asked" : "Ask manager"}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {notYetJoined ? (
                   <Chip>Not a boarder yet</Chip>

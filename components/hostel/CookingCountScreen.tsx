@@ -91,6 +91,8 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   // Locks a report's row while its confirmAbsent() call is in flight —
   // without this, a double-click could re-apply the effect twice.
   const [confirmingAbsentId, setConfirmingAbsentId] = useState<string | null>(null);
+  // Same in-flight lock for undoDecision().
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const { toast } = useToast();
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -357,6 +359,32 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                   className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Confirm Absent
+                </button>
+              </div>
+            )}
+
+            {report && (report.status === "resolved_cooked" || report.status === "confirmed_absent") && !readOnly && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  disabled={undoingId === report.id}
+                  onClick={async () => {
+                    const wasAbsent = report.status === "confirmed_absent";
+                    setUndoingId(report.id);
+                    try {
+                      await repo.cookAttendance.undoDecision(report.id);
+                      toast(
+                        wasAbsent
+                          ? "Undone — reopened for a decision. Members' meal toggles were turned off and won't be restored automatically."
+                          : "Undone — reopened for a decision."
+                      );
+                    } finally {
+                      setUndoingId(null);
+                    }
+                  }}
+                  className="min-h-10 w-full cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold text-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Undo
                 </button>
               </div>
             )}
