@@ -607,45 +607,6 @@ export const cookAttendance: CookAttendanceRepository = {
     });
   },
 
-  async undoDecision(reportId) {
-    await transaction(async (tx) => {
-      const report = await one<AttendanceRow>(
-        `SELECT ${ATT_COLS} FROM cook_attendance_reports WHERE id = ? FOR UPDATE`,
-        [reportId],
-        tx
-      );
-      // Only an already-decided report can be undone — nothing to revert on
-      // a still-open "reported" row.
-      if (!report || report.status === "reported") return;
-      await run(
-        "UPDATE cook_attendance_reports SET status = 'reported', resolved_at = NULL WHERE id = ?",
-        [reportId],
-        tx
-      );
-      // The poll announcement's text is a fixed template, so it can be
-      // reconstructed exactly — but member meal on/off state that
-      // confirmAbsent zeroed out has no snapshot and is NOT restored here.
-      await run(
-        `UPDATE announcements
-            SET kind = 'cook-absence-poll', title = ?, body = ?
-          WHERE kind = 'cook-absence-resolved' AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.reportId')) = ?`,
-        [
-          `Was ${report.meal} cooked today?`,
-          "The cook hasn't confirmed this meal. Please vote so the manager can decide.",
-          reportId,
-        ],
-        tx
-      );
-      await logActivity(
-        report.hostel_id,
-        "Cooking confirmation undone",
-        `${report.meal[0].toUpperCase()}${report.meal.slice(1)} · ${toDay(report.day)}`,
-        tx,
-        "shopping"
-      );
-    });
-  },
-
   async askToConfirm(hostelId, date, meal) {
     const mname = `${meal[0].toUpperCase()}${meal.slice(1)}`;
     await notifyHostelStaff(

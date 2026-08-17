@@ -2387,35 +2387,6 @@ const cookAttendance: CookAttendanceRepository = {
     store.emit(`mealDay:${report.hostelId}`);
     store.emit(`announcements:${report.hostelId}`);
   },
-  async undoDecision(reportId) {
-    const report = store.data.cookAttendanceReports.find((r) => r.id === reportId);
-    // Only an already-decided report can be undone — nothing to revert on a
-    // still-open "reported" row.
-    if (!report || report.status === "reported") return;
-    const wasAbsent = report.status === "confirmed_absent";
-    report.status = "reported";
-    report.resolvedAt = undefined;
-    // The poll announcement's text is a fixed template, so it can be
-    // reconstructed exactly — but member meal on/off state that
-    // confirmAbsent zeroed out has no snapshot and is NOT restored here.
-    const ann = store.data.announcements.find(
-      (a) => a.kind === "cook-absence-resolved" && (a.payload as { reportId?: string })?.reportId === reportId
-    );
-    if (ann) {
-      ann.kind = "cook-absence-poll";
-      ann.title = `Was ${report.meal} cooked today?`;
-      ann.body = "The cook hasn't confirmed this meal. Please vote so the manager can decide.";
-    }
-    logActivity(
-      report.hostelId,
-      "Cooking confirmation undone",
-      `${report.meal[0].toUpperCase()}${report.meal.slice(1)} · ${report.date}`,
-      "shopping"
-    );
-    store.emit(`cookAttendance:${report.hostelId}`);
-    store.emit(`announcements:${report.hostelId}`);
-    if (wasAbsent) store.emit(`mealDay:${report.hostelId}`);
-  },
   async askToConfirm(hostelId, date, meal) {
     const mname = `${meal[0].toUpperCase()}${meal.slice(1)}`;
     notifyHostelStaff(

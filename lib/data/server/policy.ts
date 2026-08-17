@@ -106,7 +106,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   // toward cooking count AND billing (see mealRateFor/generateBills) —
   // deliberately manager/owner only, never the cook confirming their own
   // work. report/vote/listVotes stay open to any signed-in member.
-  cookAttendance: { markCooked: HOSTEL_STAFF, confirmAbsent: HOSTEL_STAFF, undoDecision: HOSTEL_STAFF },
+  cookAttendance: { markCooked: HOSTEL_STAFF, confirmAbsent: HOSTEL_STAFF },
   cookLeave: { decide: HOSTEL_STAFF },
   shortages: { resolve: [...HOSTEL_STAFF, "cook"] },
   transfers: { advance: HOSTEL_STAFF },

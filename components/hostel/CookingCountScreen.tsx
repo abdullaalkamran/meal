@@ -10,6 +10,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { useToast } from "@/components/ui/Toast";
+import { ConfirmSheet } from "@/components/ui/ConfirmSheet";
 import { BulkConfirmCookedSheet } from "@/components/manager/BulkConfirmCookedSheet";
 import { CookingDetailsSheet } from "@/components/manager/CookingDetailsSheet";
 import { CookingPotIllustration } from "@/components/hostel/CookingPotIllustration";
@@ -35,6 +36,14 @@ const formatFullDate = (dateStr: string) => {
 };
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+/** Every meal-count decision opens a confirm popup before it actually
+ * applies — mistakes here affect billing/what everyone eats, and there's no
+ * undo, so asking once up front is the safeguard. */
+type PendingAction =
+  | { type: "markCooked"; meal: MealSlot }
+  | { type: "reportNotCooked"; meal: MealSlot }
+  | { type: "confirmAbsent"; meal: MealSlot; reportId: string };
 
 interface HistoryRow {
   date: string;
@@ -88,11 +97,8 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   const [historyKey, setHistoryKey] = useState(0);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [detailsMeal, setDetailsMeal] = useState<MealSlot | null>(null);
-  // Locks a report's row while its confirmAbsent() call is in flight —
-  // without this, a double-click could re-apply the effect twice.
-  const [confirmingAbsentId, setConfirmingAbsentId] = useState<string | null>(null);
-  // Same in-flight lock for undoDecision().
-  const [undoingId, setUndoingId] = useState<string | null>(null);
+  // The action awaiting confirmation in the popup — null means no popup open.
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { toast } = useToast();
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -308,7 +314,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => activeHostelId && repo.cookAttendance.markCooked(activeHostelId, date, meal)}
+                  onClick={() => setPendingAction({ type: "markCooked", meal })}
                   className="min-h-11 flex-1 cursor-pointer rounded-btn text-[12.5px] font-extrabold text-white"
                   style={{ background: accent }}
                 >
@@ -316,17 +322,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
-                    activeHostelId &&
-                    user &&
-                    repo.cookAttendance.report({
-                      hostelId: activeHostelId,
-                      date,
-                      meal,
-                      status: "reported",
-                      reportedBy: user.id,
-                    })
-                  }
+                  onClick={() => setPendingAction({ type: "reportNotCooked", meal })}
                   className="min-h-11 flex-1 cursor-pointer rounded-btn border text-[12.5px] font-extrabold"
                   style={{ borderColor: accent, color: accent }}
                 >
@@ -339,7 +335,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => activeHostelId && repo.cookAttendance.markCooked(activeHostelId, date, meal)}
+                  onClick={() => setPendingAction({ type: "markCooked", meal })}
                   className="min-h-11 flex-1 cursor-pointer rounded-btn text-[12.5px] font-extrabold text-white"
                   style={{ background: accent }}
                 >
@@ -347,44 +343,10 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                 </button>
                 <button
                   type="button"
-                  disabled={confirmingAbsentId === report.id}
-                  onClick={async () => {
-                    setConfirmingAbsentId(report.id);
-                    try {
-                      await repo.cookAttendance.confirmAbsent(report.id);
-                    } finally {
-                      setConfirmingAbsentId(null);
-                    }
-                  }}
-                  className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setPendingAction({ type: "confirmAbsent", meal, reportId: report.id })}
+                  className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white"
                 >
                   Confirm Absent
-                </button>
-              </div>
-            )}
-
-            {report && (report.status === "resolved_cooked" || report.status === "confirmed_absent") && !readOnly && (
-              <div className="mt-3">
-                <button
-                  type="button"
-                  disabled={undoingId === report.id}
-                  onClick={async () => {
-                    const wasAbsent = report.status === "confirmed_absent";
-                    setUndoingId(report.id);
-                    try {
-                      await repo.cookAttendance.undoDecision(report.id);
-                      toast(
-                        wasAbsent
-                          ? "Undone — reopened for a decision. Members' meal toggles were turned off and won't be restored automatically."
-                          : "Undone — reopened for a decision."
-                      );
-                    } finally {
-                      setUndoingId(null);
-                    }
-                  }}
-                  className="min-h-10 w-full cursor-pointer rounded-btn border border-border text-[11.5px] font-extrabold text-text-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Undo
                 </button>
               </div>
             )}
@@ -471,6 +433,55 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
             />
           );
         })()}
+
+      {pendingAction && (
+        <ConfirmSheet
+          open
+          onClose={() => setPendingAction(null)}
+          tone={pendingAction.type === "confirmAbsent" ? "danger" : "primary"}
+          title={
+            pendingAction.type === "markCooked"
+              ? "Confirm cooked?"
+              : pendingAction.type === "reportNotCooked"
+                ? "Report not cooked?"
+                : "Confirm cook absent?"
+          }
+          message={
+            pendingAction.type === "markCooked"
+              ? `Mark ${MEAL_LABEL[pendingAction.meal]} as cooked for ${formatFullDate(date)}? This counts toward the meal rate and bills.`
+              : pendingAction.type === "reportNotCooked"
+                ? `Flag ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(date)} as not yet cooked? Members will be asked to vote so you can decide.`
+                : `Confirm the cook was absent for ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(date)}? This cancels the meal for everyone — guest counts are cleared and it won't count toward the meal rate.`
+          }
+          confirmLabel={
+            pendingAction.type === "markCooked"
+              ? "Confirm cooked"
+              : pendingAction.type === "reportNotCooked"
+                ? "Report"
+                : "Confirm absent"
+          }
+          onConfirm={async () => {
+            if (!activeHostelId) return;
+            if (pendingAction.type === "markCooked") {
+              await repo.cookAttendance.markCooked(activeHostelId, date, pendingAction.meal);
+              toast(`${MEAL_LABEL[pendingAction.meal]} confirmed cooked.`);
+            } else if (pendingAction.type === "reportNotCooked") {
+              if (!user) return;
+              await repo.cookAttendance.report({
+                hostelId: activeHostelId,
+                date,
+                meal: pendingAction.meal,
+                status: "reported",
+                reportedBy: user.id,
+              });
+              toast(`${MEAL_LABEL[pendingAction.meal]} reported — members can vote now.`);
+            } else {
+              await repo.cookAttendance.confirmAbsent(pendingAction.reportId);
+              toast(`${MEAL_LABEL[pendingAction.meal]} confirmed absent — cancelled for everyone.`);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
