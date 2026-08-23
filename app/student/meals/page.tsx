@@ -40,7 +40,9 @@ export default function StudentMealsPage() {
   const [month, setMonth] = useState(Number(tomorrow.slice(5, 7)));
   const [selectedDate, setSelectedDate] = useState(tomorrow);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [requestsOpen, setRequestsOpen] = useState(true);
+  // Collapsed by default: only pending requests show up front; expanding
+  // reveals the full history (approved/denied too).
+  const [requestsOpen, setRequestsOpen] = useState(false);
   const [guestSheetOpen, setGuestSheetOpen] = useState(false);
   const [reqSheet, setReqSheet] = useState<{ on: boolean; meals?: MealSlot[] } | null>(null);
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
@@ -548,64 +550,74 @@ export default function StudentMealsPage() {
             <Icon icon={requestsOpen ? ChevronUp : ChevronDown} size={16} />
           </div>
         </button>
-        {requestsOpen && (
-          <div className="mt-3 flex flex-col gap-2">
-            {myRequests.length === 0 && myGuestRequests.length === 0 && (
-              <div className="text-[11.5px] font-semibold text-text-secondary">No requests yet.</div>
-            )}
-            {myRequests.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
-                <div>
-                  <div className="text-[11.5px] font-bold">
-                    <span className={r.desiredOn ? "text-primary" : "text-danger"}>
-                      Turn {r.desiredOn ? "on" : "off"}
-                    </span>{" "}
-                    {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom}
-                    {r.dateTo !== r.dateFrom ? ` – ${r.dateTo}` : ""}
-                  </div>
-                  <div className="text-[10px] font-semibold text-text-secondary">
-                    {r.reason || "No reason given"}
-                  </div>
-                </div>
-                <div
-                  className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
-                    r.status === "approved"
-                      ? "bg-primary-soft text-primary"
-                      : r.status === "denied"
-                        ? "bg-danger-soft text-danger"
-                        : "bg-orange-soft text-orange"
-                  }`}
-                >
-                  {r.status}
-                </div>
+        {(() => {
+          const visibleRequests = requestsOpen ? myRequests : myRequests.filter((r) => r.status === "pending");
+          const visibleGuestRequests = requestsOpen
+            ? myGuestRequests
+            : myGuestRequests.filter((r) => r.status === "pending");
+          if (visibleRequests.length === 0 && visibleGuestRequests.length === 0) {
+            return (
+              <div className="mt-3 text-[11.5px] font-semibold text-text-secondary">
+                {requestsOpen ? "No requests yet." : "No pending requests."}
               </div>
-            ))}
-            {myGuestRequests.map((r) => (
-              <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
-                <div>
-                  <div className="text-[11.5px] font-bold">
-                    <span className={r.qty < 0 ? "text-danger" : "text-primary"}>
-                      {r.qty < 0 ? "Remove" : "Add"} {Math.abs(r.qty)} guest{Math.abs(r.qty) === 1 ? "" : "s"}
-                    </span>{" "}
-                    {MEAL_LABEL[r.meal]} &middot; {r.date}
+            );
+          }
+          return (
+            <div className="mt-3 flex flex-col gap-2">
+              {visibleRequests.map((r) => (
+                <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
+                  <div>
+                    <div className="text-[11.5px] font-bold">
+                      <span className={r.desiredOn ? "text-primary" : "text-danger"}>
+                        Turn {r.desiredOn ? "on" : "off"}
+                      </span>{" "}
+                      {r.meals.map((m) => MEAL_LABEL[m]).join(" + ")} &middot; {r.dateFrom}
+                      {r.dateTo !== r.dateFrom ? ` – ${r.dateTo}` : ""}
+                    </div>
+                    <div className="text-[10px] font-semibold text-text-secondary">
+                      {r.reason || "No reason given"}
+                    </div>
                   </div>
-                  <div className="text-[10px] font-semibold text-text-secondary">{r.guestName}</div>
+                  <div
+                    className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
+                      r.status === "approved"
+                        ? "bg-primary-soft text-primary"
+                        : r.status === "denied"
+                          ? "bg-danger-soft text-danger"
+                          : "bg-orange-soft text-orange"
+                    }`}
+                  >
+                    {r.status}
+                  </div>
                 </div>
-                <div
-                  className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
-                    r.status === "approved"
-                      ? "bg-primary-soft text-primary"
-                      : r.status === "denied"
-                        ? "bg-danger-soft text-danger"
-                        : "bg-orange-soft text-orange"
-                  }`}
-                >
-                  {r.status}
+              ))}
+              {visibleGuestRequests.map((r) => (
+                <div key={r.id} className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5">
+                  <div>
+                    <div className="text-[11.5px] font-bold">
+                      <span className={r.qty < 0 ? "text-danger" : "text-primary"}>
+                        {r.qty < 0 ? "Remove" : "Add"} {Math.abs(r.qty)} guest{Math.abs(r.qty) === 1 ? "" : "s"}
+                      </span>{" "}
+                      {MEAL_LABEL[r.meal]} &middot; {r.date}
+                    </div>
+                    <div className="text-[10px] font-semibold text-text-secondary">{r.guestName}</div>
+                  </div>
+                  <div
+                    className={`rounded-pill px-2.5 py-1 text-[9.5px] font-extrabold ${
+                      r.status === "approved"
+                        ? "bg-primary-soft text-primary"
+                        : r.status === "denied"
+                          ? "bg-danger-soft text-danger"
+                          : "bg-orange-soft text-orange"
+                    }`}
+                  >
+                    {r.status}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          );
+        })()}
       </Card>
 
       {/* Calendar */}
