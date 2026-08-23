@@ -327,8 +327,10 @@ export default function StudentMealsPage() {
           <div className="text-[9.5px] font-bold text-text-secondary">Meal cost</div>
         </div>
         <div className="text-center">
-          <div className="text-[16.5px] font-extrabold text-danger">{formatBDT(due)}</div>
-          <div className="text-[9.5px] font-bold text-text-secondary">Due</div>
+          <div className={`text-[16.5px] font-extrabold ${due < 0 ? "text-primary" : "text-danger"}`}>
+            {formatBDT(Math.abs(due))}
+          </div>
+          <div className="text-[9.5px] font-bold text-text-secondary">{due < 0 ? "Credit" : "Due"}</div>
         </div>
       </div>
       {summary && summary.mealsOn > summary.billedMeals && (
@@ -684,9 +686,10 @@ export default function StudentMealsPage() {
               </div>
             </div>
             <div className="rounded-btn bg-bg p-2.5 text-center">
-              <div className="text-[15px] font-extrabold text-primary">{formatBDT(myMealCost)}</div>
+              <div className="text-[15px] font-extrabold text-primary">{formatBDT(Math.abs(myMealCost))}</div>
               <div className="text-[9px] font-bold text-text-secondary">
-                My meal cost{mealSection ? "" : " · estimated"}
+                {myMealCost < 0 ? "My meal credit" : "My meal cost"}
+                {mealSection ? "" : " · estimated"}
               </div>
             </div>
           </div>

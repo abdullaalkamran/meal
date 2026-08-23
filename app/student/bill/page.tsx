@@ -105,7 +105,7 @@ export default function StudentBillPage() {
             <div key={section.label} className="border-b border-border py-1.5">
               <div className="flex items-center justify-between text-[10.5px] font-extrabold">
                 <span>{SECTION_META[section.label].label}</span>
-                <span>{formatBDT(section.total)}</span>
+                <span>{formatBDT(Math.abs(section.total))}</span>
               </div>
               {section.items.map((item, i) => (
                 <div
@@ -113,7 +113,10 @@ export default function StudentBillPage() {
                   className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary"
                 >
                   <div>{item.label}</div>
-                  <div className="text-right">{formatBDT(item.amount)}</div>
+                  <div className="text-right">
+                    {item.amount < 0 ? "−" : ""}
+                    {formatBDT(Math.abs(item.amount))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -207,7 +210,7 @@ export default function StudentBillPage() {
                 <div className="text-[9.5px] font-bold text-text-secondary">{formatMonthLabel(bill.month)}</div>
               </div>
               <div className="shrink-0 text-right">
-                <div className="text-[13.5px] font-extrabold">{formatBDT(section.total)}</div>
+                <div className="text-[13.5px] font-extrabold">{formatBDT(Math.abs(section.total))}</div>
                 <div
                   className={`text-[9.5px] font-bold ${
                     sectionDue < 0 ? "text-primary" : sectionDue > 0 ? "text-danger" : "text-text-secondary"
@@ -225,7 +228,10 @@ export default function StudentBillPage() {
               {section.items.map((item, i) => (
                 <div key={i} className="flex items-center justify-between text-[11px] font-semibold text-text-secondary">
                   <div>{item.label}</div>
-                  <div>{formatBDT(item.amount)}</div>
+                  <div>
+                    {item.amount < 0 ? "−" : ""}
+                    {formatBDT(Math.abs(item.amount))}
+                  </div>
                 </div>
               ))}
               {section.label === "mealCost" && previousDue > 0 && (

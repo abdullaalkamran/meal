@@ -311,9 +311,9 @@ export function MembersScreen({ memberHref }: { memberHref: (userId: string) => 
                 </div>
                 <div className="text-right">
                   <div className={`text-[11.5px] font-extrabold ${due > 0 ? "text-danger" : "text-primary"}`}>
-                    {formatBDT(due)}
+                    {formatBDT(Math.abs(due))}
                   </div>
-                  <div className="text-[9px] font-semibold text-text-secondary">due</div>
+                  <div className="text-[9px] font-semibold text-text-secondary">{due > 0 ? "due" : "credit"}</div>
                 </div>
                 <Icon icon={ChevronRight} size={16} className="shrink-0 text-text-secondary" />
               </button>

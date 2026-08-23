@@ -476,7 +476,7 @@ function ManagerFinancePage() {
                                 </span>
                               </div>
                               <div className="text-right">
-                                <div>{formatBDT(s.total)}</div>
+                                <div>{formatBDT(Math.abs(s.total))}</div>
                                 <div
                                   className={`text-[9px] font-bold ${
                                     sectionDue < 0
@@ -500,7 +500,10 @@ function ManagerFinancePage() {
                                 className="flex items-center justify-between pl-2 text-[10px] font-semibold text-text-secondary"
                               >
                                 <div>{item.label}</div>
-                                <div>{formatBDT(item.amount)}</div>
+                                <div>
+                                  {item.amount < 0 ? "−" : ""}
+                                  {formatBDT(Math.abs(item.amount))}
+                                </div>
                               </div>
                             ))}
                             {s.label === "mealCost" && previousDue > 0 && (

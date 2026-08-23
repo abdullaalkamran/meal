@@ -77,7 +77,7 @@ export function BillHistorySheet({
                       <div key={label} className="flex items-center justify-between text-[10.5px] font-semibold">
                         <div className="text-text-secondary">{SECTION_LABEL[label]}</div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-extrabold text-text">{formatBDT(s.total)}</span>
+                          <span className="font-extrabold text-text">{formatBDT(Math.abs(s.total))}</span>
                           <span
                             className={
                               sectionDue > 0 ? "text-danger" : sectionDue < 0 ? "text-primary" : "text-text-secondary"

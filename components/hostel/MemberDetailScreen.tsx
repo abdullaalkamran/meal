@@ -311,7 +311,7 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
                     <div className="text-[11.5px] font-bold">{meta.label}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[11.5px] font-extrabold">{formatBDT(s.total)}</div>
+                    <div className="text-[11.5px] font-extrabold">{formatBDT(Math.abs(s.total))}</div>
                     <div
                       className={`text-[9px] font-bold ${
                         sectionDue < 0 ? "text-primary" : sectionDue > 0 ? "text-danger" : "text-text-secondary"
