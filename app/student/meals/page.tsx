@@ -21,10 +21,11 @@ import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { ActivityTimeline } from "@/components/hostel/ActivityTimeline";
 import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
+import { useAnnounceClockDate } from "@/hooks/useAnnounceClockDate";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
 import { repo, type CookAttendanceReport, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { addDays, currentMonth, formatDayMonth, formatMonthLabel, today } from "@/lib/utils/date";
+import { addDays, currentMonth, formatDayMonth, formatMonthLabel, formatShortDate, today } from "@/lib/utils/date";
 import { canToggleMeal, cutoffLabel } from "@/lib/utils/mealPolicy";
 import { useToast } from "@/components/ui/Toast";
 import { useActualMealRate } from "@/hooks/useActualMealRate";
@@ -39,6 +40,9 @@ export default function StudentMealsPage() {
   const [year, setYear] = useState(Number(tomorrow.slice(0, 4)));
   const [month, setMonth] = useState(Number(tomorrow.slice(5, 7)));
   const [selectedDate, setSelectedDate] = useState(tomorrow);
+  // Shows this date in the sticky header clock too, so it's obvious at a
+  // glance which day the calendar below is currently showing.
+  useAnnounceClockDate(selectedDate);
   const [membersOpen, setMembersOpen] = useState(false);
   // Collapsed by default: only pending requests show up front; expanding
   // reveals the full history (approved/denied too).
@@ -404,10 +408,10 @@ export default function StudentMealsPage() {
         <div className="mb-3 flex items-center justify-between">
           <div className="text-[11.5px] font-extrabold uppercase tracking-wide text-text-secondary">
             {selectedDate === today()
-              ? "Today"
+              ? `Today · ${formatShortDate(selectedDate)}`
               : selectedDate === addDays(today(), 1)
-                ? "Tomorrow"
-                : selectedDate}{" "}
+                ? `Tomorrow · ${formatShortDate(selectedDate)}`
+                : formatShortDate(selectedDate)}{" "}
             &middot; my meals
           </div>
           <button
@@ -739,9 +743,9 @@ export default function StudentMealsPage() {
             <div className="text-[13.5px] font-extrabold">Boarder meals</div>
             <div className="text-[9.5px] font-semibold text-text-secondary">
               {selectedDate === today()
-                ? "Today"
+                ? `Today · ${formatShortDate(selectedDate)}`
                 : selectedDate === addDays(today(), 1)
-                  ? "Tomorrow"
+                  ? `Tomorrow · ${formatShortDate(selectedDate)}`
                   : formatDayMonth(selectedDate)}
             </div>
           </div>

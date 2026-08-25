@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { hostelNow, toISODate } from "@/lib/utils/date";
+import { subscribe, getSnapshot, getServerSnapshot } from "@/lib/clock/selectedDate";
 
 const DAY_NAMES = [
   "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
@@ -12,6 +14,7 @@ const MONTH_NAMES = [
 ];
 
 const ACCENT = "#a78bfa"; // violet — day name / month, matching the dial's hue
+const VIEWING_ACCENT = "#2dd4bf"; // teal — the announced "selected date" block
 const HAND_BLUE = "#60a5fa";
 const HAND_VIOLET = "#a78bfa";
 
@@ -21,7 +24,7 @@ function FlipDigit({ value }: { value: string }) {
   return (
     <span
       key={value}
-      className="flip-digit inline-flex h-7 w-[19px] items-center justify-center rounded-[4px] font-mono text-[22px] font-extrabold leading-none tabular-nums text-white [transform-style:preserve-3d]"
+      className="flip-digit inline-flex h-7 w-[15px] items-center justify-center text-[24px] font-black leading-none tabular-nums text-white [transform-style:preserve-3d]"
       style={{ animation: "flipDigit 0.35s ease-out" }}
     >
       {value}
@@ -32,9 +35,12 @@ function FlipDigit({ value }: { value: string }) {
 /** Small glowing analog dial — hour/minute hands driven by the same clock,
  * a thin second hand for a bit of continuous motion. */
 function AnalogDial({ now }: { now: Date }) {
-  const hours = now.getHours() % 12;
-  const minutes = now.getMinutes();
-  const seconds = now.getSeconds();
+  // `now` is hostelNow()-shifted (see the component below) — its UTC fields
+  // read as hostel-local wall time, so every extraction here uses getUTC*,
+  // never the browser's own local getters.
+  const hours = now.getUTCHours() % 12;
+  const minutes = now.getUTCMinutes();
+  const seconds = now.getUTCSeconds();
   const hourAngle = (hours + minutes / 60) * 30;
   const minuteAngle = (minutes + seconds / 60) * 6;
   const secondAngle = seconds * 6;
@@ -95,23 +101,49 @@ export function StickyFlipClock() {
   // Renders nothing until mounted client-side, so the server-rendered HTML
   // (which has no "now") never mismatches the browser's actual clock.
   const [now, setNow] = useState<Date | null>(null);
+  // A page (e.g. the meals calendar) can announce which date it's showing —
+  // see hooks/useAnnounceClockDate. null when no page has announced one.
+  const selectedIso = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    queueMicrotask(() => setNow(new Date()));
-    const timer = setInterval(() => setNow(new Date()), 1000);
+    // hostelNow(), not new Date() — this clock is a shared, hostel-wide
+    // display, so it shows the hostel's own wall time/date regardless of
+    // which timezone the viewer's device happens to be set to (the same
+    // reasoning `today()`/`hostelNow()` already apply everywhere else that
+    // decides "what day is it" for meal cutoffs/sealing).
+    queueMicrotask(() => setNow(hostelNow()));
+    const timer = setInterval(() => setNow(hostelNow()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   if (!now) return null;
 
-  const hours24 = now.getHours();
+  // hostelNow() shifts the timestamp so its UTC fields read as hostel-local
+  // wall time — every read below uses getUTC*, never the browser's own
+  // local getters (mixing the two would double-apply an offset).
+  const hours24 = now.getUTCHours();
   const hh = String(hours24 % 12 || 12).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
+  const mm = String(now.getUTCMinutes()).padStart(2, "0");
   const ampm = hours24 >= 12 ? "PM" : "AM";
-  const dayName = DAY_NAMES[now.getDay()];
-  const date = String(now.getDate()).padStart(2, "0");
-  const month = MONTH_NAMES[now.getMonth()];
-  const year = now.getFullYear();
+  const dayName = DAY_NAMES[now.getUTCDay()];
+  const date = String(now.getUTCDate()).padStart(2, "0");
+  const month = MONTH_NAMES[now.getUTCMonth()];
+  const year = now.getUTCFullYear();
+  const todayIso = toISODate(now);
+
+  // Only worth showing when it actually differs from today — otherwise the
+  // "today" block on the left already says the same thing.
+  const viewing =
+    selectedIso && selectedIso !== todayIso
+      ? (() => {
+          const d = new Date(`${selectedIso}T00:00:00Z`);
+          return {
+            dayName: DAY_NAMES[d.getUTCDay()].slice(0, 3),
+            date: String(d.getUTCDate()).padStart(2, "0"),
+            month: MONTH_NAMES[d.getUTCMonth()],
+          };
+        })()
+      : null;
 
   return (
     <div
@@ -127,22 +159,25 @@ export function StickyFlipClock() {
             className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
             style={{ color: ACCENT }}
           >
-            {dayName}
+            Today
           </div>
-          <div className="flex items-baseline gap-1">
+          <div className="flex items-baseline gap-px">
             <FlipDigit value={hh[0]} />
             <FlipDigit value={hh[1]} />
-            <span className="text-[22px] font-extrabold leading-none text-white">:</span>
+            <span className="text-[24px] font-black leading-none text-white">:</span>
             <FlipDigit value={mm[0]} />
             <FlipDigit value={mm[1]} />
-            <span className="ml-0.5 text-[10px] font-extrabold text-white/60">{ampm}</span>
+            <span className="ml-1 text-[10px] font-extrabold text-white/60">{ampm}</span>
           </div>
         </div>
 
         <div className="h-9 w-px bg-white/15" />
 
         <div>
-          <div className="text-[20px] font-extrabold leading-none text-white">{date}</div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-[10px] font-extrabold uppercase text-white/60">{dayName.slice(0, 3)}</span>
+            <span className="text-[20px] font-extrabold leading-none text-white">{date}</span>
+          </div>
           <div className="mt-0.5 flex items-baseline gap-1">
             <span className="text-[9px] font-extrabold uppercase tracking-wide" style={{ color: ACCENT }}>
               {month}
@@ -150,6 +185,27 @@ export function StickyFlipClock() {
             <span className="text-[8.5px] font-bold text-white/50">{year}</span>
           </div>
         </div>
+
+        {viewing && (
+          <>
+            <div className="h-9 w-px bg-white/15" />
+            <div>
+              <div
+                className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
+                style={{ color: VIEWING_ACCENT }}
+              >
+                Viewing
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-[10px] font-extrabold uppercase text-white/60">{viewing.dayName}</span>
+                <span className="text-[16px] font-extrabold leading-none text-white">{viewing.date}</span>
+                <span className="text-[9px] font-extrabold uppercase" style={{ color: VIEWING_ACCENT }}>
+                  {viewing.month}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <AnalogDial now={now} />
