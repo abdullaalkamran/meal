@@ -2,6 +2,7 @@ import { FloatingCartButton } from "@/components/store/FloatingCartButton";
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { SideNav } from "./SideNav";
+import { StickyFlipClock } from "./StickyFlipClock";
 import { LoginPromoPopup } from "@/components/student/LoginPromoPopup";
 import { PushNudge } from "@/components/student/PushNudge";
 import type { NavItem } from "./navItems";
@@ -28,6 +29,7 @@ export function AppShell({
         <div className="print:hidden">
           <AppHeader />
         </div>
+        <StickyFlipClock />
         <main className={hasNav ? "px-4 pb-28 md:px-8 md:pb-10 print:p-0" : "px-4 pb-10 md:px-8 print:p-0"}>
           <div className="mx-auto w-full max-w-3xl">{children}</div>
         </main>

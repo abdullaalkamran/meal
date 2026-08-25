@@ -190,6 +190,20 @@
     transform: translateY(-3px);
   }
 }
+/* Sticky flip-clock: each digit snaps down into place, like a split-flap
+   display, whenever its value changes (the digit's React key changes too,
+   so this replays on every tick). */
+@keyframes flipDigit {
+  from {
+    transform: rotateX(90deg);
+    opacity: 0.4;
+  }
+  to {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+}
+
 /* Respect users who ask for less motion: keep the splash, drop the motion. */
 @media (prefers-reduced-motion: reduce) {
   .splash-steam,
@@ -199,6 +213,9 @@
   }
   .splash-steam {
     opacity: 0.5;
+  }
+  .flip-digit {
+    animation: none !important;
   }
 }
 
