@@ -30,6 +30,11 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   async headers() {
+    // Dev-mode React relies on eval() for its debugging overlay (stack
+    // reconstruction, Fast Refresh) — script-src here has no 'unsafe-eval'
+    // on purpose (it's a real hardening measure for the deployed site), so
+    // only send these on `next start`/production, never `next dev`.
+    if (process.env.NODE_ENV !== "production") return [];
     return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
   },
   experimental: {
