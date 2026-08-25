@@ -2992,6 +2992,12 @@ const mealStops: MealStopRepository = {
     return store.data.mealStopRequests.filter((r) => r.hostelId === hostelId);
   },
   async request(req) {
+    // A meal the hostel doesn't offer at all can't be requested on or off —
+    // filter those out first, before the redundancy check below.
+    const offeredMeals = req.meals.filter((m) => isMealOffered(req.hostelId, m));
+    if (offeredMeals.length === 0) {
+      throw new Error("This hostel doesn't offer that meal.");
+    }
     // Requesting a direction the meal is already in wouldn't change
     // anything — filter those out, and reject outright if nothing would
     // actually change.
@@ -2999,7 +3005,7 @@ const mealStops: MealStopRepository = {
     const entry = store.data.mealDays.find((d) => d.hostelId === req.hostelId && d.date === req.dateFrom)?.entries[
       req.userId
     ];
-    const meals = req.meals.filter((m) => (entry?.[m]?.on ?? true) !== req.desiredOn);
+    const meals = offeredMeals.filter((m) => (entry?.[m]?.on ?? true) !== req.desiredOn);
     if (meals.length === 0) {
       throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
     }

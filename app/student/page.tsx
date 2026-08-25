@@ -98,6 +98,23 @@ export default function StudentHomePage() {
   });
 
   const myEntry = user && day?.entries[user.id];
+  // Passed to the meal-request sheet below so it can't offer a meal the
+  // hostel doesn't cook at all, or a direction that's already the current
+  // state — same guards the meals page's own sheet gets.
+  const offeredTodayByMeal = (["breakfast", "lunch", "dinner"] as MealSlot[]).reduce<Partial<Record<MealSlot, boolean>>>(
+    (acc, meal) => {
+      acc[meal] = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
+      return acc;
+    },
+    {}
+  );
+  const currentOnTodayByMeal = (["breakfast", "lunch", "dinner"] as MealSlot[]).reduce<Partial<Record<MealSlot, boolean>>>(
+    (acc, meal) => {
+      acc[meal] = !!offeredTodayByMeal[meal] && (myEntry?.[meal]?.on ?? (user?.futureMealsOff?.[meal] ? false : true));
+      return acc;
+    },
+    {}
+  );
   // How many are eating each meal today, hostel-wide — same on/off resolution
   // as the manager's roster (MealsScreen), so it always matches what a
   // manager sees when deciding how much to cook.
@@ -352,7 +369,15 @@ export default function StudentHomePage() {
         </Link>
       )}
 
-      <MealRequestSheet open={sheet === "stop"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
+      <MealRequestSheet
+        open={sheet === "stop"}
+        onClose={() => setSheet(null)}
+        hostelId={activeHostelId}
+        userId={user?.id}
+        date={today()}
+        currentOn={currentOnTodayByMeal}
+        offered={offeredTodayByMeal}
+      />
       <GuestMealSheet open={sheet === "guest"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <LeaveRequestSheet open={sheet === "leave"} onClose={() => setSheet(null)} hostelId={activeHostelId} userId={user?.id} />
       <NotificationPrefsSheet open={prefsOpen} onClose={() => setPrefsOpen(false)} user={user} />

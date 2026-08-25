@@ -454,6 +454,13 @@ export const mealStops: MealStopRepository = {
 
   async request(req) {
     await transaction(async (tx) => {
+      // A meal the hostel doesn't offer at all can't be requested on or
+      // off — filter those out first, before the redundancy check below.
+      const offered = await offeredOnDay(req.hostelId, req.dateFrom, tx);
+      const offeredMeals = (req.meals ?? []).filter((m) => offered[m]);
+      if (offeredMeals.length === 0) {
+        throw new Error("This hostel doesn't offer that meal.");
+      }
       // Requesting a direction the meal is already in wouldn't change
       // anything — filter those out, and reject outright if nothing would
       // actually change.
@@ -464,7 +471,7 @@ export const mealStops: MealStopRepository = {
         tx
       );
       const onByMeal = new Map(current.map((r) => [r.meal, toBool(r.is_on)]));
-      const meals = (req.meals ?? []).filter((m) => onByMeal.get(m) !== req.desiredOn);
+      const meals = offeredMeals.filter((m) => onByMeal.get(m) !== req.desiredOn);
       if (meals.length === 0) {
         throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
       }

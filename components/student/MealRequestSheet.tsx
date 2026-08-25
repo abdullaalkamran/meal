@@ -30,6 +30,7 @@ export function MealRequestSheet({
   defaultOn = false,
   defaultMeals,
   currentOn,
+  offered,
 }: {
   open: boolean;
   onClose: () => void;
@@ -42,24 +43,31 @@ export function MealRequestSheet({
    * already in the direction being requested is redundant and can't be
    * selected (turning "on" something that's already on does nothing). */
   currentOn?: Partial<Record<MealSlot, boolean>>;
+  /** Whether the hostel offers each meal at all — a meal it never cooks
+   * can't be requested on or off either. Missing/true = offered. */
+  offered?: Partial<Record<MealSlot, boolean>>;
 }) {
   const { toast } = useToast();
   const forDay = date ?? today();
   const [desiredOn, setDesiredOn] = useState(defaultOn);
   const [meals, setMeals] = useState<MealSlot[]>(defaultMeals ?? ["lunch", "dinner"]);
   const [reason, setReason] = useState("");
+  const isOffered = (meal: MealSlot) => offered?.[meal] ?? true;
   const isRedundant = (meal: MealSlot) => currentOn?.[meal] === desiredOn;
+  const isSelectable = (meal: MealSlot) => isOffered(meal) && !isRedundant(meal);
 
   // Re-seed from the caller's presets each time the sheet opens, dropping any
-  // preset meal that's already in the requested direction.
+  // preset meal that's already in the requested direction or not offered.
   useEffect(() => {
     if (!open) return;
     queueMicrotask(() => {
       setDesiredOn(defaultOn);
-      setMeals((defaultMeals ?? ["lunch", "dinner"]).filter((m) => currentOn?.[m] !== defaultOn));
+      setMeals(
+        (defaultMeals ?? ["lunch", "dinner"]).filter((m) => (offered?.[m] ?? true) && currentOn?.[m] !== defaultOn)
+      );
       setReason("");
     });
-  }, [open, defaultOn, defaultMeals, currentOn]);
+  }, [open, defaultOn, defaultMeals, currentOn, offered]);
 
   // Flipping the requested direction can turn a selected meal redundant —
   // drop it rather than let it sit selected but useless.
@@ -69,11 +77,11 @@ export function MealRequestSheet({
   };
 
   const toggleMeal = (meal: MealSlot) => {
-    if (isRedundant(meal)) return;
+    if (!isSelectable(meal)) return;
     setMeals((prev) => (prev.includes(meal) ? prev.filter((m) => m !== meal) : [...prev, meal]));
   };
 
-  const changingMeals = meals.filter((m) => currentOn?.[m] !== desiredOn);
+  const changingMeals = meals.filter((m) => isOffered(m) && currentOn?.[m] !== desiredOn);
 
   const submit = async () => {
     if (!hostelId || !userId || changingMeals.length === 0) return;
@@ -111,18 +119,26 @@ export function MealRequestSheet({
       </div>
       <div className="mb-4 flex flex-wrap gap-2">
         {MEALS.map((meal) => {
-          const redundant = isRedundant(meal);
+          const notOffered = !isOffered(meal);
+          const redundant = !notOffered && isRedundant(meal);
+          const disabled = notOffered || redundant;
           return (
             <button
               key={meal}
               type="button"
               onClick={() => toggleMeal(meal)}
-              disabled={redundant}
-              className={redundant ? "cursor-not-allowed opacity-40" : undefined}
+              disabled={disabled}
+              className={disabled ? "cursor-not-allowed opacity-40" : undefined}
             >
               <Chip tone="primary" active={meals.includes(meal)}>
                 {MEAL_LABEL[meal]}{" "}
-                {redundant ? `(already ${desiredOn ? "on" : "off"})` : meals.includes(meal) ? "✓" : ""}
+                {notOffered
+                  ? "(not offered)"
+                  : redundant
+                    ? `(already ${desiredOn ? "on" : "off"})`
+                    : meals.includes(meal)
+                      ? "✓"
+                      : ""}
               </Chip>
             </button>
           );

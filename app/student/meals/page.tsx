@@ -102,6 +102,16 @@ export default function StudentMealsPage() {
     },
     {}
   );
+  // Whether the hostel offers each meal at all — a meal the hostel never
+  // cooks can't be requested on or off, so the sheet needs to know this too
+  // (not just the redundancy check above).
+  const offeredByMeal = (["breakfast", "lunch", "dinner"] as MealSlot[]).reduce<Partial<Record<MealSlot, boolean>>>(
+    (acc, meal) => {
+      acc[meal] = (day?.mealsOffered ?? hostel?.settings.mealsOffered)?.[meal] ?? true;
+      return acc;
+    },
+    {}
+  );
 
   // Is THIS member's whole day off? Used to colour-fill the calendar so they
   // can see which days their meals are stopped (and from when). A sealed/
@@ -984,6 +994,7 @@ export default function StudentMealsPage() {
         defaultOn={reqSheet?.on ?? false}
         defaultMeals={reqSheet?.meals}
         currentOn={currentOnByMeal}
+        offered={offeredByMeal}
       />
     </div>
   );
