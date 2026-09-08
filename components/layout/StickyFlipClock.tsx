@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { hostelNow, toISODate } from "@/lib/utils/date";
+import { hostelNow, parseHHMM, toISODate } from "@/lib/utils/date";
+import { DEFAULT_MEAL_CUTOFF } from "@/lib/utils/mealPolicy";
 import { subscribe, getSnapshot, getServerSnapshot } from "@/lib/clock/selectedDate";
+import { useSession } from "@/lib/auth/SessionProvider";
 
 const DAY_NAMES = [
   "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
@@ -15,6 +17,7 @@ const MONTH_NAMES = [
 
 const ACCENT = "#a78bfa"; // violet — day name / month, matching the dial's hue
 const VIEWING_ACCENT = "#2dd4bf"; // teal — the announced "selected date" block
+const CUTOFF_ACCENT = "#fb923c"; // amber — the countdown, distinct from the date blocks
 const HAND_BLUE = "#60a5fa";
 const HAND_VIOLET = "#a78bfa";
 
@@ -104,6 +107,7 @@ export function StickyFlipClock() {
   // A page (e.g. the meals calendar) can announce which date it's showing —
   // see hooks/useAnnounceClockDate. null when no page has announced one.
   const selectedIso = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { hostel } = useSession();
 
   useEffect(() => {
     // hostelNow(), not new Date() — this clock is a shared, hostel-wide
@@ -121,15 +125,22 @@ export function StickyFlipClock() {
   // hostelNow() shifts the timestamp so its UTC fields read as hostel-local
   // wall time — every read below uses getUTC*, never the browser's own
   // local getters (mixing the two would double-apply an offset).
-  const hours24 = now.getUTCHours();
-  const hh = String(hours24 % 12 || 12).padStart(2, "0");
-  const mm = String(now.getUTCMinutes()).padStart(2, "0");
-  const ampm = hours24 >= 12 ? "PM" : "AM";
   const dayName = DAY_NAMES[now.getUTCDay()];
   const date = String(now.getUTCDate()).padStart(2, "0");
   const month = MONTH_NAMES[now.getUTCMonth()];
   const year = now.getUTCFullYear();
   const todayIso = toISODate(now);
+
+  // Countdown to the meal-toggle cutoff — a daily 22:00-ish deadline (the
+  // hostel's own setting, falling back to the app-wide default), always
+  // counting to its NEXT occurrence: today's if it hasn't passed yet,
+  // otherwise tomorrow's (so this never sits frozen at zero for hours).
+  const cutoffMinutes = parseHHMM(hostel?.settings.mealToggleCutoff, parseHHMM(DEFAULT_MEAL_CUTOFF, 22 * 60));
+  const nowSeconds = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+  const secondsUntilCutoff = ((cutoffMinutes * 60 - nowSeconds) % 86400 + 86400) % 86400;
+  const ch = String(Math.floor(secondsUntilCutoff / 3600)).padStart(2, "0");
+  const cm = String(Math.floor((secondsUntilCutoff % 3600) / 60)).padStart(2, "0");
+  const cs = String(secondsUntilCutoff % 60).padStart(2, "0");
 
   // Only worth showing when it actually differs from today — otherwise the
   // "today" block on the left already says the same thing.
@@ -157,29 +168,35 @@ export function StickyFlipClock() {
         <div>
           <div
             className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
-            style={{ color: ACCENT }}
+            style={{ color: CUTOFF_ACCENT }}
           >
-            Today
+            Cutoff in
           </div>
           <div className="flex items-baseline gap-px">
-            <FlipDigit value={hh[0]} />
-            <FlipDigit value={hh[1]} />
+            <FlipDigit value={ch[0]} />
+            <FlipDigit value={ch[1]} />
             <span className="text-[24px] font-black leading-none text-white">:</span>
-            <FlipDigit value={mm[0]} />
-            <FlipDigit value={mm[1]} />
-            <span className="ml-1 text-[10px] font-extrabold text-white/60">{ampm}</span>
+            <FlipDigit value={cm[0]} />
+            <FlipDigit value={cm[1]} />
+            <span className="text-[24px] font-black leading-none text-white">:</span>
+            <FlipDigit value={cs[0]} />
+            <FlipDigit value={cs[1]} />
           </div>
         </div>
 
         <div className="h-9 w-px bg-white/15" />
 
         <div>
+          <div
+            className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
+            style={{ color: ACCENT }}
+          >
+            Today
+          </div>
           <div className="flex items-baseline gap-1">
             <span className="text-[10px] font-extrabold uppercase text-white/60">{dayName.slice(0, 3)}</span>
             <span className="text-[20px] font-extrabold leading-none text-white">{date}</span>
-          </div>
-          <div className="mt-0.5 flex items-baseline gap-1">
-            <span className="text-[9px] font-extrabold uppercase tracking-wide" style={{ color: ACCENT }}>
+            <span className="text-[9px] font-extrabold uppercase" style={{ color: ACCENT }}>
               {month}
             </span>
             <span className="text-[8.5px] font-bold text-white/50">{year}</span>
