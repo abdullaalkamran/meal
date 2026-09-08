@@ -547,19 +547,22 @@ export const mealStops: MealStopRepository = {
       let day = toDay(req.date_from);
       const last = toDay(req.date_to);
       while (day <= last) {
-        // Past days are history and are never rewritten by an approval.
-        if (day >= today()) {
-          await ensureEntries(req.hostel_id, day, req.user_id, tx);
-          const offered = await offeredOnDay(req.hostel_id, day, tx);
-          for (const slot of slots) {
-            // Can't switch on a slot the day never offered.
-            if (wantOn && !offered[slot]) continue;
-            await run(
-              "UPDATE meal_entries SET is_on = ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
-              [wantOn ? 1 : 0, req.hostel_id, day, req.user_id, slot],
-              tx
-            );
-          }
+        // A past date is exactly why this went through the request/approval
+        // flow instead of a direct toggle in the first place (a member can't
+        // change today or an earlier day themselves — canToggleMeal tells
+        // them to "ask the manager to correct it"), so an approval must
+        // still apply here, not silently no-op. Mirrors the mock backend,
+        // which never gated this on the date either.
+        await ensureEntries(req.hostel_id, day, req.user_id, tx);
+        const offered = await offeredOnDay(req.hostel_id, day, tx);
+        for (const slot of slots) {
+          // Can't switch on a slot the day never offered.
+          if (wantOn && !offered[slot]) continue;
+          await run(
+            "UPDATE meal_entries SET is_on = ? WHERE hostel_id = ? AND day = ? AND user_id = ? AND meal = ?",
+            [wantOn ? 1 : 0, req.hostel_id, day, req.user_id, slot],
+            tx
+          );
         }
         day = addDays(day, 1);
       }
