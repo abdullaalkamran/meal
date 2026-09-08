@@ -786,6 +786,7 @@ function ManagerFinancePage() {
         open={shoppingCostSheetOpen}
         onClose={() => setShoppingCostSheetOpen(false)}
         hostelId={activeHostelId}
+        month={monthStr}
       />
       <EditShoppingCostSheet
         open={!!editCost}
