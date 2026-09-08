@@ -1639,6 +1639,44 @@ const shoppingCosts: ShoppingCostRepository = {
     );
     store.emit(`shoppingCosts:${cost.hostelId}`);
   },
+  async delete(id, reason) {
+    const idx = store.data.shoppingCosts.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const cost = store.data.shoppingCosts[idx];
+    store.data.shoppingCosts.splice(idx, 1);
+    // A pending edit proposal on a now-deleted cost has nothing left to apply
+    // to — drop it and its votes along with the cost.
+    const orphanedRequestIds = new Set(
+      store.data.shoppingCostEditRequests.filter((r) => r.costId === id).map((r) => r.id)
+    );
+    store.data.shoppingCostEditRequests = store.data.shoppingCostEditRequests.filter(
+      (r) => r.costId !== id
+    );
+    store.data.shoppingCostEditVotes = store.data.shoppingCostEditVotes.filter(
+      (v) => !orphanedRequestIds.has(v.requestId)
+    );
+
+    const member = store.data.users.find((u) => u.id === cost.userId);
+    const actorId = actingUser?.id;
+    const actorName = actingUser?.name ?? "The manager";
+    for (const m of store.data.users) {
+      if (m.hostelId === cost.hostelId && !m.banned && isHostelMember(m.role) && m.id !== actorId) {
+        notifyUser(
+          m.id,
+          "Shopping cost deleted",
+          `${actorName} deleted a ৳${cost.amount} shopping cost recorded for ${member?.name ?? "a member"}. Reason: ${reason}`
+        );
+      }
+    }
+    logActivity(
+      cost.hostelId,
+      "Shopping cost deleted",
+      `৳${cost.amount} · ${member?.name ?? "member"} · ${reason}`,
+      "shopping"
+    );
+    store.emit(`shoppingCosts:${cost.hostelId}`);
+    store.emit(`shoppingCostEdits:${cost.hostelId}`);
+  },
 };
 
 const shoppingCostEdits: ShoppingCostEditRepository = {

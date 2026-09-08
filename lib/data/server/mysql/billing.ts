@@ -27,7 +27,7 @@ import type {
 import { currentMonth, formatMonthLabel, formatShortDate, monthRange } from "../../../utils/date";
 import { isServiceChargeCategory } from "../../../utils/expenseCategories";
 import { all, fromIso, one, run, toBool, toDay, toIso, transaction, type Queryable } from "./connection";
-import { logActivity, notify, notifyHostelStaff } from "./context";
+import { currentActor, logActivity, notify, notifyHostelStaff } from "./context";
 import { newId } from "./ids";
 
 const serverOnly = (): never => {
@@ -222,6 +222,45 @@ export const shoppingCosts: ShoppingCostRepository = {
         row.hostel_id,
         status === "approved" ? "Shopping cost approved" : "Shopping cost denied",
         `৳${Number(row.amount)} · ${m?.name ?? "member"}`,
+        tx,
+        "shopping"
+      );
+    });
+  },
+
+  async delete(id, reason) {
+    await transaction(async (tx) => {
+      const row = await one<{ hostel_id: string; amount: number; user_id: string }>(
+        "SELECT hostel_id, amount, user_id FROM shopping_costs WHERE id = ?",
+        [id],
+        tx
+      );
+      if (!row) return;
+      // Cascades to shopping_cost_dates and any shopping_cost_edit_requests
+      // (and their votes) — nothing left to apply a pending edit vote to.
+      await run("DELETE FROM shopping_costs WHERE id = ?", [id], tx);
+
+      const m = await one<{ name: string }>("SELECT name FROM users WHERE id = ?", [row.user_id], tx);
+      const actor = currentActor();
+      const members = await all<{ id: string }>(
+        "SELECT id FROM users WHERE hostel_id = ? AND banned = 0 AND role IN ('student','manager','cook')",
+        [row.hostel_id],
+        tx
+      );
+      for (const mem of members) {
+        if (mem.id !== actor?.id) {
+          await notify(
+            mem.id,
+            "Shopping cost deleted",
+            `${actor?.name ?? "The manager"} deleted a ৳${Number(row.amount)} shopping cost recorded for ${m?.name ?? "a member"}. Reason: ${reason}`,
+            tx
+          );
+        }
+      }
+      await logActivity(
+        row.hostel_id,
+        "Shopping cost deleted",
+        `৳${Number(row.amount)} · ${m?.name ?? "member"} · ${reason}`,
         tx,
         "shopping"
       );

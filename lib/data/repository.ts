@@ -326,6 +326,11 @@ export interface ShoppingCostRepository {
   recordForMember(cost: Omit<ShoppingCost, "id" | "createdAt" | "status" | "addedByManager">): Promise<void>;
   /** Manager approve/deny — only 'approved' spend counts toward the actual meal rate. */
   decide(id: string, status: "approved" | "denied"): Promise<void>;
+  /** Manager deletes a recorded cost outright (a duplicate, wrong member, or
+   * other mistake) — takes effect immediately, no vote. Every boarder is
+   * notified with the given reason and it's logged to the shopping activity
+   * feed. */
+  delete(id: string, reason: string): Promise<void>;
 }
 
 export interface ShoppingCostEditRepository {

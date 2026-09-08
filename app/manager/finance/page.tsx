@@ -31,6 +31,7 @@ import { MonthNav } from "@/components/ui/MonthNav";
 import { AddExpenseSheet } from "@/components/manager/AddExpenseSheet";
 import { RecordShoppingCostSheet } from "@/components/manager/RecordShoppingCostSheet";
 import { EditShoppingCostSheet } from "@/components/manager/EditShoppingCostSheet";
+import { DeleteShoppingCostSheet } from "@/components/manager/DeleteShoppingCostSheet";
 import { GenerateBillsSheet } from "@/components/manager/GenerateBillsSheet";
 import { BillingInstructionsSheet } from "@/components/manager/BillingInstructionsSheet";
 import { BillHistorySheet } from "@/components/hostel/BillHistorySheet";
@@ -97,6 +98,7 @@ function ManagerFinancePage() {
   const [shoppingCostSheetOpen, setShoppingCostSheetOpen] = useState(false);
   const [shoppingCosts, setShoppingCosts] = useState<ShoppingCost[]>([]);
   const [editCost, setEditCost] = useState<ShoppingCost | null>(null);
+  const [deleteCost, setDeleteCost] = useState<ShoppingCost | null>(null);
   const [formerBills, setFormerBills] = useState<Record<string, Bill>>({});
   const [settleFormer, setSettleFormer] = useState<{ bill: Bill; name: string } | null>(null);
   const [payFormer, setPayFormer] = useState<Bill | null>(null);
@@ -620,13 +622,22 @@ function ManagerFinancePage() {
                           Withdraw
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setEditCost(c)}
-                          className="text-[10px] font-extrabold text-primary"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditCost(c)}
+                            className="text-[10px] font-extrabold text-primary"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteCost(c)}
+                            className="text-[10px] font-extrabold text-danger"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       )}
                     </div>
                   </Card>
@@ -795,6 +806,12 @@ function ManagerFinancePage() {
         requestedBy={user?.id}
         cost={editCost ?? undefined}
         memberName={editCost ? nameOf(editCost.userId) : ""}
+      />
+      <DeleteShoppingCostSheet
+        open={!!deleteCost}
+        onClose={() => setDeleteCost(null)}
+        cost={deleteCost ?? undefined}
+        memberName={deleteCost ? nameOf(deleteCost.userId) : ""}
       />
       <GenerateBillsSheet
         open={generateSheetOpen}

@@ -99,7 +99,7 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   leaveRequests: { decide: HOSTEL_STAFF },
   mealStops: { decide: HOSTEL_STAFF },
   guestMeals: { decide: HOSTEL_STAFF },
-  shoppingCosts: { decide: HOSTEL_STAFF, recordForMember: HOSTEL_STAFF },
+  shoppingCosts: { decide: HOSTEL_STAFF, recordForMember: HOSTEL_STAFF, delete: HOSTEL_STAFF },
   // Manager requests the change; voting/withdrawing stays open to members.
   shoppingCostEdits: { request: HOSTEL_STAFF },
   // markCooked/confirmAbsent are the gate that decides whether a slot counts
