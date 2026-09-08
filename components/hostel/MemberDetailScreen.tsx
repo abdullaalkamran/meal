@@ -50,8 +50,16 @@ const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof S
 /** One member's full profile (meals, bill, payments, duties, conduct rating,
  * ban/remove actions), shared by the manager route and the owner's native
  * members route — `listHref` is where the back button (and post-remove
- * redirect) goes. Reads the member id from the route's `[id]` param. */
-export function MemberDetailScreen({ listHref }: { listHref: string }) {
+ * redirect) goes. Reads the member id from the route's `[id]` param.
+ * `showFutureMeals` is manager-only day-to-day member management — the
+ * owner's page doesn't offer it. */
+export function MemberDetailScreen({
+  listHref,
+  showFutureMeals = true,
+}: {
+  listHref: string;
+  showFutureMeals?: boolean;
+}) {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { user, hostel, activeHostelId } = useSession();
@@ -256,34 +264,37 @@ export function MemberDetailScreen({ listHref }: { listHref: string }) {
         </div>
       </div>
 
-      {/* Future meals — standing per-slot default for days not yet decided */}
-      <Card>
-        <div className="mb-1 text-[12.5px] font-extrabold">Future meals</div>
-        <div className="mb-3 text-[10px] font-semibold text-text-secondary">
-          Off means every future day starts off for that meal until {member.name.split(" ")[0]} (or you) turns
-          a specific day back on.
-        </div>
-        <div className="flex flex-col divide-y divide-border">
-          {FUTURE_MEAL_SLOTS.filter((meal) => hostel?.settings.mealsOffered?.[meal] ?? true).map((meal) => {
-            const c = MEAL_COLORS[meal];
-            const off = !!member.futureMealsOff?.[meal];
-            return (
-              <div key={meal} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
-                  <Icon icon={c.icon} size={16} className={c.text} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
-                  <div className="truncate text-[9.5px] font-semibold text-text-secondary">
-                    {off ? "Off by default" : "On by default"}
+      {/* Future meals — standing per-slot default for days not yet decided.
+          Manager-only; the owner's page doesn't get this level of control. */}
+      {showFutureMeals && (
+        <Card>
+          <div className="mb-1 text-[12.5px] font-extrabold">Future meals</div>
+          <div className="mb-3 text-[10px] font-semibold text-text-secondary">
+            Off means every future day starts off for that meal until {member.name.split(" ")[0]} (or you) turns
+            a specific day back on.
+          </div>
+          <div className="flex flex-col divide-y divide-border">
+            {FUTURE_MEAL_SLOTS.filter((meal) => hostel?.settings.mealsOffered?.[meal] ?? true).map((meal) => {
+              const c = MEAL_COLORS[meal];
+              const off = !!member.futureMealsOff?.[meal];
+              return (
+                <div key={meal} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
+                    <Icon icon={c.icon} size={16} className={c.text} />
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                    <div className="truncate text-[9.5px] font-semibold text-text-secondary">
+                      {off ? "Off by default" : "On by default"}
+                    </div>
+                  </div>
+                  <Switch checked={!off} onChange={(v) => toggleMemberFutureMeal(meal, !v)} />
                 </div>
-                <Switch checked={!off} onChange={(v) => toggleMemberFutureMeal(meal, !v)} />
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Bill breakdown */}
       <div>

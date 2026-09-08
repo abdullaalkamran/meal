@@ -1280,8 +1280,22 @@ const meals: MealRepository = {
     const cutoff = store.data.hostels.find((h) => h.id === hostelId)?.settings.mealToggleCutoff;
     const tomorrow = addDays(today(), 1);
     const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
+    // A day the manager already approved an explicit on/off request for is a
+    // decided exception, not a "still following the default" day — the
+    // blanket future-default must never silently overwrite it back.
+    const hasApprovedOverride = (date: string) =>
+      store.data.mealStopRequests.some(
+        (r) =>
+          r.hostelId === hostelId &&
+          r.userId === userId &&
+          r.status === "approved" &&
+          r.meals.includes(meal) &&
+          r.dateFrom <= date &&
+          date <= r.dateTo
+      );
     store.data.mealDays = store.data.mealDays.map((d) => {
       if (d.hostelId !== hostelId || d.date < fromDay || !d.entries[userId]) return d;
+      if (hasApprovedOverride(d.date)) return d;
       const e = d.entries[userId];
       const offered = d.mealsOffered?.[meal] ?? isMealOffered(hostelId, meal);
       return {

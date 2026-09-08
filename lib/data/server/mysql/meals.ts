@@ -570,12 +570,23 @@ export const meals: MealRepository = {
       const cutoff = cutoffRow?.meal_toggle_cutoff?.slice(0, 5);
       const tomorrow = addDays(today(), 1);
       const fromDay = canToggleMeal(tomorrow, cutoff).allowed ? tomorrow : addDays(today(), 2);
+      // A day the manager already approved an explicit on/off request for is
+      // a decided exception, not a "still following the default" day — the
+      // blanket future-default must never silently overwrite it back.
+      const noApprovedOverride = `NOT EXISTS (
+        SELECT 1 FROM meal_stop_requests r
+          JOIN meal_stop_meals m ON m.request_id = r.id
+         WHERE r.hostel_id = e.hostel_id AND r.user_id = e.user_id AND r.status = 'approved'
+           AND m.meal = e.meal AND e.day BETWEEN r.date_from AND r.date_to
+      )`;
       if (off) {
         // Turning future meals off also cancels any guest meals already
         // booked on those days — a member with no meal of their own has no
         // one there to cover a guest either.
         await run(
-          "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND user_id = ? AND day >= ? AND meal = ?",
+          `UPDATE meal_entries e
+              SET e.is_on = 0, e.guest_count = 0
+            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.meal = ? AND ${noApprovedOverride}`,
           [hostelId, userId, fromDay, meal],
           tx
         );
@@ -589,7 +600,7 @@ export const meals: MealRepository = {
                               WHEN 'breakfast' THEN d.offers_breakfast
                               WHEN 'lunch' THEN d.offers_lunch
                               ELSE d.offers_dinner END
-            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.meal = ?`,
+            WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.meal = ? AND ${noApprovedOverride}`,
           [hostelId, userId, fromDay, meal],
           tx
         );

@@ -5,7 +5,7 @@ import { MemberDetailScreen } from "@/components/hostel/MemberDetailScreen";
 export default function OwnerMemberProfilePage() {
   return (
     <div className="pt-2">
-      <MemberDetailScreen listHref="/owner/members" />
+      <MemberDetailScreen listHref="/owner/members" showFutureMeals={false} />
     </div>
   );
 }
