@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
+import { MonthNav } from "@/components/ui/MonthNav";
 import { useToast } from "@/components/ui/Toast";
 import { useUsers } from "@/hooks/useUsers";
 import { repo } from "@/lib/data";
@@ -135,12 +136,9 @@ export function RecordShoppingCostSheet({
       </div>
 
       <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">MONTH</div>
-      <input
-        type="month"
-        value={monthOf(date)}
-        onChange={(e) => e.target.value && setDate(withMonth(date, e.target.value))}
-        className="mb-1 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-      />
+      <div className="mb-1">
+        <MonthNav value={monthOf(date)} onChange={(m) => setDate(withMonth(date, m))} />
+      </div>
       <div className="mb-4 text-[10px] font-semibold text-text-secondary">
         Which month this cost counts toward — pick a previous month to backdate a bill that arrived late.
       </div>

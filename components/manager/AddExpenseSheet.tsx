@@ -4,14 +4,19 @@ import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
+import { MonthNav } from "@/components/ui/MonthNav";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useToast } from "@/components/ui/Toast";
 import { useUsers } from "@/hooks/useUsers";
 import { repo } from "@/lib/data";
-import { today } from "@/lib/utils/date";
+import { addMonths, currentMonth, today } from "@/lib/utils/date";
 import { EXPENSE_CATEGORIES } from "@/lib/utils/expenseCategories";
 
 const CATEGORIES = EXPENSE_CATEGORIES;
+// A bill that "arrived late" still needs somewhere to land, so unlike other
+// month pickers in Finance this allows future months too — capped generously
+// rather than left unbounded.
+const MAX_BILLING_MONTH = addMonths(currentMonth(), 24);
 
 export function AddExpenseSheet({
   open,
@@ -105,12 +110,9 @@ export function AddExpenseSheet({
       </div>
 
       <div className="mb-2 text-[10.5px] font-extrabold text-text-secondary">BILL IN MONTH</div>
-      <input
-        type="month"
-        value={billingMonth}
-        onChange={(e) => setBillingMonth(e.target.value)}
-        className="mb-1 w-full rounded-btn border border-border bg-transparent px-3 py-2.5 text-[12px] font-bold"
-      />
+      <div className="mb-1">
+        <MonthNav value={billingMonth} onChange={setBillingMonth} maxMonth={MAX_BILLING_MONTH} />
+      </div>
       <div className="mb-4 text-[10px] font-semibold text-text-secondary">
         This is the month this expense shows up on the finance page and gets charged in — pick a later
         month if the bill arrived late.
