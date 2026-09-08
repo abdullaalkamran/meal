@@ -312,12 +312,19 @@ function actualMealRateFor(hostelId: string, month: string) {
 
 function ensureMealEntry(day: MealDay, userId: string) {
   if (!day.entries[userId]) {
-    // New entries default on only for slots the hostel actually offers —
-    // a closed slot never silently accrues meals.
+    // New entries default on only for slots the hostel actually offers AND
+    // the member hasn't turned off by default — the same rule sealMockDays
+    // already applies to dates up to today. Without matching it here too,
+    // materialising an entry for a genuinely FUTURE date (sealing never
+    // touches those) via a request/approval/guest-meal would silently
+    // ignore the member's own "future meals off" choice and default every
+    // untouched slot back to on.
+    const user = store.data.users.find((u) => u.id === userId);
+    const on = (meal: MealSlot) => isMealOffered(day.hostelId, meal) && !user?.futureMealsOff?.[meal];
     day.entries[userId] = {
-      breakfast: { on: isMealOffered(day.hostelId, "breakfast"), guestCount: 0 },
-      lunch: { on: isMealOffered(day.hostelId, "lunch"), guestCount: 0 },
-      dinner: { on: isMealOffered(day.hostelId, "dinner"), guestCount: 0 },
+      breakfast: { on: on("breakfast"), guestCount: 0 },
+      lunch: { on: on("lunch"), guestCount: 0 },
+      dinner: { on: on("dinner"), guestCount: 0 },
     };
   }
   return day.entries[userId];
@@ -3019,7 +3026,14 @@ const mealStops: MealStopRepository = {
     const entry = store.data.mealDays.find((d) => d.hostelId === req.hostelId && d.date === req.dateFrom)?.entries[
       req.userId
     ];
-    const meals = offeredMeals.filter((m) => (entry?.[m]?.on ?? true) !== req.desiredOn);
+    // A future date sealing never touched has no entry yet — the meal's
+    // real "current on" then comes from the member's own future-off choice,
+    // same as the UI computes it, NOT a blind "assume on" default (which
+    // would wrongly call a genuine "turn on" request redundant whenever the
+    // member's future meals are off by default, silently dropping it).
+    const requester = store.data.users.find((u) => u.id === req.userId);
+    const defaultOn = (meal: MealSlot) => !requester?.futureMealsOff?.[meal];
+    const meals = offeredMeals.filter((m) => (entry?.[m]?.on ?? defaultOn(m)) !== req.desiredOn);
     if (meals.length === 0) {
       throw new Error(req.desiredOn ? "Those meals are already on." : "Those meals are already off.");
     }

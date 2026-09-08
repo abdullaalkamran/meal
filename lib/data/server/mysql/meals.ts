@@ -120,14 +120,30 @@ async function ensureMealDay(hostelId: string, day: string, on: Queryable): Prom
 }
 
 /** Materialises one member's three slots for a day, defaulting to THAT DAY's
- * offer (never the hostel's current setting, for a day already pinned). */
+ * offer (never the hostel's current setting, for a day already pinned) AND
+ * the member's own "future meals off" choice per slot — the same rule
+ * sealDays already applies for dates up to today. Without matching it here
+ * too, materialising an entry for a genuinely FUTURE date (sealing never
+ * touches those) via a request/approval/guest-meal would silently ignore
+ * the member's future-off choice and default every untouched slot to on. */
 export async function ensureEntries(hostelId: string, day: string, userId: string, on: Queryable): Promise<void> {
   await ensureMealDay(hostelId, day, on);
   const offered = await offeredOnDay(hostelId, day, on);
+  const futureOff = await one<{ future_breakfast_off: number; future_lunch_off: number; future_dinner_off: number }>(
+    "SELECT future_breakfast_off, future_lunch_off, future_dinner_off FROM users WHERE id = ?",
+    [userId],
+    on
+  );
+  const FUTURE_OFF_COL: Record<MealSlot, keyof NonNullable<typeof futureOff>> = {
+    breakfast: "future_breakfast_off",
+    lunch: "future_lunch_off",
+    dinner: "future_dinner_off",
+  };
   for (const slot of MEALS) {
+    const isOn = offered[slot] && !futureOff?.[FUTURE_OFF_COL[slot]];
     await run(
       "INSERT IGNORE INTO meal_entries (hostel_id, day, user_id, meal, is_on, guest_count) VALUES (?, ?, ?, ?, ?, 0)",
-      [hostelId, day, userId, slot, offered[slot] ? 1 : 0],
+      [hostelId, day, userId, slot, isOn ? 1 : 0],
       on
     );
   }
