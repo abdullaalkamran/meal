@@ -37,7 +37,7 @@ function FlipDigit({ value }: { value: string }) {
 
 /** Small glowing analog dial — hour/minute hands driven by the same clock,
  * a thin second hand for a bit of continuous motion. */
-function AnalogDial({ now }: { now: Date }) {
+function AnalogDial({ now, className }: { now: Date; className?: string }) {
   // `now` is hostelNow()-shifted (see the component below) — its UTC fields
   // read as hostel-local wall time, so every extraction here uses getUTC*,
   // never the browser's own local getters.
@@ -56,7 +56,7 @@ function AnalogDial({ now }: { now: Date }) {
   const [sx, sy] = point(secondAngle, 33);
 
   return (
-    <svg width="52" height="52" viewBox="0 0 100 100" className="shrink-0">
+    <svg width="52" height="52" viewBox="0 0 100 100" className={`shrink-0 ${className ?? ""}`}>
       <defs>
         <linearGradient id="dialGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor={HAND_VIOLET} />
@@ -132,11 +132,16 @@ export function StickyFlipClock() {
   const todayIso = toISODate(now);
 
   // Countdown to the meal-toggle cutoff — a daily 22:00-ish deadline (the
-  // hostel's own setting, falling back to the app-wide default), always
-  // counting to its NEXT occurrence: today's if it hasn't passed yet,
-  // otherwise tomorrow's (so this never sits frozen at zero for hours).
+  // hostel's own setting, falling back to the app-wide default). Once it's
+  // passed for today, the number itself stops meaning what it looks like it
+  // means: it silently starts counting toward TOMORROW's cutoff instead
+  // (a fresh ~24h), which reads exactly like "plenty of time left" even
+  // though today's toggle window just closed. So instead of ticking through
+  // that jump unexplained, show a plain "cutoff passed" state for the rest
+  // of the day and only resume the live countdown once a new day begins.
   const cutoffMinutes = parseHHMM(hostel?.settings.mealToggleCutoff, parseHHMM(DEFAULT_MEAL_CUTOFF, 22 * 60));
   const nowSeconds = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+  const cutoffPassed = nowSeconds >= cutoffMinutes * 60;
   const secondsUntilCutoff = ((cutoffMinutes * 60 - nowSeconds) % 86400 + 86400) % 86400;
   const ch = String(Math.floor(secondsUntilCutoff / 3600)).padStart(2, "0");
   const cm = String(Math.floor((secondsUntilCutoff % 3600) / 60)).padStart(2, "0");
@@ -158,35 +163,42 @@ export function StickyFlipClock() {
 
   return (
     <div
-      className="sticky top-0 z-40 flex items-center justify-between gap-4 px-5 py-2.5 shadow-md print:hidden md:px-8"
+      className="sticky top-0 z-40 flex items-center justify-between gap-2 overflow-hidden px-3 py-2.5 shadow-md print:hidden sm:gap-4 md:px-8"
       style={{
         background:
           "radial-gradient(circle at 92% 8%, rgba(139,92,246,0.28), transparent 60%), linear-gradient(135deg, #05060f, #131a3e)",
       }}
     >
-      <div className="flex items-center gap-4">
-        <div>
+      <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] sm:gap-4 [&::-webkit-scrollbar]:hidden">
+        <div className="shrink-0">
           <div
             className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
             style={{ color: CUTOFF_ACCENT }}
           >
-            Cutoff in
+            {cutoffPassed ? "Cutoff" : "Cutoff in"}
           </div>
-          <div className="flex items-baseline gap-px">
-            <FlipDigit value={ch[0]} />
-            <FlipDigit value={ch[1]} />
-            <span className="text-[24px] font-black leading-none text-white">:</span>
-            <FlipDigit value={cm[0]} />
-            <FlipDigit value={cm[1]} />
-            <span className="text-[24px] font-black leading-none text-white">:</span>
-            <FlipDigit value={cs[0]} />
-            <FlipDigit value={cs[1]} />
-          </div>
+          {cutoffPassed ? (
+            <div className="leading-none">
+              <div className="text-[15px] font-extrabold text-white">Passed</div>
+              <div className="mt-0.5 text-[8px] font-bold text-white/50">Reopens tomorrow</div>
+            </div>
+          ) : (
+            <div className="flex items-baseline gap-px">
+              <FlipDigit value={ch[0]} />
+              <FlipDigit value={ch[1]} />
+              <span className="text-[24px] font-black leading-none text-white">:</span>
+              <FlipDigit value={cm[0]} />
+              <FlipDigit value={cm[1]} />
+              <span className="text-[24px] font-black leading-none text-white">:</span>
+              <FlipDigit value={cs[0]} />
+              <FlipDigit value={cs[1]} />
+            </div>
+          )}
         </div>
 
-        <div className="h-9 w-px bg-white/15" />
+        <div className="h-9 w-px shrink-0 bg-white/15" />
 
-        <div>
+        <div className="shrink-0">
           <div
             className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
             style={{ color: ACCENT }}
@@ -199,14 +211,14 @@ export function StickyFlipClock() {
             <span className="text-[9px] font-extrabold uppercase" style={{ color: ACCENT }}>
               {month}
             </span>
-            <span className="text-[8.5px] font-bold text-white/50">{year}</span>
+            <span className="hidden text-[8.5px] font-bold text-white/50 sm:inline">{year}</span>
           </div>
         </div>
 
         {viewing && (
           <>
-            <div className="h-9 w-px bg-white/15" />
-            <div>
+            <div className="h-9 w-px shrink-0 bg-white/15" />
+            <div className="shrink-0">
               <div
                 className="text-[9px] font-extrabold uppercase tracking-[0.15em]"
                 style={{ color: VIEWING_ACCENT }}
@@ -225,7 +237,7 @@ export function StickyFlipClock() {
         )}
       </div>
 
-      <AnalogDial now={now} />
+      <AnalogDial now={now} className="hidden shrink-0 sm:block" />
     </div>
   );
 }
