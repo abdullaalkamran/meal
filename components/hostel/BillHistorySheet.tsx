@@ -89,18 +89,21 @@ export function BillHistorySheet({
                       </div>
                     );
                   })}
-                  {b.previousBalance !== 0 && (
+                  {previousDue !== 0 && (
                     <div className="flex items-center justify-between text-[10.5px] font-semibold">
-                      <div className="text-text-secondary">Previous balance ({formatMonthLabel(previousMonth(b.month))})</div>
-                      <div className={`font-extrabold ${previousDue > 0 ? "text-danger" : previousDue < 0 ? "text-primary" : ""}`}>
-                        {formatBDT(b.previousBalance)}
+                      <div className="text-text-secondary">
+                        {previousDue > 0 ? "Previous balance" : "Previous credit"} (
+                        {formatMonthLabel(previousMonth(b.month))})
+                      </div>
+                      <div className={`font-extrabold ${previousDue > 0 ? "text-danger" : "text-primary"}`}>
+                        {formatBDT(Math.abs(previousDue))}
                       </div>
                     </div>
                   )}
                 </div>
 
                 <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[11px] font-bold">
-                  <div>Total {formatBDT(b.grandTotal)}</div>
+                  <div>Total {formatBDT(Math.abs(b.grandTotal))}</div>
                   <div className="text-text-secondary">Paid {formatBDT(b.paid)}</div>
                 </div>
               </div>

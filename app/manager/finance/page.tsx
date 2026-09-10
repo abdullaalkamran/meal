@@ -419,6 +419,15 @@ function ManagerFinancePage() {
               // full" isn't shown while a specific part of the bill is still owed.
               const anyCategoryDue = previousDue > 0 || b.sections.some((s) => s.total - s.paid > 0);
               const open = expandedUserId === b.userId;
+              // Meal cost is a separate account (members settle it live among
+              // themselves, the hostel keeps no share) from everything owed to
+              // the owner/utilities/cook — split into two totals instead of one
+              // combined number, same as the member's own bill page.
+              const memberMealSection = b.sections.find((s) => s.label === "mealCost");
+              const memberOtherSections = b.sections.filter((s) => s.label !== "mealCost");
+              const memberMealTotal = memberMealSection?.total ?? 0;
+              const memberOtherBillsTotal =
+                memberOtherSections.reduce((sum, s) => sum + s.total, 0) + b.previousBalance;
               return (
                 <Card key={b.id}>
                   <button
@@ -434,7 +443,7 @@ function ManagerFinancePage() {
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="text-[9.5px] font-bold text-text-secondary">{formatMonthLabel(b.month)}</div>
-                      <div className="text-[12.5px] font-extrabold">{formatBDT(b.grandTotal)}</div>
+                      <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(b.grandTotal))}</div>
                       <div className={`text-[9.5px] font-bold ${due > 0 || anyCategoryDue ? "text-danger" : "text-primary"}`}>
                         {due > 0
                           ? `Due ${formatBDT(due)}`
@@ -448,6 +457,17 @@ function ManagerFinancePage() {
 
                   {open && (
                     <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+                      <div className="flex gap-2 rounded-btn bg-bg p-2.5">
+                        <div className="flex-1">
+                          <div className="text-[9px] font-bold text-text-secondary">MEAL TOTAL</div>
+                          <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(memberMealTotal))}</div>
+                        </div>
+                        <div className="w-px shrink-0 bg-border" />
+                        <div className="flex-1">
+                          <div className="text-[9px] font-bold text-text-secondary">OTHER BILLS TOTAL</div>
+                          <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(memberOtherBillsTotal))}</div>
+                        </div>
+                      </div>
                       {b.dueDate && (
                         <div className="flex items-center justify-between text-[11px] font-bold text-text-secondary">
                           <div>Last day of payment</div>

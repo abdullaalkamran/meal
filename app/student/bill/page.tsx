@@ -80,6 +80,20 @@ export default function StudentBillPage() {
   // not just when the bill-wide total is.
   const anyCategoryDue = previousDue > 0 || bill.sections.some((s) => s.total - s.paid > 0);
 
+  // Meal cost is its own account — members settle it live among themselves,
+  // the hostel keeps no share — so it gets its own total, separate from
+  // everything owed to the owner/utilities/cook (which also carries last
+  // month's leftover balance, since that's a genuine cash position, not a
+  // meal one). Two totals instead of one combined number that blurred the
+  // two together.
+  const mealSection = bill.sections.find((s) => s.label === "mealCost");
+  const otherSections = bill.sections.filter((s) => s.label !== "mealCost");
+  const mealTotal = mealSection?.total ?? 0;
+  const mealDue = mealTotal - (mealSection?.paid ?? 0);
+  const otherBillsTotal = otherSections.reduce((sum, s) => sum + s.total, 0) + bill.previousBalance;
+  const otherBillsDue =
+    otherBillsTotal - (otherSections.reduce((sum, s) => sum + s.paid, 0) + bill.previousBalancePaid);
+
   return (
     <div className="flex flex-col gap-5 pt-2">
       <div className="text-[17.5px] font-extrabold tracking-tight">{formatMonthLabel(bill.month)} Bill</div>
@@ -130,8 +144,8 @@ export default function StudentBillPage() {
         </div>
         <div className="flex flex-col gap-1.5 border-t border-border pt-3">
           <div className="flex justify-between text-[14px] font-extrabold">
-            <span>Total</span>
-            <span>{formatBDT(bill.grandTotal)}</span>
+            <span>{bill.grandTotal < 0 ? "Total credit" : "Total"}</span>
+            <span>{formatBDT(Math.abs(bill.grandTotal))}</span>
           </div>
           <div className="flex justify-between text-[11px] font-semibold text-text-secondary">
             <span>Paid</span>
@@ -155,8 +169,10 @@ export default function StudentBillPage() {
           background: "linear-gradient(135deg, var(--gradient-accent-from), var(--gradient-accent-to))",
         }}
       >
-        <div className="text-[11.5px] font-bold text-white/70">Total payable</div>
-        <div className="mt-1 text-[22px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
+        <div className="text-[11.5px] font-bold text-white/70">
+          {bill.grandTotal < 0 ? "Total credit" : "Total payable"}
+        </div>
+        <div className="mt-1 text-[22px] font-extrabold">{formatBDT(Math.abs(bill.grandTotal))}</div>
         <div className="mt-2 flex flex-wrap items-center gap-2.5">
           <div className="text-[11.5px] font-bold text-white/80">Paid {formatBDT(bill.paid)}</div>
           {due > 0 && (
@@ -245,10 +261,26 @@ export default function StudentBillPage() {
         );
       })}
 
-      <Card className="flex items-center justify-between">
-        <div className="text-[13.5px] font-extrabold">Total</div>
-        <div className="text-[15px] font-extrabold">{formatBDT(bill.grandTotal)}</div>
-      </Card>
+      <div className="flex gap-2.5">
+        <Card className="flex-1">
+          <div className="text-[10.5px] font-bold text-text-secondary">Meal total</div>
+          <div className="mt-0.5 text-[15px] font-extrabold">{formatBDT(Math.abs(mealTotal))}</div>
+          {mealDue !== 0 && (
+            <div className={`mt-0.5 text-[9.5px] font-bold ${mealDue > 0 ? "text-danger" : "text-primary"}`}>
+              {mealDue > 0 ? `Due ${formatBDT(mealDue)}` : `Credit ${formatBDT(-mealDue)}`}
+            </div>
+          )}
+        </Card>
+        <Card className="flex-1">
+          <div className="text-[10.5px] font-bold text-text-secondary">Other bills total</div>
+          <div className="mt-0.5 text-[15px] font-extrabold">{formatBDT(Math.abs(otherBillsTotal))}</div>
+          {otherBillsDue !== 0 && (
+            <div className={`mt-0.5 text-[9.5px] font-bold ${otherBillsDue > 0 ? "text-danger" : "text-primary"}`}>
+              {otherBillsDue > 0 ? `Due ${formatBDT(otherBillsDue)}` : `Credit ${formatBDT(-otherBillsDue)}`}
+            </div>
+          )}
+        </Card>
+      </div>
       </div>
       </div>
 

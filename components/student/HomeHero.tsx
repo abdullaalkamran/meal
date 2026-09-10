@@ -279,7 +279,7 @@ export function HomeHero({
               <Icon icon={ChevronRight} size={18} />
             </div>
             <div className="mb-3 flex items-center gap-2.5">
-              <div className="text-[22px] font-extrabold">{formatBDT(grandTotal)}</div>
+              <div className="text-[22px] font-extrabold">{formatBDT(Math.abs(grandTotal))}</div>
               {due > 0 && (
                 <div className="rounded-pill bg-danger px-2.5 py-1 text-[10px] font-extrabold">
                   {formatBDT(due)} Outstanding

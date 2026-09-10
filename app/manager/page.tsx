@@ -400,7 +400,7 @@ export default function ManagerDashboardPage() {
           </div>
           <div className="rounded-btn bg-bg p-2.5 text-center">
             <div className="text-[9px] font-bold text-text-secondary">MY DUE</div>
-            <div className="text-[12.5px] font-extrabold text-danger">{formatBDT(myDue)}</div>
+            <div className="text-[12.5px] font-extrabold text-danger">{formatBDT(Math.max(myDue, 0))}</div>
           </div>
         </div>
         <button
