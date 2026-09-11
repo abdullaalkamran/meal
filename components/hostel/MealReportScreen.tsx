@@ -10,10 +10,13 @@ import { Chip } from "@/components/ui/Chip";
 import { Sheet } from "@/components/ui/Sheet";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { formatBDT } from "@/lib/utils/currency";
-import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
+import { addMonths, currentMonth, formatMonthLabel } from "@/lib/utils/date";
 import {
+  buildCombinedMealReport,
   buildMonthlyMealReport,
   mealReportTable,
+  type CombinedMealReport,
+  type CombinedMemberReport,
   type MemberMonthlyReport,
   type MonthlyMealReport,
 } from "@/lib/reports/monthlyMealReport";
@@ -44,22 +47,61 @@ const ALL_COST_CATEGORIES = new Set<CostCategory>(COST_CATEGORIES.map((c) => c.k
 const printHidden = (selected: Set<CostCategory>, key: CostCategory) =>
   selected.has(key) ? "" : "print:hidden";
 
+/** Last 12 months (this one included), newest first — the pool a manager can
+ * pick from to print a multi-month copy (e.g. this month + last month's meal
+ * and shopping cost together). */
+function recentMonths(): string[] {
+  const cur = currentMonth();
+  return Array.from({ length: 12 }, (_, i) => addMonths(cur, -i));
+}
+
 function CustomizePrintSheet({
   open,
   onClose,
   selected,
   onToggle,
+  months,
+  selectedMonths,
+  onToggleMonth,
+  printing,
   onPrint,
 }: {
   open: boolean;
   onClose: () => void;
   selected: Set<CostCategory>;
   onToggle: (key: CostCategory) => void;
+  months: string[];
+  selectedMonths: Set<string>;
+  onToggleMonth: (month: string) => void;
+  printing: boolean;
   onPrint: () => void;
 }) {
   return (
     <Sheet open={open} onClose={onClose} title="Customize print">
-      <div className="mb-3 text-[10.5px] font-semibold text-text-secondary">
+      <div className="mb-2 text-[10.5px] font-extrabold text-text-secondary">MONTHS</div>
+      <div className="mb-1 text-[10px] font-semibold text-text-secondary">
+        Pick one or more months — selecting more than one adds a combined total across them
+        (previous months&rsquo; meal and shopping cost included), calculated correctly instead of
+        just added up month by month.
+      </div>
+      <div className="mb-4 flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded-btn bg-bg p-2">
+        {months.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => onToggleMonth(m)}
+            className="flex items-center justify-between rounded-btn px-2.5 py-2"
+          >
+            <div className="text-[11.5px] font-bold">{formatMonthLabel(m)}</div>
+            <Chip tone="primary" active={selectedMonths.has(m)}>
+              {selectedMonths.has(m) ? "Selected" : "Select"}
+            </Chip>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-2 text-[10.5px] font-extrabold text-text-secondary">COSTS &amp; CHARGES</div>
+      <div className="mb-3 text-[10px] font-semibold text-text-secondary">
         Choose which costs and charges appear on the printed/PDF copy. The on-screen report and
         CSV download always show everything — this only trims what goes on paper.
       </div>
@@ -78,9 +120,9 @@ function CustomizePrintSheet({
           </button>
         ))}
       </div>
-      <Button fullWidth onClick={onPrint}>
+      <Button fullWidth onClick={onPrint} disabled={selectedMonths.size === 0 || printing}>
         <span className="flex items-center justify-center gap-1.5">
-          <Icon icon={Printer} size={14} /> Print / PDF
+          <Icon icon={Printer} size={14} /> {printing ? "Preparing…" : "Print / PDF"}
         </span>
       </Button>
     </Sheet>
@@ -394,6 +436,150 @@ function MembersTable({
   );
 }
 
+/** Print-only spreadsheet for a multi-month selection: one row per selected
+ * month per member, plus a bold Combined row. Meal cost/shopping/rent/
+ * service/cook salary sum safely across months; Previous due and Outstanding
+ * deliberately do NOT (see CombinedMemberReport) — the Combined row shows the
+ * carry-in before the range and the latest month's own outstanding instead
+ * of a naive sum, so the total is correct rather than inflated. */
+function CombinedPrintTable({
+  combined,
+  printSelected,
+  onlyUserId,
+}: {
+  combined: CombinedMealReport;
+  printSelected: Set<CostCategory>;
+  onlyUserId?: string;
+}) {
+  const members = onlyUserId ? combined.members.filter((m) => m.userId === onlyUserId) : combined.members;
+  const cols: {
+    header: string;
+    value: (m: MemberMonthlyReport) => number;
+    combinedValue: (m: CombinedMemberReport) => number;
+    money?: boolean;
+    category?: CostCategory;
+  }[] = [
+    { header: "Total meals", value: (m) => m.totalMeals, combinedValue: (m) => m.totalMeals },
+    { header: "Meal cost", value: (m) => m.mealCost, combinedValue: (m) => m.mealCost, money: true, category: "mealCost" },
+    {
+      header: "Shopping spent",
+      value: (m) => m.shoppingSpent,
+      combinedValue: (m) => m.shoppingSpent,
+      money: true,
+      category: "shopping",
+    },
+    { header: "Meal credit/due", value: (m) => m.mealBalance, combinedValue: (m) => m.mealBalance, money: true },
+    { header: "Rent", value: (m) => m.rent, combinedValue: (m) => m.rent, money: true, category: "rent" },
+    {
+      header: "Service total",
+      value: (m) => m.serviceCharge,
+      combinedValue: (m) => m.serviceCharge,
+      money: true,
+      category: "serviceCharge",
+    },
+    {
+      header: "Cook salary",
+      value: (m) => m.cookSalary,
+      combinedValue: (m) => m.cookSalary,
+      money: true,
+      category: "cookSalary",
+    },
+    {
+      header: "Previous due",
+      value: (m) => m.previousDue,
+      combinedValue: (m) => m.previousDue,
+      money: true,
+      category: "previousDue",
+    },
+    { header: "Outstanding", value: (m) => m.outstanding, combinedValue: (m) => m.outstanding, money: true },
+  ];
+
+  const balanceCell = (v: number) =>
+    Math.abs(v) < 0.005 ? (
+      <span className="text-text-secondary">—</span>
+    ) : v > 0 ? (
+      <span className="text-primary">+{money(v)}</span>
+    ) : (
+      <span className="text-danger">−{money(-v)}</span>
+    );
+
+  const cellFor = (v: number, header: string) => {
+    if (header === "Meal credit/due") return balanceCell(v);
+    if (header === "Outstanding" && v > 0) return <span className="text-danger">{money(v)}</span>;
+    return money(v);
+  };
+
+  return (
+    <div className="hidden print:block">
+      <table className="w-full min-w-max border-collapse text-left">
+        <thead>
+          <tr>
+            <th className="border border-border px-2 py-2 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
+              Member
+            </th>
+            <th className="border border-border px-2 py-2 text-[9px] font-extrabold uppercase tracking-wide text-text-secondary">
+              Month
+            </th>
+            {cols.map((c) => (
+              <th
+                key={c.header}
+                className={`whitespace-nowrap border border-border px-2 py-2 text-right text-[9px] font-extrabold uppercase tracking-wide text-text-secondary ${
+                  c.category ? printHidden(printSelected, c.category) : ""
+                }`}
+              >
+                {c.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {members.map((m) => (
+            <tbody key={m.userId}>
+              {m.perMonth.map(({ month, report }) => (
+                <tr key={`${m.userId}-${month}`}>
+                  <td className="border border-border px-2 py-1.5 text-[10px] font-bold">{m.name}</td>
+                  <td className="border border-border px-2 py-1.5 text-[10px] font-semibold text-text-secondary">
+                    {formatMonthLabel(month)}
+                  </td>
+                  {cols.map((c) => (
+                    <td
+                      key={c.header}
+                      className={`whitespace-nowrap border border-border px-2 py-1.5 text-right text-[10px] font-bold ${
+                        c.category ? printHidden(printSelected, c.category) : ""
+                      }`}
+                    >
+                      {c.header === "Total meals" ? report.totalMeals : cellFor(c.value(report), c.header)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="bg-bg">
+                <td className="border border-border px-2 py-1.5 text-[10px] font-extrabold" colSpan={2}>
+                  {m.name} — Combined ({combined.months.length} months)
+                </td>
+                {cols.map((c) => (
+                  <td
+                    key={c.header}
+                    className={`whitespace-nowrap border border-border px-2 py-1.5 text-right text-[10px] font-extrabold ${
+                      c.category ? printHidden(printSelected, c.category) : ""
+                    }`}
+                  >
+                    {c.header === "Total meals"
+                      ? m.totalMeals
+                      : c.header === "Previous due"
+                        ? `${money(m.previousDue)} (carry-in)`
+                        : c.header === "Outstanding"
+                          ? `${money(m.outstanding)} (as of ${formatMonthLabel(combined.months[combined.months.length - 1])})`
+                          : cellFor(c.combinedValue(m), c.header)}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          ))}
+      </table>
+    </div>
+  );
+}
+
 /** Monthly meal-settlement report. `scope="all"` (manager & owner) shows every
  * member; `scope="own"` (student) shows only the viewer's row. */
 export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
@@ -402,6 +588,10 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
   const [report, setReport] = useState<MonthlyMealReport | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [printSelected, setPrintSelected] = useState<Set<CostCategory>>(new Set(ALL_COST_CATEGORIES));
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set([currentMonth()]));
+  const [combinedReport, setCombinedReport] = useState<CombinedMealReport | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const monthOptions = recentMonths();
 
   const togglePrintCategory = (key: CostCategory) => {
     setPrintSelected((prev) => {
@@ -412,9 +602,36 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
     });
   };
 
-  const doPrint = () => {
+  const toggleSelectedMonth = (m: string) => {
+    setSelectedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(m)) next.delete(m);
+      else next.add(m);
+      return next;
+    });
+  };
+
+  const openPrintSheet = () => {
+    // Default to whichever single month is currently on screen — the manager
+    // can add more from there before printing.
+    setSelectedMonths(new Set([month]));
+    setPrintOpen(true);
+  };
+
+  const doPrint = async () => {
+    if (selectedMonths.size === 0) return;
+    if (selectedMonths.size === 1 || !activeHostelId) {
+      setCombinedReport(null);
+      setPrintOpen(false);
+      // Let the sheet close first — window.print() must not capture it mid-close.
+      setTimeout(() => printReport(), 50);
+      return;
+    }
+    setPrinting(true);
+    const combined = await buildCombinedMealReport(activeHostelId, [...selectedMonths]);
+    setPrinting(false);
+    setCombinedReport(combined);
     setPrintOpen(false);
-    // Let the sheet close first — window.print() must not capture it mid-close.
     setTimeout(() => printReport(), 50);
   };
 
@@ -458,7 +675,26 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
       <MonthNav value={month} onChange={setMonth} />
 
       <div className={`${scope === "own" ? "invoice-print-area" : "report-print-area"} flex flex-col gap-5`}>
-        {scope === "own" ? (
+        {combinedReport && (
+          <div className="hidden print:block">
+            <PrintLetterhead
+              hostelName={combinedReport.hostelName}
+              title="Monthly Meal Settlement Report"
+              meta={[
+                `${formatMonthLabel(combinedReport.months[0])} – ${formatMonthLabel(
+                  combinedReport.months[combinedReport.months.length - 1]
+                )}`,
+              ]}
+            />
+          </div>
+        )}
+        {combinedReport ? (
+          <CombinedPrintTable
+            combined={combinedReport}
+            printSelected={printSelected}
+            onlyUserId={scope === "own" ? user?.id : undefined}
+          />
+        ) : scope === "own" ? (
           // Print-only payslip — a clean document instead of the on-screen
           // card, shown only inside .invoice-print-area (portrait).
           visibleMembers.map((m) => (
@@ -480,7 +716,7 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
           </div>
         )}
 
-        <div className={scope === "own" ? "print:hidden" : ""}>
+        <div className={scope === "own" || combinedReport ? "print:hidden" : ""}>
         <Card className="print:rounded-none print:border-0 print:p-0 print:shadow-none">
           <div className="mb-3 text-[13.5px] font-extrabold">
             {formatMonthLabel(month)} · hostel summary
@@ -543,7 +779,7 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
             <Icon icon={Download} size={14} /> Download CSV
           </span>
         </Button>
-        <Button fullWidth variant="secondary" onClick={() => setPrintOpen(true)}>
+        <Button fullWidth variant="secondary" onClick={openPrintSheet}>
           <span className="flex items-center justify-center gap-1.5">
             <Icon icon={Printer} size={14} /> Print / PDF
           </span>
@@ -561,6 +797,10 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
         onClose={() => setPrintOpen(false)}
         selected={printSelected}
         onToggle={togglePrintCategory}
+        months={monthOptions}
+        selectedMonths={selectedMonths}
+        onToggleMonth={toggleSelectedMonth}
+        printing={printing}
         onPrint={doPrint}
       />
     </div>

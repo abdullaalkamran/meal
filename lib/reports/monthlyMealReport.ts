@@ -187,6 +187,104 @@ export async function buildMonthlyMealReport(
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+/** One member's account across several selected months. Meal cost, shopping,
+ * meal balance, rent, service charge, and cook salary are each independent
+ * per month, so they sum safely. previousDue/outstanding are NOT summed —
+ * each month's own previousDue already recursively carries everything unpaid
+ * from every earlier month, so summing them across a range would count the
+ * same unpaid balance multiple times. Instead: previousDue is the carry-in
+ * from BEFORE the earliest selected month (that month's own previousDue
+ * field), and outstanding is simply the LATEST selected month's own
+ * outstanding — already a complete, self-contained "owed as of now" figure. */
+export interface CombinedMemberReport {
+  userId: string;
+  name: string;
+  isManager: boolean;
+  room: string;
+  perMonth: { month: string; report: MemberMonthlyReport }[]; // ascending
+  totalMeals: number;
+  mealCost: number;
+  shoppingSpent: number;
+  mealBalance: number;
+  rent: number;
+  serviceCharge: number;
+  cookSalary: number;
+  previousDue: number;
+  outstanding: number;
+  billTotal: number;
+  paid: number;
+}
+
+export interface CombinedMealReport {
+  hostelId: string;
+  hostelName: string;
+  months: string[]; // ascending
+  members: CombinedMemberReport[];
+}
+
+/** Builds a combined report across several months at once — each month
+ * fetched independently (so it reflects exactly what that month's own
+ * single-month report would show) and then merged per member. See
+ * `CombinedMemberReport` for which fields sum and which don't. */
+export async function buildCombinedMealReport(
+  hostelId: string,
+  months: string[]
+): Promise<CombinedMealReport | null> {
+  const sorted = [...new Set(months)].sort();
+  if (sorted.length === 0) return null;
+  const reports = await Promise.all(sorted.map((m) => buildMonthlyMealReport(hostelId, m)));
+  const valid = reports.filter((r): r is MonthlyMealReport => r !== null);
+  if (valid.length === 0) return null;
+
+  // A member might not appear in every selected month (joined partway
+  // through, or left) — union of everyone who shows up in ANY of them.
+  const order: string[] = [];
+  for (const r of valid) {
+    for (const m of r.members) {
+      if (!order.includes(m.userId)) order.push(m.userId);
+    }
+  }
+
+  const members: CombinedMemberReport[] = order.map((userId) => {
+    const perMonth = valid
+      .map((r) => {
+        const m = r.members.find((mm) => mm.userId === userId);
+        return m ? { month: r.month, report: m } : null;
+      })
+      .filter((x): x is { month: string; report: MemberMonthlyReport } => !!x);
+    const reports = perMonth.map((p) => p.report);
+    const first = reports[0];
+    const last = reports[reports.length - 1];
+    const sum = (fn: (m: MemberMonthlyReport) => number) =>
+      round(reports.reduce((s, m) => s + fn(m), 0));
+    return {
+      userId,
+      name: first.name,
+      isManager: reports.some((m) => m.isManager),
+      room: last.room,
+      perMonth,
+      totalMeals: reports.reduce((s, m) => s + m.totalMeals, 0),
+      mealCost: sum((m) => m.mealCost),
+      shoppingSpent: sum((m) => m.shoppingSpent),
+      mealBalance: sum((m) => m.mealBalance),
+      rent: sum((m) => m.rent),
+      serviceCharge: sum((m) => m.serviceCharge),
+      cookSalary: sum((m) => m.cookSalary),
+      previousDue: round(first.previousDue),
+      outstanding: round(last.outstanding),
+      billTotal: round(last.billTotal),
+      paid: sum((m) => m.paid),
+    };
+  });
+
+  return {
+    hostelId,
+    hostelName: valid[0].hostelName,
+    months: sorted,
+    members,
+  };
+}
+
 /** CSV/table shape for the download — one row per member (or just one member
  * for a student's own export). */
 export function mealReportTable(
