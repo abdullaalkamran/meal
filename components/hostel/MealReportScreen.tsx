@@ -6,6 +6,8 @@ import { useSession } from "@/lib/auth/SessionProvider";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { Chip } from "@/components/ui/Chip";
+import { Sheet } from "@/components/ui/Sheet";
 import { MonthNav } from "@/components/ui/MonthNav";
 import { formatBDT } from "@/lib/utils/currency";
 import { currentMonth, formatMonthLabel } from "@/lib/utils/date";
@@ -19,6 +21,71 @@ import { downloadReportCsv, printReport } from "@/lib/reports/export";
 import { PrintLetterhead } from "@/components/hostel/PrintLetterhead";
 
 const money = (n: number) => formatBDT(Math.round(n * 100) / 100);
+
+/** Which cost/charge groups a manager can leave out of the printed/PDF copy —
+ * the on-screen report and CSV export always show everything; this only
+ * trims what shows up on paper (e.g. skip cook salary on a copy meant for
+ * the owner). */
+type CostCategory = "mealCost" | "shopping" | "rent" | "serviceCharge" | "cookSalary" | "previousDue";
+
+const COST_CATEGORIES: { key: CostCategory; label: string }[] = [
+  { key: "mealCost", label: "Meal cost" },
+  { key: "shopping", label: "Shopping spent" },
+  { key: "rent", label: "Rent" },
+  { key: "serviceCharge", label: "Service charge" },
+  { key: "cookSalary", label: "Cook salary" },
+  { key: "previousDue", label: "Previous due" },
+];
+
+const ALL_COST_CATEGORIES = new Set<CostCategory>(COST_CATEGORIES.map((c) => c.key));
+
+/** Hides an element only in print output when its category is excluded —
+ * the on-screen view is never affected. */
+const printHidden = (selected: Set<CostCategory>, key: CostCategory) =>
+  selected.has(key) ? "" : "print:hidden";
+
+function CustomizePrintSheet({
+  open,
+  onClose,
+  selected,
+  onToggle,
+  onPrint,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selected: Set<CostCategory>;
+  onToggle: (key: CostCategory) => void;
+  onPrint: () => void;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title="Customize print">
+      <div className="mb-3 text-[10.5px] font-semibold text-text-secondary">
+        Choose which costs and charges appear on the printed/PDF copy. The on-screen report and
+        CSV download always show everything — this only trims what goes on paper.
+      </div>
+      <div className="mb-4 flex flex-col gap-2">
+        {COST_CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => onToggle(c.key)}
+            className="flex items-center justify-between rounded-btn bg-bg px-3 py-2.5"
+          >
+            <div className="text-[12px] font-bold">{c.label}</div>
+            <Chip tone="primary" active={selected.has(c.key)}>
+              {selected.has(c.key) ? "Included" : "Excluded"}
+            </Chip>
+          </button>
+        ))}
+      </div>
+      <Button fullWidth onClick={onPrint}>
+        <span className="flex items-center justify-center gap-1.5">
+          <Icon icon={Printer} size={14} /> Print / PDF
+        </span>
+      </Button>
+    </Sheet>
+  );
+}
 
 function BalanceTag({ balance }: { balance: number }) {
   if (Math.abs(balance) < 0.005)
@@ -94,7 +161,17 @@ function MemberReportCard({ m }: { m: MemberMonthlyReport }) {
 /** Print-only payslip for a single member's report — a clean document
  * instead of the app's own rounded/badged card, shown only inside
  * `.invoice-print-area` (`scope="own"`'s print target). */
-function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hostelName?: string; month: string }) {
+function MemberPayslip({
+  m,
+  hostelName,
+  month,
+  printSelected,
+}: {
+  m: MemberMonthlyReport;
+  hostelName?: string;
+  month: string;
+  printSelected: Set<CostCategory>;
+}) {
   const rentLabel = m.rentItems.length ? "Room rent" : null;
   return (
     <div className="hidden rounded-card border border-border bg-card p-5 print:block print:border-0 print:p-0">
@@ -104,7 +181,7 @@ function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hoste
           <div>Description</div>
           <div className="text-right">Amount</div>
         </div>
-        <div className="border-b border-border py-1.5">
+        <div className={`border-b border-border py-1.5 ${printHidden(printSelected, "mealCost")}`}>
           <div className="flex items-center justify-between text-[10.5px] font-extrabold">
             <span>Meal cost</span>
             <span>{money(m.mealCost)}</span>
@@ -114,14 +191,16 @@ function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hoste
             <div className="text-right">{money(m.mealCost)}</div>
           </div>
           {m.shoppingSpent > 0 && (
-            <div className="grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary">
+            <div
+              className={`grid grid-cols-[1fr_auto] gap-2 pl-2 text-[10px] text-text-secondary ${printHidden(printSelected, "shopping")}`}
+            >
               <div>Shopping spent (credit)</div>
               <div className="text-right">−{money(m.shoppingSpent)}</div>
             </div>
           )}
         </div>
         {rentLabel && (
-          <div className="border-b border-border py-1.5">
+          <div className={`border-b border-border py-1.5 ${printHidden(printSelected, "rent")}`}>
             <div className="flex items-center justify-between text-[10.5px] font-extrabold">
               <span>{rentLabel}</span>
               <span>{money(m.rent)}</span>
@@ -135,7 +214,7 @@ function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hoste
           </div>
         )}
         {m.serviceCharge > 0 && (
-          <div className="border-b border-border py-1.5">
+          <div className={`border-b border-border py-1.5 ${printHidden(printSelected, "serviceCharge")}`}>
             <div className="flex items-center justify-between text-[10.5px] font-extrabold">
               <span>Service charge</span>
               <span>{money(m.serviceCharge)}</span>
@@ -149,13 +228,17 @@ function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hoste
           </div>
         )}
         {m.cookSalary > 0 && (
-          <div className="flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold">
+          <div
+            className={`flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold ${printHidden(printSelected, "cookSalary")}`}
+          >
             <span>Cook salary</span>
             <span>{money(m.cookSalary)}</span>
           </div>
         )}
         {m.previousDue !== 0 && (
-          <div className="flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold">
+          <div
+            className={`flex items-center justify-between border-b border-border py-1.5 text-[10.5px] font-extrabold ${printHidden(printSelected, "previousDue")}`}
+          >
             <span>{m.previousDue > 0 ? "Previous balance" : "Previous credit"}</span>
             <span>{money(Math.abs(m.previousDue))}</span>
           </div>
@@ -188,16 +271,23 @@ function MemberPayslip({ m, hostelName, month }: { m: MemberMonthlyReport; hoste
 function MembersTable({
   members,
   serviceLabels,
+  printSelected,
 }: {
   members: MemberMonthlyReport[];
   serviceLabels: string[];
+  printSelected: Set<CostCategory>;
 }) {
-  const cols: { header: string; value: (m: MemberMonthlyReport) => number; money?: boolean }[] = [
+  const cols: {
+    header: string;
+    value: (m: MemberMonthlyReport) => number;
+    money?: boolean;
+    category?: CostCategory;
+  }[] = [
     { header: "Total meals", value: (m) => m.totalMeals },
-    { header: "Meal cost", value: (m) => m.mealCost, money: true },
-    { header: "Shopping spent", value: (m) => m.shoppingSpent, money: true },
+    { header: "Meal cost", value: (m) => m.mealCost, money: true, category: "mealCost" },
+    { header: "Shopping spent", value: (m) => m.shoppingSpent, money: true, category: "shopping" },
     { header: "Meal credit/due", value: (m) => m.mealBalance, money: true },
-    { header: "Rent", value: (m) => m.rent, money: true },
+    { header: "Rent", value: (m) => m.rent, money: true, category: "rent" },
     // One column per billed service item (water, gas, cleaning, owner
     // charge, …) — exactly the lines added on the bill generation page.
     ...serviceLabels.map((label) => ({
@@ -205,10 +295,11 @@ function MembersTable({
       value: (m: MemberMonthlyReport) =>
         m.serviceItems.find((i) => i.label === label)?.amount ?? 0,
       money: true,
+      category: "serviceCharge" as const,
     })),
-    { header: "Service total", value: (m) => m.serviceCharge, money: true },
-    { header: "Cook salary", value: (m) => m.cookSalary, money: true },
-    { header: "Previous due", value: (m) => m.previousDue, money: true },
+    { header: "Service total", value: (m) => m.serviceCharge, money: true, category: "serviceCharge" },
+    { header: "Cook salary", value: (m) => m.cookSalary, money: true, category: "cookSalary" },
+    { header: "Previous due", value: (m) => m.previousDue, money: true, category: "previousDue" },
     { header: "Bill total", value: (m) => m.billTotal, money: true },
     { header: "Paid", value: (m) => m.paid, money: true },
     { header: "Outstanding", value: (m) => m.outstanding, money: true },
@@ -243,7 +334,9 @@ function MembersTable({
             {cols.map((c) => (
               <th
                 key={c.header}
-                className="whitespace-nowrap px-3 py-2.5 text-right text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary print:border print:border-border"
+                className={`whitespace-nowrap px-3 py-2.5 text-right text-[9.5px] font-extrabold uppercase tracking-wide text-text-secondary print:border print:border-border ${
+                  c.category ? printHidden(printSelected, c.category) : ""
+                }`}
               >
                 {c.header}
               </th>
@@ -267,7 +360,9 @@ function MembersTable({
               {cols.map((c) => (
                 <td
                   key={c.header}
-                  className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-bold print:border print:border-border"
+                  className={`whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-bold print:border print:border-border ${
+                    c.category ? printHidden(printSelected, c.category) : ""
+                  }`}
                 >
                   {cell(c, m)}
                 </td>
@@ -281,7 +376,9 @@ function MembersTable({
             {cols.map((c) => (
               <td
                 key={c.header}
-                className="whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-extrabold print:border print:border-border"
+                className={`whitespace-nowrap px-3 py-2.5 text-right text-[10.5px] font-extrabold print:border print:border-border ${
+                  c.category ? printHidden(printSelected, c.category) : ""
+                }`}
               >
                 {c.header === "Meal credit/due"
                   ? balanceCell(sum(c.value))
@@ -303,6 +400,23 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
   const { user, activeHostelId } = useSession();
   const [month, setMonth] = useState(currentMonth());
   const [report, setReport] = useState<MonthlyMealReport | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printSelected, setPrintSelected] = useState<Set<CostCategory>>(new Set(ALL_COST_CATEGORIES));
+
+  const togglePrintCategory = (key: CostCategory) => {
+    setPrintSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const doPrint = () => {
+    setPrintOpen(false);
+    // Let the sheet close first — window.print() must not capture it mid-close.
+    setTimeout(() => printReport(), 50);
+  };
 
   useEffect(() => {
     if (!activeHostelId) return;
@@ -348,7 +462,13 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
           // Print-only payslip — a clean document instead of the on-screen
           // card, shown only inside .invoice-print-area (portrait).
           visibleMembers.map((m) => (
-            <MemberPayslip key={m.userId} m={m} hostelName={report?.hostelName} month={month} />
+            <MemberPayslip
+              key={m.userId}
+              m={m}
+              hostelName={report?.hostelName}
+              month={month}
+              printSelected={printSelected}
+            />
           ))
         ) : (
           <div className="hidden print:block">
@@ -395,7 +515,11 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
             No report rows for this month.
           </Card>
         ) : scope === "all" ? (
-          <MembersTable members={visibleMembers} serviceLabels={report?.serviceItemLabels ?? []} />
+          <MembersTable
+            members={visibleMembers}
+            serviceLabels={report?.serviceItemLabels ?? []}
+            printSelected={printSelected}
+          />
         ) : (
           <div className="flex flex-col gap-2.5">
             {visibleMembers.map((m) => (
@@ -419,7 +543,7 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
             <Icon icon={Download} size={14} /> Download CSV
           </span>
         </Button>
-        <Button fullWidth variant="secondary" onClick={printReport}>
+        <Button fullWidth variant="secondary" onClick={() => setPrintOpen(true)}>
           <span className="flex items-center justify-center gap-1.5">
             <Icon icon={Printer} size={14} /> Print / PDF
           </span>
@@ -431,6 +555,14 @@ export function MealReportScreen({ scope }: { scope: "all" | "own" }) {
         For data security, generate this report at the end of every month and keep a printed
         copy — the app&rsquo;s records can change after settlement.
       </div>
+
+      <CustomizePrintSheet
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        selected={printSelected}
+        onToggle={togglePrintCategory}
+        onPrint={doPrint}
+      />
     </div>
   );
 }
