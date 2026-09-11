@@ -25,6 +25,7 @@ const SECTION_META: Record<BillSection["label"], { label: string; icon: typeof S
 
 const TARGET_LABEL: Record<BillTarget, string> = {
   previousBalance: "Previous balance",
+  previousMealBalance: "Previous meal balance",
   mealCost: "Meal cost",
   roomRent: "Room rent",
   serviceCharge: "Service charge",
@@ -74,11 +75,6 @@ export default function StudentBillPage() {
 
   const due = bill.grandTotal - bill.paid;
   const previousDue = bill.previousBalance - bill.previousBalancePaid;
-  // A category can still be owed even when the aggregate nets to a credit —
-  // e.g. a big meal-cost credit offsetting rent that's still unpaid — so the
-  // pay button stays enabled whenever ANY specific part of the bill is due,
-  // not just when the bill-wide total is.
-  const anyCategoryDue = previousDue > 0 || bill.sections.some((s) => s.total - s.paid > 0);
 
   // Meal cost is its own account — members settle it live among themselves,
   // the hostel keeps no share — so it gets its own total, separate from
@@ -88,9 +84,20 @@ export default function StudentBillPage() {
   // two together.
   const mealSection = bill.sections.find((s) => s.label === "mealCost");
   const otherSections = bill.sections.filter((s) => s.label !== "mealCost");
-  const mealTotal = mealSection?.total ?? 0;
-  const mealDue = mealTotal - (mealSection?.paid ?? 0);
-  const otherBillsTotal = otherSections.reduce((sum, s) => sum + s.total, 0) + bill.previousBalance;
+  const mealThisMonthDue = (mealSection?.total ?? 0) - (mealSection?.paid ?? 0);
+  // Nullish-guarded: a bill generated before this field existed won't have it
+  // yet, until its month is regenerated.
+  const previousMealDue = (bill.previousMealBalance ?? 0) - (bill.previousMealBalancePaid ?? 0);
+  const finalMealDue = mealThisMonthDue + previousMealDue;
+  // A category can still be owed even when the aggregate nets to a credit —
+  // e.g. a big meal credit (once its carried balance is folded in) offsetting
+  // rent that's still unpaid — so the pay button stays enabled whenever ANY
+  // specific part of the bill is due, not just when the bill-wide total is.
+  // Meal is checked by its FINAL balance, not just this month's raw section.
+  const anyCategoryDue =
+    previousDue > 0 || finalMealDue > 0 || otherSections.some((s) => s.total - s.paid > 0);
+  const otherBillsTotal =
+    otherSections.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + bill.previousBalance;
   const otherBillsDue =
     otherBillsTotal - (otherSections.reduce((sum, s) => sum + s.paid, 0) + bill.previousBalancePaid);
 
@@ -188,99 +195,123 @@ export default function StudentBillPage() {
         </div>
       </div>
 
-      {previousDue > 0 && (
-        <Card className="flex items-center justify-between border border-orange/30 bg-orange-soft">
-          <div>
-            <div className="text-[12.5px] font-extrabold text-orange">Previous balance</div>
-            <div className="text-[10px] font-semibold text-text-secondary">
-              Unpaid amount carried over from {formatMonthLabel(previousMonth(bill.month))}
+      {/* MEAL — its own account, settled live among members; the hostel
+          keeps no share of it. */}
+      <Card>
+        <div className="mb-2 flex items-center gap-2.5">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${SECTION_META.mealCost.tone}`}>
+            <Icon icon={SECTION_META.mealCost.icon} size={15} />
+          </div>
+          <div className="text-[13.5px] font-extrabold">Meal</div>
+        </div>
+        <div className="flex flex-col gap-1.5 pl-[42px]">
+          {mealSection?.items.map((item, i) => (
+            <div key={i} className="flex items-center justify-between text-[11px] font-semibold text-text-secondary">
+              <div>{item.label}</div>
+              <div>
+                {item.amount < 0 ? "−" : ""}
+                {formatBDT(Math.abs(item.amount))}
+              </div>
+            </div>
+          ))}
+          <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5 text-[12px] font-extrabold">
+            <div>{formatMonthLabel(bill.month)} meal balance</div>
+            <div className={mealThisMonthDue > 0 ? "text-danger" : "text-primary"}>
+              {mealThisMonthDue > 0
+                ? `Due ${formatBDT(mealThisMonthDue)}`
+                : `Credit ${formatBDT(-mealThisMonthDue)}`}
             </div>
           </div>
-          <div className="text-[13.5px] font-extrabold text-orange">{formatBDT(previousDue)}</div>
-        </Card>
-      )}
-
-      {previousDue < 0 && (
-        <Card className="flex items-center justify-between border border-primary/30 bg-primary-soft">
-          <div>
-            <div className="text-[12.5px] font-extrabold text-primary">Previous credit</div>
-            <div className="text-[10px] font-semibold text-text-secondary">
-              Carried over from an earlier month — it reduces this bill
+          {previousMealDue !== 0 && (
+            <div className="flex items-center justify-between text-[11px] font-semibold">
+              <div className="text-text-secondary">
+                Previous month ({formatMonthLabel(previousMonth(bill.month))})
+              </div>
+              <div className={previousMealDue > 0 ? "text-danger" : "text-primary"}>
+                {previousMealDue > 0
+                  ? `Due ${formatBDT(previousMealDue)}`
+                  : `Credit ${formatBDT(-previousMealDue)}`}
+              </div>
+            </div>
+          )}
+          <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5 text-[13px] font-extrabold">
+            <div>Final meal balance</div>
+            <div className={finalMealDue > 0 ? "text-danger" : "text-primary"}>
+              {finalMealDue > 0 ? `Due ${formatBDT(finalMealDue)}` : `Credit ${formatBDT(-finalMealDue)}`}
             </div>
           </div>
-          <div className="text-[13.5px] font-extrabold text-primary">{formatBDT(-previousDue)}</div>
-        </Card>
-      )}
+        </div>
+      </Card>
 
-      {bill.sections.map((section) => {
-        const meta = SECTION_META[section.label];
-        const sectionDue = section.total - section.paid;
-        return (
-          <Card key={section.label}>
-            <div className="mb-2 flex items-center gap-2.5">
-              <div className={`flex h-8 w-8 items-center justify-center rounded-full ${meta.tone}`}>
-                <Icon icon={meta.icon} size={15} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13.5px] font-extrabold">{meta.label}</div>
-                <div className="text-[9.5px] font-bold text-text-secondary">{formatMonthLabel(bill.month)}</div>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className="text-[13.5px] font-extrabold">{formatBDT(Math.abs(section.total))}</div>
-                <div
-                  className={`text-[9.5px] font-bold ${
-                    sectionDue < 0 ? "text-primary" : sectionDue > 0 ? "text-danger" : "text-text-secondary"
-                  }`}
-                >
-                  {sectionDue < 0
-                    ? `Credit ${formatBDT(-sectionDue)}`
-                    : sectionDue > 0
-                      ? `Due ${formatBDT(sectionDue)}`
-                      : "Paid in full"}
+      {/* SERVICE, RENT & SALARY — owed to the owner/utilities/cook, kept in
+          its own bucket so a meal credit/due can never silently offset it,
+          or vice versa. */}
+      <Card>
+        <div className="mb-2 text-[13.5px] font-extrabold">Service, Rent &amp; Salary</div>
+        <div className="flex flex-col gap-3">
+          {otherSections.map((section) => {
+            const meta = SECTION_META[section.label];
+            const sectionDue = section.total - section.paid;
+            return (
+              <div key={section.label} className="flex items-start gap-2.5">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${meta.tone}`}>
+                  <Icon icon={meta.icon} size={15} />
                 </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5 pl-[42px]">
-              {section.items.map((item, i) => (
-                <div key={i} className="flex items-center justify-between text-[11px] font-semibold text-text-secondary">
-                  <div>{item.label}</div>
-                  <div>
-                    {item.amount < 0 ? "−" : ""}
-                    {formatBDT(Math.abs(item.amount))}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between text-[12px] font-extrabold">
+                    <div>{meta.label}</div>
+                    <div
+                      className={
+                        sectionDue < 0 ? "text-primary" : sectionDue > 0 ? "text-danger" : "text-text-secondary"
+                      }
+                    >
+                      {formatBDT(Math.abs(section.total))}
+                    </div>
                   </div>
+                  {section.items.map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between text-[10.5px] font-semibold text-text-secondary"
+                    >
+                      <div>{item.label}</div>
+                      <div>
+                        {item.amount < 0 ? "−" : ""}
+                        {formatBDT(Math.abs(item.amount))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {section.label === "mealCost" && previousDue > 0 && (
-                <div className="flex items-center justify-between text-[11px] font-semibold text-orange">
-                  <div>Previous month due ({formatMonthLabel(previousMonth(bill.month))})</div>
-                  <div>{formatBDT(previousDue)}</div>
-                </div>
-              )}
+              </div>
+            );
+          })}
+          {previousDue !== 0 && (
+            <div className="flex items-center justify-between text-[11.5px] font-semibold">
+              <div className="text-text-secondary">
+                Previous {previousDue > 0 ? "balance" : "credit"} ({formatMonthLabel(previousMonth(bill.month))})
+              </div>
+              <div className={previousDue > 0 ? "text-danger" : "text-primary"}>
+                {formatBDT(Math.abs(previousDue))}
+              </div>
             </div>
-          </Card>
-        );
-      })}
+          )}
+          <div className="flex items-center justify-between border-t border-border pt-2 text-[13px] font-extrabold">
+            <div>Total</div>
+            <div>{formatBDT(Math.abs(otherBillsTotal))}</div>
+          </div>
+          <div className={`text-[11px] font-bold ${otherBillsDue > 0 ? "text-danger" : "text-primary"}`}>
+            {otherBillsDue > 0
+              ? `Due ${formatBDT(otherBillsDue)}`
+              : otherBillsDue < 0
+                ? `Credit ${formatBDT(-otherBillsDue)}`
+                : "Paid in full"}
+          </div>
+        </div>
+      </Card>
 
-      <div className="flex gap-2.5">
-        <Card className="flex-1">
-          <div className="text-[10.5px] font-bold text-text-secondary">Meal total</div>
-          <div className="mt-0.5 text-[15px] font-extrabold">{formatBDT(Math.abs(mealTotal))}</div>
-          {mealDue !== 0 && (
-            <div className={`mt-0.5 text-[9.5px] font-bold ${mealDue > 0 ? "text-danger" : "text-primary"}`}>
-              {mealDue > 0 ? `Due ${formatBDT(mealDue)}` : `Credit ${formatBDT(-mealDue)}`}
-            </div>
-          )}
-        </Card>
-        <Card className="flex-1">
-          <div className="text-[10.5px] font-bold text-text-secondary">Other bills total</div>
-          <div className="mt-0.5 text-[15px] font-extrabold">{formatBDT(Math.abs(otherBillsTotal))}</div>
-          {otherBillsDue !== 0 && (
-            <div className={`mt-0.5 text-[9.5px] font-bold ${otherBillsDue > 0 ? "text-danger" : "text-primary"}`}>
-              {otherBillsDue > 0 ? `Due ${formatBDT(otherBillsDue)}` : `Credit ${formatBDT(-otherBillsDue)}`}
-            </div>
-          )}
-        </Card>
-      </div>
+      <Card className="flex items-center justify-between bg-primary-soft">
+        <div className="text-[13.5px] font-extrabold text-primary">Grand total</div>
+        <div className="text-[15px] font-extrabold text-primary">{formatBDT(Math.abs(bill.grandTotal))}</div>
+      </Card>
       </div>
       </div>
 

@@ -1832,6 +1832,14 @@ function computePaymentBreakdown(
       remaining -= applied;
     }
   }
+  if (targets.includes("previousMealBalance")) {
+    const due = bill.previousMealBalance - bill.previousMealBalancePaid;
+    if (due > 0 && remaining > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown.previousMealBalance = applied;
+      remaining -= applied;
+    }
+  }
   const order: BillSection["label"][] = ["mealCost", "roomRent", "serviceCharge", "cookSalary"];
   for (const label of order) {
     if (remaining <= 0) break;
@@ -1859,6 +1867,8 @@ function applyPaymentBreakdown(bill: Bill, breakdown: NonNullable<Payment["break
   for (const [key, amt] of Object.entries(breakdown)) {
     if (key === "previousBalance") {
       bill.previousBalancePaid += amt as number;
+    } else if (key === "previousMealBalance") {
+      bill.previousMealBalancePaid += amt as number;
     } else {
       const section = bill.sections.find((s) => s.label === key);
       if (section) section.paid += amt as number;
@@ -2010,7 +2020,16 @@ const bills: BillRepository = {
             }
           : s
       );
-      const grandTotal = round2(sections.reduce((sum, s) => sum + s.total, 0) + bill.previousBalance);
+      // Same meal/other split as generateBills — a rent credit from the
+      // applied advance must never reach into meal and erase a due there.
+      const mealBucketTotal =
+        (sections.find((s) => s.label === "mealCost")?.total ?? 0) + bill.previousMealBalance;
+      const otherSectionsTotal = sections
+        .filter((s) => s.label !== "mealCost")
+        .reduce((sum, s) => sum + Math.max(s.total, 0), 0);
+      const grandTotal = round2(
+        Math.max(mealBucketTotal, 0) + Math.max(otherSectionsTotal + bill.previousBalance, 0)
+      );
       store.data.bills = store.data.bills.map((b) => (b.id === bill.id ? { ...b, sections, grandTotal } : b));
       store.emit(`bills:${hostelId}`);
       store.emit(`bill:${userId}`);
@@ -2205,13 +2224,41 @@ const bills: BillRepository = {
       const prevBill = store.data.bills
         .filter((b) => b.hostelId === hostelId && b.userId === u.id && b.month < month)
         .sort((a, b) => b.month.localeCompare(a.month))[0];
-      const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
+      // Meal cost is its own account, settled among members — a leftover meal
+      // credit/due must never roll forward and silently offset (or get offset
+      // by) what's owed for rent/service/cook. Only the non-meal portion of
+      // the prior bill carries forward here; an unpaid meal balance stays
+      // exactly where it is, still owed and still payable on that month's own
+      // bill (each month's bill remains independently payable via Bill
+      // history), instead of getting buried inside a combined number.
+      const prevNonMeal = prevBill?.sections.filter((s) => s.label !== "mealCost") ?? [];
+      const prevNonMealTotal =
+        prevNonMeal.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + (prevBill?.previousBalance ?? 0);
+      const prevNonMealPaid =
+        prevNonMeal.reduce((sum, s) => sum + s.paid, 0) + (prevBill?.previousBalancePaid ?? 0);
+      const previousBalance = prevBill ? round2(prevNonMealTotal - prevNonMealPaid) : 0;
+      // Same carry, scoped to meal only: last month's own unsettled mealCost
+      // net, plus whatever IT had already carried — recursive, exactly like
+      // previousBalance above, just never mixed with it.
+      const prevMeal = prevBill?.sections.find((s) => s.label === "mealCost");
+      const prevMealTotal = (prevMeal?.total ?? 0) + (prevBill?.previousMealBalance ?? 0);
+      const prevMealPaid = (prevMeal?.paid ?? 0) + (prevBill?.previousMealBalancePaid ?? 0);
+      const previousMealBalance = prevBill ? round2(prevMealTotal - prevMealPaid) : 0;
       // A credit on one section (typically mealCost) must NOT silently offset a
       // due on another section (rent/service/salary) — that's an explicit
       // manager decision (settleMealCredit), not something generation does on
       // its own. Only each section's own positive due contributes to what's
-      // owed; previousBalance (a genuine carried cash position) still applies.
-      const grandTotal = round2(sections.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + previousBalance);
+      // owed. previousBalance is itself non-meal only (see above), so it's
+      // clamped together with the OTHER sections as one bucket, separately
+      // from the meal bucket (this month's own meal total plus its own carried
+      // balance) — a carried rent/service/cook credit can still zero out THAT
+      // bucket, but it can never reach into meal and erase a real meal due,
+      // and vice versa.
+      const mealBucketTotal = (sections.find((s) => s.label === "mealCost")?.total ?? 0) + previousMealBalance;
+      const otherSectionsTotal = sections
+        .filter((s) => s.label !== "mealCost")
+        .reduce((sum, s) => sum + Math.max(s.total, 0), 0);
+      const grandTotal = round2(Math.max(mealBucketTotal, 0) + Math.max(otherSectionsTotal + previousBalance, 0));
 
       return {
         id: existing?.id ?? nextId("bill"),
@@ -2222,6 +2269,8 @@ const bills: BillRepository = {
         sections,
         previousBalance,
         previousBalancePaid: existing?.previousBalancePaid ?? 0,
+        previousMealBalance,
+        previousMealBalancePaid: existing?.previousMealBalancePaid ?? 0,
         grandTotal,
         paid: existing?.paid ?? 0,
         dueDate: options?.dueDate ?? existing?.dueDate,

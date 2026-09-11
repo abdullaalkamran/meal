@@ -10,6 +10,7 @@ import { formatBDT } from "@/lib/utils/currency";
 
 const TARGET_LABEL: Record<BillTarget, string> = {
   previousBalance: "Previous balance",
+  previousMealBalance: "Previous meal balance",
   mealCost: "Meal cost",
   roomRent: "Room rent",
   serviceCharge: "Service charge",

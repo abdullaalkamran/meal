@@ -410,7 +410,7 @@ export interface BillSection {
  * and cook salary are billed for different reasons and a member may want to
  * settle any combination of them together (or run a credit on one while
  * still owing on another). */
-export type BillTarget = BillSection["label"] | "previousBalance";
+export type BillTarget = BillSection["label"] | "previousBalance" | "previousMealBalance";
 
 export interface Bill {
   id: string;
@@ -419,11 +419,22 @@ export interface Bill {
   month: string; // e.g. "2026-07"
   mealsCount: number;
   sections: BillSection[];
-  /** Unpaid leftover from this member's immediately preceding month's bill, carried forward on top of this month's fresh charges. */
+  /** Unpaid leftover from this member's immediately preceding month's bill,
+   * carried forward on top of this month's fresh charges — RENT/SERVICE/COOK
+   * SALARY only. Meal cost is its own account (see previousMealBalance):
+   * a credit or due in one must never roll forward and silently offset the
+   * other. */
   previousBalance: number;
   /** How much of `previousBalance` has been paid off — tracked separately from
    * the per-section paid amounts since it isn't tied to any one section. */
   previousBalancePaid: number;
+  /** Unpaid (due, positive) or overpaid (credit, negative) MEAL balance
+   * carried forward from the member's previous bill's mealCost section —
+   * kept entirely separate from previousBalance so it only ever nets
+   * against this month's own meal cost, never rent/service/cook salary. */
+  previousMealBalance: number;
+  /** How much of `previousMealBalance` has been paid off. */
+  previousMealBalancePaid: number;
   grandTotal: number;
   paid: number;
   /** Manager-set last day to pay this bill, e.g. "2026-07-15". */

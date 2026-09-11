@@ -560,6 +560,18 @@ async function ensureCookAttendanceResolvedAtColumn(): Promise<void> {
   await run("ALTER TABLE cook_attendance_reports ADD COLUMN resolved_at DATETIME(3) NULL AFTER created_at");
 }
 
+/** Meal cost's own carried balance, separate from previous_balance
+ * (rent/service/cook only) — on databases that predate the split. */
+async function ensurePreviousMealBalanceColumns(): Promise<void> {
+  if (await columnExists("bills", "previous_meal_balance")) return;
+  await run(
+    "ALTER TABLE bills ADD COLUMN previous_meal_balance DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER previous_balance_paid"
+  );
+  await run(
+    "ALTER TABLE bills ADD COLUMN previous_meal_balance_paid DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER previous_meal_balance"
+  );
+}
+
 /** Creates quick_service_settings on databases that predate it. */
 async function ensureQuickServiceSettingsTable(): Promise<void> {
   if (!(await tableExists("quick_service_settings"))) {
@@ -673,6 +685,7 @@ export function ensureReady(): Promise<void> {
       await ensureAnnouncementDismissalsTable();
       await ensureNoDuplicateMealEditPolls();
       await ensureCookAttendanceResolvedAtColumn();
+      await ensurePreviousMealBalanceColumns();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.

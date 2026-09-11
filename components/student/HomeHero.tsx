@@ -155,7 +155,11 @@ export function HomeHero({
   // section is still honoured.
   const mealCostPaid = bill?.sections.find((s) => s.label === "mealCost")?.paid ?? 0;
   const mealCostSoFar = (mealSummary?.cost ?? 0) - myShoppingCost;
-  const mealDue = mealCostSoFar - mealCostPaid;
+  // Folds in whatever meal balance carried forward from the previous bill —
+  // its own account, kept separate from previousDue below (rent/service/
+  // cook), so it never offsets (or gets offset by) an unrelated category.
+  const previousMealDue = (bill?.previousMealBalance ?? 0) - (bill?.previousMealBalancePaid ?? 0);
+  const mealDue = mealCostSoFar - mealCostPaid + previousMealDue;
 
   // Rent + everything else stays tied to the last generated bill — there's
   // no live-computable equivalent (it depends on room assignment and

@@ -329,13 +329,15 @@ export const shortages: ShortageRepository = {
 
 interface BillRow {
   id: string; hostel_id: string; user_id: string; month: string; meals_count: number;
-  previous_balance: number; previous_balance_paid: number; grand_total: number;
+  previous_balance: number; previous_balance_paid: number;
+  previous_meal_balance: number; previous_meal_balance_paid: number; grand_total: number;
   paid: number; due_date: string | null;
 }
 
 async function loadBills(where: string, params: unknown[], on?: Queryable): Promise<Bill[]> {
   const rows = await all<BillRow>(
     `SELECT id, hostel_id, user_id, month, meals_count, previous_balance, previous_balance_paid,
+            previous_meal_balance, previous_meal_balance_paid,
             grand_total, paid, due_date FROM bills WHERE ${where}`,
     params,
     on
@@ -385,6 +387,8 @@ async function loadBills(where: string, params: unknown[], on?: Queryable): Prom
     ),
     previousBalance: Number(r.previous_balance),
     previousBalancePaid: Number(r.previous_balance_paid),
+    previousMealBalance: Number(r.previous_meal_balance),
+    previousMealBalancePaid: Number(r.previous_meal_balance_paid),
     grandTotal: Number(r.grand_total),
     paid: Number(r.paid),
     ...(r.due_date ? { dueDate: toDay(r.due_date) } : {}),
@@ -415,6 +419,12 @@ async function writeSections(billId: string, sections: BillSection[], tx: Querya
 async function applySectionPaid(billId: string, label: BillTarget, delta: number, tx: Queryable) {
   if (label === "previousBalance") {
     await run("UPDATE bills SET previous_balance_paid = previous_balance_paid + ? WHERE id = ?", [delta, billId], tx);
+  } else if (label === "previousMealBalance") {
+    await run(
+      "UPDATE bills SET previous_meal_balance_paid = previous_meal_balance_paid + ? WHERE id = ?",
+      [delta, billId],
+      tx
+    );
   } else {
     await run("UPDATE bill_sections SET paid = paid + ? WHERE bill_id = ? AND label = ?", [delta, billId, label], tx);
   }
@@ -432,6 +442,14 @@ function computePaymentBreakdown(bill: Bill, targets: BillTarget[], amount: numb
     if (due > 0 && remaining > 0) {
       const applied = Math.min(remaining, due);
       breakdown.previousBalance = applied;
+      remaining -= applied;
+    }
+  }
+  if (targets.includes("previousMealBalance")) {
+    const due = bill.previousMealBalance - bill.previousMealBalancePaid;
+    if (due > 0 && remaining > 0) {
+      const applied = Math.min(remaining, due);
+      breakdown.previousMealBalance = applied;
       remaining -= applied;
     }
   }
@@ -704,7 +722,16 @@ export const bills: BillRepository = {
               }
             : s
         );
-        const grandTotal = round2(sections.reduce((sum, x) => sum + x.total, 0) + bill.previousBalance);
+        // Same meal/other split as generateBills — a rent credit from the
+        // applied advance must never reach into meal and erase a due there.
+        const mealBucketTotal =
+          (sections.find((s) => s.label === "mealCost")?.total ?? 0) + bill.previousMealBalance;
+        const otherSectionsTotal = sections
+          .filter((s) => s.label !== "mealCost")
+          .reduce((sum, x) => sum + Math.max(x.total, 0), 0);
+        const grandTotal = round2(
+          Math.max(mealBucketTotal, 0) + Math.max(otherSectionsTotal + bill.previousBalance, 0)
+        );
         await writeSections(bill.id, sections, tx);
         await run("UPDATE bills SET grand_total = ? WHERE id = ?", [grandTotal, bill.id], tx);
       }
@@ -915,29 +942,61 @@ export const bills: BillRepository = {
           { label: "cookSalary", items: salaryItems, total: salaryTotal, paid: paidFor("cookSalary") },
         ];
         const prevBill = prevByUser.get(u.id);
-        // Carry the full remaining, both signs: a due (+) or a credit (−).
-        const previousBalance = prevBill ? round2(prevBill.grandTotal - prevBill.paid) : 0;
+        // Meal cost is its own account, settled among members — a leftover
+        // meal credit/due must never roll forward and silently offset (or get
+        // offset by) what's owed for rent/service/cook. Only the non-meal
+        // portion of the prior bill carries forward here; an unpaid meal
+        // balance stays exactly where it is, still owed and still payable on
+        // that month's own bill, instead of getting buried inside a combined
+        // number.
+        const prevNonMeal = prevBill?.sections.filter((s) => s.label !== "mealCost") ?? [];
+        const prevNonMealTotal =
+          prevNonMeal.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + (prevBill?.previousBalance ?? 0);
+        const prevNonMealPaid =
+          prevNonMeal.reduce((sum, s) => sum + s.paid, 0) + (prevBill?.previousBalancePaid ?? 0);
+        const previousBalance = prevBill ? round2(prevNonMealTotal - prevNonMealPaid) : 0;
+        // Same carry, scoped to meal only: last month's own unsettled mealCost
+        // net, plus whatever IT had already carried — recursive, exactly like
+        // previousBalance above, just never mixed with it.
+        const prevMeal = prevBill?.sections.find((s) => s.label === "mealCost");
+        const prevMealTotal = (prevMeal?.total ?? 0) + (prevBill?.previousMealBalance ?? 0);
+        const prevMealPaid = (prevMeal?.paid ?? 0) + (prevBill?.previousMealBalancePaid ?? 0);
+        const previousMealBalance = prevBill ? round2(prevMealTotal - prevMealPaid) : 0;
         // A credit on one section (typically mealCost, since shopping spend can
         // exceed what a member owes for meals) must NOT silently offset a due on
         // another section (rent/service/salary) here — that's an explicit manager
         // decision (settleMealCredit), not something generation does on its own.
-        // Only each section's own positive due contributes to what's owed;
-        // previousBalance (a genuine carried cash position) still applies as-is.
-        const grandTotal = round2(sections.reduce((s, x) => s + Math.max(x.total, 0), 0) + previousBalance);
+        // Only each section's own positive due contributes to what's owed.
+        // previousBalance is itself non-meal only (see above), so it's clamped
+        // together with the OTHER sections as one bucket, separately from the
+        // meal bucket (this month's own meal total plus its own carried
+        // balance) — a carried rent/service/cook credit can still zero out THAT
+        // bucket, but it can never reach into meal and erase a real meal due,
+        // and vice versa.
+        const mealBucketTotal = (sections.find((s) => s.label === "mealCost")?.total ?? 0) + previousMealBalance;
+        const otherSectionsTotal = sections
+          .filter((s) => s.label !== "mealCost")
+          .reduce((s, x) => s + Math.max(x.total, 0), 0);
+        const grandTotal = round2(Math.max(mealBucketTotal, 0) + Math.max(otherSectionsTotal + previousBalance, 0));
 
         const billId = existing?.id ?? newId("bill");
         const dueDate = options?.dueDate ?? existing?.dueDate;
         if (existing) {
           await run(
-            "UPDATE bills SET meals_count = ?, previous_balance = ?, grand_total = ?, due_date = ? WHERE id = ?",
-            [ownMeals, round2(previousBalance), round2(grandTotal), dueDate ?? null, billId],
+            `UPDATE bills SET meals_count = ?, previous_balance = ?, previous_meal_balance = ?,
+                    grand_total = ?, due_date = ? WHERE id = ?`,
+            [ownMeals, round2(previousBalance), round2(previousMealBalance), round2(grandTotal), dueDate ?? null, billId],
             tx
           );
         } else {
           await run(
-            `INSERT INTO bills (id, hostel_id, user_id, month, meals_count, previous_balance, previous_balance_paid, grand_total, paid, due_date)
-             VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?)`,
-            [billId, hostelId, u.id, month, ownMeals, round2(previousBalance), round2(grandTotal), dueDate ?? null],
+            `INSERT INTO bills (id, hostel_id, user_id, month, meals_count, previous_balance, previous_balance_paid,
+                    previous_meal_balance, previous_meal_balance_paid, grand_total, paid, due_date)
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, 0, ?)`,
+            [
+              billId, hostelId, u.id, month, ownMeals,
+              round2(previousBalance), round2(previousMealBalance), round2(grandTotal), dueDate ?? null,
+            ],
             tx
           );
         }
@@ -947,6 +1006,8 @@ export const bills: BillRepository = {
           id: billId, hostelId, userId: u.id, month, mealsCount: ownMeals, sections,
           previousBalance: round2(previousBalance),
           previousBalancePaid: existing?.previousBalancePaid ?? 0,
+          previousMealBalance: round2(previousMealBalance),
+          previousMealBalancePaid: existing?.previousMealBalancePaid ?? 0,
           grandTotal: round2(grandTotal),
           paid: existing?.paid ?? 0,
           ...(dueDate ? { dueDate } : {}),

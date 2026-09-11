@@ -414,20 +414,31 @@ function ManagerFinancePage() {
               const room = roomOf(b.userId);
               const due = b.grandTotal - b.paid;
               const previousDue = b.previousBalance - b.previousBalancePaid;
-              // A credit on one section (e.g. meal cost) can offset a due on another
-              // (e.g. rent) in the aggregate total — check per-category so "Paid in
-              // full" isn't shown while a specific part of the bill is still owed.
-              const anyCategoryDue = previousDue > 0 || b.sections.some((s) => s.total - s.paid > 0);
               const open = expandedUserId === b.userId;
               // Meal cost is a separate account (members settle it live among
               // themselves, the hostel keeps no share) from everything owed to
-              // the owner/utilities/cook — split into two totals instead of one
-              // combined number, same as the member's own bill page.
+              // the owner/utilities/cook — two independent sections instead of
+              // one combined list, same split the member's own bill page uses.
               const memberMealSection = b.sections.find((s) => s.label === "mealCost");
               const memberOtherSections = b.sections.filter((s) => s.label !== "mealCost");
-              const memberMealTotal = memberMealSection?.total ?? 0;
-              const memberOtherBillsTotal =
-                memberOtherSections.reduce((sum, s) => sum + s.total, 0) + b.previousBalance;
+              const mealThisMonthDue = (memberMealSection?.total ?? 0) - (memberMealSection?.paid ?? 0);
+              // Nullish-guarded: a bill generated before this field existed
+              // won't have it yet, until its month is regenerated.
+              const previousMealDue = (b.previousMealBalance ?? 0) - (b.previousMealBalancePaid ?? 0);
+              const finalMealDue = mealThisMonthDue + previousMealDue;
+              // A credit on one category (e.g. meal, once its carried balance
+              // is folded in) can offset a due on another — check per-category
+              // (meal by its FINAL balance, not just this month's raw section)
+              // so "Paid in full" isn't shown while something is still owed.
+              const anyCategoryDue =
+                previousDue > 0 ||
+                finalMealDue > 0 ||
+                memberOtherSections.some((s) => s.total - s.paid > 0);
+              const otherBucketTotal =
+                memberOtherSections.reduce((sum, s) => sum + Math.max(s.total, 0), 0) + b.previousBalance;
+              const otherBucketDue =
+                otherBucketTotal -
+                (memberOtherSections.reduce((sum, s) => sum + s.paid, 0) + b.previousBalancePaid);
               return (
                 <Card key={b.id}>
                   <button
@@ -456,87 +467,129 @@ function ManagerFinancePage() {
                   </button>
 
                   {open && (
-                    <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
-                      <div className="flex gap-2 rounded-btn bg-bg p-2.5">
-                        <div className="flex-1">
-                          <div className="text-[9px] font-bold text-text-secondary">MEAL TOTAL</div>
-                          <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(memberMealTotal))}</div>
-                        </div>
-                        <div className="w-px shrink-0 bg-border" />
-                        <div className="flex-1">
-                          <div className="text-[9px] font-bold text-text-secondary">OTHER BILLS TOTAL</div>
-                          <div className="text-[12.5px] font-extrabold">{formatBDT(Math.abs(memberOtherBillsTotal))}</div>
-                        </div>
-                      </div>
+                    <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3">
                       {b.dueDate && (
                         <div className="flex items-center justify-between text-[11px] font-bold text-text-secondary">
                           <div>Last day of payment</div>
                           <div>{b.dueDate}</div>
                         </div>
                       )}
-                      {previousDue > 0 && (
-                        <div className="flex items-center justify-between text-[11px] font-bold text-orange">
-                          <div>Previous balance ({formatMonthLabel(previousMonth(b.month))})</div>
-                          <div>{formatBDT(previousDue)}</div>
+
+                      {/* MEAL — its own account, settled live among members;
+                          the hostel keeps no share of it. */}
+                      <div className="rounded-btn bg-bg p-3">
+                        <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-text-secondary">
+                          Meal
                         </div>
-                      )}
-                      {previousDue < 0 && (
-                        <div className="flex items-center justify-between text-[11px] font-bold text-primary">
-                          <div>Previous credit (carried forward)</div>
-                          <div>{formatBDT(-previousDue)}</div>
+                        {memberMealSection?.items.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between text-[11px] font-semibold">
+                            <div className="text-text-secondary">{item.label}</div>
+                            <div>
+                              {item.amount < 0 ? "−" : ""}
+                              {formatBDT(Math.abs(item.amount))}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[11.5px] font-extrabold">
+                          <div>{formatMonthLabel(b.month)} meal balance</div>
+                          <div className={mealThisMonthDue > 0 ? "text-danger" : "text-primary"}>
+                            {mealThisMonthDue > 0
+                              ? `Due ${formatBDT(mealThisMonthDue)}`
+                              : `Credit ${formatBDT(-mealThisMonthDue)}`}
+                          </div>
                         </div>
-                      )}
-                      {b.sections.map((s) => {
-                        const sectionDue = s.total - s.paid;
-                        return (
-                          <div key={s.label}>
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <div>
-                                {SECTION_LABEL[s.label]}{" "}
-                                <span className="font-semibold text-text-secondary">
-                                  · {formatMonthLabel(b.month)}
-                                </span>
-                              </div>
-                              <div className="text-right">
-                                <div>{formatBDT(Math.abs(s.total))}</div>
+                        {previousMealDue !== 0 && (
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <div className="text-text-secondary">
+                              Previous month ({formatMonthLabel(previousMonth(b.month))})
+                            </div>
+                            <div className={previousMealDue > 0 ? "text-danger" : "text-primary"}>
+                              {previousMealDue > 0
+                                ? `Due ${formatBDT(previousMealDue)}`
+                                : `Credit ${formatBDT(-previousMealDue)}`}
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[12.5px] font-extrabold">
+                          <div>Final meal balance</div>
+                          <div className={finalMealDue > 0 ? "text-danger" : "text-primary"}>
+                            {finalMealDue > 0
+                              ? `Due ${formatBDT(finalMealDue)}`
+                              : `Credit ${formatBDT(-finalMealDue)}`}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* SERVICE, RENT & SALARY — owed to the owner/utilities/
+                          cook, kept in its own bucket so a meal credit/due can
+                          never silently offset it, or vice versa. */}
+                      <div className="rounded-btn bg-bg p-3">
+                        <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wide text-text-secondary">
+                          Service, Rent &amp; Salary
+                        </div>
+                        {memberOtherSections.map((s) => {
+                          const sectionDue = s.total - s.paid;
+                          return (
+                            <div key={s.label} className="mb-1.5 last:mb-0">
+                              <div className="flex items-center justify-between text-[11px] font-bold">
+                                <div>{SECTION_LABEL[s.label]}</div>
                                 <div
-                                  className={`text-[9px] font-bold ${
+                                  className={
                                     sectionDue < 0
                                       ? "text-primary"
                                       : sectionDue > 0
                                         ? "text-danger"
                                         : "text-text-secondary"
-                                  }`}
+                                  }
                                 >
-                                  {sectionDue < 0
-                                    ? `Credit ${formatBDT(-sectionDue)}`
-                                    : sectionDue > 0
-                                      ? `Due ${formatBDT(sectionDue)}`
-                                      : "Paid"}
+                                  {formatBDT(Math.abs(s.total))}
                                 </div>
                               </div>
+                              {s.items.map((item, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-center justify-between pl-2 text-[10px] font-semibold text-text-secondary"
+                                >
+                                  <div>{item.label}</div>
+                                  <div>
+                                    {item.amount < 0 ? "−" : ""}
+                                    {formatBDT(Math.abs(item.amount))}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                            {s.items.map((item, i) => (
-                              <div
-                                key={i}
-                                className="flex items-center justify-between pl-2 text-[10px] font-semibold text-text-secondary"
-                              >
-                                <div>{item.label}</div>
-                                <div>
-                                  {item.amount < 0 ? "−" : ""}
-                                  {formatBDT(Math.abs(item.amount))}
-                                </div>
-                              </div>
-                            ))}
-                            {s.label === "mealCost" && previousDue > 0 && (
-                              <div className="flex items-center justify-between pl-2 text-[10px] font-semibold text-orange">
-                                <div>Previous month due ({formatMonthLabel(previousMonth(b.month))})</div>
-                                <div>{formatBDT(previousDue)}</div>
-                              </div>
-                            )}
+                          );
+                        })}
+                        {previousDue !== 0 && (
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <div className="text-text-secondary">
+                              Previous {previousDue > 0 ? "balance" : "credit"} (
+                              {formatMonthLabel(previousMonth(b.month))})
+                            </div>
+                            <div className={previousDue > 0 ? "text-danger" : "text-primary"}>
+                              {formatBDT(Math.abs(previousDue))}
+                            </div>
                           </div>
-                        );
-                      })}
+                        )}
+                        <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[11.5px] font-extrabold">
+                          <div>Total</div>
+                          <div>{formatBDT(Math.abs(otherBucketTotal))}</div>
+                        </div>
+                        <div className={`text-[10px] font-bold ${otherBucketDue > 0 ? "text-danger" : "text-primary"}`}>
+                          {otherBucketDue > 0
+                            ? `Due ${formatBDT(otherBucketDue)}`
+                            : otherBucketDue < 0
+                              ? `Credit ${formatBDT(-otherBucketDue)}`
+                              : "Paid"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-btn bg-primary-soft p-3">
+                        <div className="text-[12.5px] font-extrabold text-primary">Grand total</div>
+                        <div className="text-[14px] font-extrabold text-primary">
+                          {formatBDT(Math.abs(b.grandTotal))}
+                        </div>
+                      </div>
 
                       {(due > 0 || anyCategoryDue) && (
                         <button

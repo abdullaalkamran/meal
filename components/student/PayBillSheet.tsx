@@ -20,6 +20,7 @@ const SENDER_LABEL: Record<Payment["method"], string> = {
 
 const TARGET_LABEL: Record<BillTarget, string> = {
   previousBalance: "Previous balance",
+  previousMealBalance: "Previous meal balance",
   mealCost: "Meal cost",
   roomRent: "Room rent",
   serviceCharge: "Service charge",
@@ -47,6 +48,9 @@ export function PayBillSheet({
     const list: { target: BillTarget; due: number }[] = [];
     if (bill.previousBalance > 0) {
       list.push({ target: "previousBalance", due: bill.previousBalance - bill.previousBalancePaid });
+    }
+    if (bill.previousMealBalance > 0) {
+      list.push({ target: "previousMealBalance", due: bill.previousMealBalance - bill.previousMealBalancePaid });
     }
     for (const s of bill.sections) {
       list.push({ target: s.label, due: s.total - s.paid });

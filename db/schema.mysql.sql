@@ -462,6 +462,11 @@ CREATE TABLE bills (
   meals_count            INT         NOT NULL DEFAULT 0,
   previous_balance       DECIMAL(10,2) NOT NULL DEFAULT 0,
   previous_balance_paid  DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- Meal cost's own carried balance — kept separate from previous_balance
+  -- (rent/service/cook only) so a meal credit/due never rolls forward to
+  -- silently offset (or get offset by) what's owed for rent/service/cook.
+  previous_meal_balance      DECIMAL(10,2) NOT NULL DEFAULT 0,
+  previous_meal_balance_paid DECIMAL(10,2) NOT NULL DEFAULT 0,
   grand_total            DECIMAL(10,2) NOT NULL DEFAULT 0,
   paid                   DECIMAL(10,2) NOT NULL DEFAULT 0,
   due_date               DATE        NULL,
