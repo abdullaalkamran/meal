@@ -264,6 +264,7 @@ export async function getPublicHostelView(id: string): Promise<PublicHostelView 
         capacity: r.capacity,
         seatRent: r.seatRent,
         facilities: r.facilities,
+        image: r.image,
         freeNow: a?.freeNow ?? Math.max(r.capacity - r.occupantIds.length, 0),
         upcoming: a?.upcoming ?? [],
       };

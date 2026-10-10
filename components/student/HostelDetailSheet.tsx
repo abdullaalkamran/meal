@@ -130,9 +130,15 @@ export function HostelDetailSheet({
           const free = freeSeats(r);
           return (
             <div key={r.id} className="rounded-btn bg-bg px-3 py-2.5">
-              <div className="flex items-center justify-between">
-                <div className="text-[12px] font-extrabold">Room {r.number}</div>
-                <div className="text-[11.5px] font-extrabold text-primary">{formatBDT(r.seatRent)}/seat</div>
+              <div className="flex items-center gap-2.5">
+                {r.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={r.image} alt={`Room ${r.number}`} className="h-10 w-10 shrink-0 rounded-btn object-cover" />
+                )}
+                <div className="flex min-w-0 flex-1 items-center justify-between">
+                  <div className="text-[12px] font-extrabold">Room {r.number}</div>
+                  <div className="text-[11.5px] font-extrabold text-primary">{formatBDT(r.seatRent)}/seat</div>
+                </div>
               </div>
               <div className="mt-0.5 text-[9.5px] font-semibold text-text-secondary">
                 {free} of {r.capacity} seat{r.capacity === 1 ? "" : "s"} free

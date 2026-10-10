@@ -142,6 +142,10 @@ CREATE TABLE rooms (
   capacity   INT         NOT NULL,
   -- Monthly rent for ONE seat; each occupant pays this (not split).
   seat_rent  DECIMAL(10,2) NOT NULL DEFAULT 0,
+  -- A photo of the room, downscaled + JPEG-compressed client-side into a
+  -- data URL (same convention as users.avatar_image) — shown on the public
+  -- hostel page and Find Hostel discovery.
+  image      MEDIUMTEXT NULL,
   UNIQUE KEY uq_rooms_hostel_number (hostel_id, number),
   INDEX idx_rooms_hostel (hostel_id),
   CONSTRAINT ck_rooms_capacity CHECK (capacity > 0)

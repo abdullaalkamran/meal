@@ -92,6 +92,7 @@ interface HostelRow {
 
 interface RoomRow {
   id: string; hostel_id: string; number: string; capacity: number; seat_rent: number;
+  image: string | null;
 }
 
 // ── Mappers ────────────────────────────────────────────────────────────────
@@ -225,6 +226,7 @@ async function toRoom(r: RoomRow, on?: Queryable): Promise<Room> {
     occupantIds: occupants.map((o) => o.id),
     seatRent: Number(r.seat_rent),
     facilities: facilities.length ? facilities.map((f) => f.facility) : undefined,
+    image: r.image ?? undefined,
   }) as Room;
 }
 
@@ -432,7 +434,7 @@ export const users: UserRepository = {
         );
       }
       const room = await one<RoomRow>(
-        "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ? AND hostel_id = ? FOR UPDATE",
+        "SELECT id, hostel_id, number, capacity, seat_rent, image FROM rooms WHERE id = ? AND hostel_id = ? FOR UPDATE",
         [roomId, hostelId],
         tx
       );
@@ -537,7 +539,7 @@ export async function setUserPassword(userId: string, newPassword: string): Prom
 export const rooms: RoomRepository = {
   async listByHostel(hostelId) {
     const rows = await all<RoomRow>(
-      "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE hostel_id = ? ORDER BY number",
+      "SELECT id, hostel_id, number, capacity, seat_rent, image FROM rooms WHERE hostel_id = ? ORDER BY number",
       [hostelId]
     );
     return Promise.all(rows.map((r) => toRoom(r)));
@@ -546,7 +548,7 @@ export const rooms: RoomRepository = {
   async assignMember(roomId, userId) {
     await transaction(async (tx) => {
       const room = await one<RoomRow>(
-        "SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ? FOR UPDATE",
+        "SELECT id, hostel_id, number, capacity, seat_rent, image FROM rooms WHERE id = ? FOR UPDATE",
         [roomId],
         tx
       );
@@ -565,8 +567,8 @@ export const rooms: RoomRepository = {
     await transaction(async (tx) => {
       const id = newId("room");
       await run(
-        "INSERT INTO rooms (id, hostel_id, number, capacity, seat_rent) VALUES (?, ?, ?, ?, ?)",
-        [id, room.hostelId, room.number, room.capacity, room.seatRent ?? 0],
+        "INSERT INTO rooms (id, hostel_id, number, capacity, seat_rent, image) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, room.hostelId, room.number, room.capacity, room.seatRent ?? 0, room.image ?? null],
         tx
       );
       for (const f of room.facilities ?? []) {
@@ -578,13 +580,14 @@ export const rooms: RoomRepository = {
 
   async update(roomId, patch) {
     await transaction(async (tx) => {
-      const room = await one<RoomRow>("SELECT id, hostel_id, number, capacity, seat_rent FROM rooms WHERE id = ?", [roomId], tx);
+      const room = await one<RoomRow>("SELECT id, hostel_id, number, capacity, seat_rent, image FROM rooms WHERE id = ?", [roomId], tx);
       if (!room) return;
       const sets: string[] = [];
       const params: unknown[] = [];
       if (patch.number !== undefined) { sets.push("number = ?"); params.push(patch.number); }
       if (patch.capacity !== undefined) { sets.push("capacity = ?"); params.push(patch.capacity); }
       if (patch.seatRent !== undefined) { sets.push("seat_rent = ?"); params.push(patch.seatRent); }
+      if (patch.image !== undefined) { sets.push("image = ?"); params.push(patch.image ?? null); }
       if (sets.length) {
         params.push(roomId);
         await run(`UPDATE rooms SET ${sets.join(", ")} WHERE id = ?`, params, tx);

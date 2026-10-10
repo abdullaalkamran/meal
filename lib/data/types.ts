@@ -169,6 +169,11 @@ export interface Room {
   seatRent: number;
   /** Amenities available in this room, e.g. ["Attached bath", "AC", "Balcony"]. */
   facilities?: string[];
+  /** A photo of the room, downscaled + JPEG-compressed client-side into a
+   * data URL (same convention as User.avatarImage/Product.image) — shown on
+   * the public hostel page and "Find hostel" discovery so prospective
+   * boarders can see the actual room before requesting to join. */
+  image?: string;
 }
 
 /** What the hostel's MANAGER is allowed to do — set by the owner per hostel.

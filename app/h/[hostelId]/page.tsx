@@ -109,9 +109,14 @@ export default function PublicHostelPage() {
         <div className="flex flex-col gap-2">
           {view.rooms.map((r) => (
             <Card key={r.roomId} className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg text-text-secondary">
-                <Icon icon={DoorOpen} size={16} />
-              </div>
+              {r.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={r.image} alt={`Room ${r.number}`} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg text-text-secondary">
+                  <Icon icon={DoorOpen} size={16} />
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="text-[12.5px] font-extrabold">Room {r.number}</div>
                 <div className="text-[10px] font-semibold text-text-secondary">

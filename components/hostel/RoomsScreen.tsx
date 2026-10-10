@@ -79,9 +79,18 @@ export function RoomsScreen({ memberHref }: { memberHref: (userId: string) => st
           return (
             <Card key={room.id} className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn bg-bg text-[12.5px] font-extrabold">
-                  {room.number}
-                </div>
+                {room.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={room.image}
+                    alt={`Room ${room.number}`}
+                    className="h-11 w-11 shrink-0 rounded-btn object-cover"
+                  />
+                ) : (
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn bg-bg text-[12.5px] font-extrabold">
+                    {room.number}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="text-[12.5px] font-extrabold">Room {room.number}</div>
                   <div className="text-[9.5px] font-semibold text-text-secondary">

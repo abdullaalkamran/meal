@@ -10,6 +10,7 @@ export interface PublicRoomView {
   capacity: number;
   seatRent: number;
   facilities?: string[];
+  image?: string;
   freeNow: number;
   /** Seats opening from members' approved leave notices; freeFrom = leave date. */
   upcoming: { freeFrom: string }[];

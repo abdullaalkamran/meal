@@ -183,6 +183,7 @@ function FindHostelInner() {
           const pending = requestFor(h.id);
           const seats = freeSeats(h.id);
           const invited = h.id === invitedHostelId;
+          const thumb = (roomsByHostel[h.id] ?? []).find((r) => r.image)?.image;
           return (
             <Card key={h.id} className={invited ? "border border-primary" : undefined}>
               <button
@@ -190,9 +191,14 @@ function FindHostelInner() {
                 onClick={() => setDetailHostel(h)}
                 className="mb-2.5 flex w-full items-center gap-3 text-left"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-                  <Icon icon={h.verified ? BadgeCheck : Building2} size={17} />
-                </div>
+                {thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={thumb} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
+                    <Icon icon={h.verified ? BadgeCheck : Building2} size={17} />
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 text-[12.5px] font-extrabold">
                     <span className="truncate">{h.name}</span>

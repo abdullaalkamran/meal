@@ -132,7 +132,7 @@ export interface RoomRepository {
   create(room: Omit<Room, "id" | "occupantIds">): Promise<void>;
   update(
     roomId: string,
-    patch: Partial<Pick<Room, "number" | "capacity" | "seatRent" | "facilities">>
+    patch: Partial<Pick<Room, "number" | "capacity" | "seatRent" | "facilities" | "image">>
   ): Promise<void>;
   subscribe(hostelId: string, cb: (rooms: Room[]) => void): Unsubscribe;
 }

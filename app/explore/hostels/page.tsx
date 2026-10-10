@@ -213,6 +213,7 @@ export default function HostelsPage() {
           {shownHostels.map((h) => {
             const isMine = h.id === user?.hostelId;
             const isRequested = requested.has(h.id);
+            const thumb = (roomsByHostel[h.id] ?? []).find((r) => r.image)?.image;
             return (
               <Card key={h.id} className="flex items-center gap-3">
                 <button
@@ -220,13 +221,14 @@ export default function HostelsPage() {
                   onClick={() => setDetailHostel(h)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
-                  <div
-                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-btn ${
-                      h.verified ? "bg-primary-soft text-primary" : "bg-primary-soft text-primary"
-                    }`}
-                  >
-                    <Icon icon={h.verified ? BadgeCheck : BedDouble} size={18} />
-                  </div>
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb} alt="" className="h-11 w-11 shrink-0 rounded-btn object-cover" />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn bg-primary-soft text-primary">
+                      <Icon icon={h.verified ? BadgeCheck : BedDouble} size={18} />
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-[12px] font-extrabold">{h.name}</span>

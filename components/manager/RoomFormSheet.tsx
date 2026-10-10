@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { ImagePicker } from "@/components/store/ImagePicker";
 import { useToast } from "@/components/ui/Toast";
 import { repo, type Room } from "@/lib/data";
 
@@ -28,6 +29,7 @@ export function RoomFormSheet({
   const [seatRent, setSeatRent] = useState("");
   const [facilities, setFacilities] = useState<string[]>([]);
   const [facilityInput, setFacilityInput] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (open) {
@@ -37,6 +39,7 @@ export function RoomFormSheet({
         setSeatRent(room ? String(room.seatRent) : "");
         setFacilities(room?.facilities ?? []);
         setFacilityInput("");
+        setImage(room?.image);
       });
     }
   }, [open, room]);
@@ -56,6 +59,7 @@ export function RoomFormSheet({
       capacity: Math.max(1, Number(capacity)),
       seatRent: Number(seatRent),
       facilities,
+      image,
     };
     if (room) {
       await repo.rooms.update(room.id, patch);
@@ -69,6 +73,18 @@ export function RoomFormSheet({
 
   return (
     <Sheet open={open} onClose={onClose} title={room ? `Edit Room ${room.number}` : "Add room"}>
+      <div className="mb-4">
+        <ImagePicker
+          value={image}
+          onChange={setImage}
+          label="ROOM PHOTO (optional)"
+          maxDim={1080}
+        />
+        <div className="mt-1.5 text-[10px] font-semibold text-text-secondary">
+          Shown on Find Hostel so prospective boarders can see the room before requesting to join.
+        </div>
+      </div>
+
       <div className="mb-4 flex gap-3">
         <label className="min-w-0 flex-1">
           <div className="mb-1.5 text-[10.5px] font-extrabold text-text-secondary">ROOM NO.</div>

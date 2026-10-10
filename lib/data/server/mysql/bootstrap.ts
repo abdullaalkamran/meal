@@ -276,6 +276,12 @@ async function ensureAvatarImageColumn(): Promise<void> {
   await run("ALTER TABLE users ADD COLUMN avatar_image MEDIUMTEXT NULL AFTER avatar_seed");
 }
 
+/** Room photo, on databases that predate it. */
+async function ensureRoomImageColumn(): Promise<void> {
+  if (await columnExists("rooms", "image")) return;
+  await run("ALTER TABLE rooms ADD COLUMN image MEDIUMTEXT NULL AFTER seat_rent");
+}
+
 /** Service Manager permission assignment (Super Admin → Users). */
 async function ensureServicePermissionColumn(): Promise<void> {
   if (await columnExists("users", "service_kinds")) return;
@@ -686,6 +692,7 @@ export function ensureReady(): Promise<void> {
       await ensureNoDuplicateMealEditPolls();
       await ensureCookAttendanceResolvedAtColumn();
       await ensurePreviousMealBalanceColumns();
+      await ensureRoomImageColumn();
       await seedPlatformTeam();
     })().catch((err) => {
       // Let the next request retry rather than caching a failed setup.
