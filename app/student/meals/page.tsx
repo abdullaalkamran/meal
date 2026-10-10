@@ -141,16 +141,6 @@ export default function StudentMealsPage() {
   // Whether the manager has confirmed cooked/not-cooked for the day being
   // viewed — live, so it updates the moment the manager decides.
   const dayReports = useCookAttendanceForDate(activeHostelId, selectedDate);
-  // Tracks which meals were already nudged this visit, so the button can't be
-  // spammed — it just relabels to "Asked" rather than re-firing.
-  const [askedMeals, setAskedMeals] = useState<Set<MealSlot>>(new Set());
-  const askManagerToConfirm = async (meal: MealSlot) => {
-    if (!activeHostelId) return;
-    setAskedMeals((prev) => new Set(prev).add(meal));
-    await repo.cookAttendance.askToConfirm(activeHostelId, selectedDate, meal);
-    toast(`Asked the manager to confirm ${MEAL_LABEL[meal].toLowerCase()}.`);
-  };
-
   useEffect(() => {
     if (!activeHostelId) return;
     const from = `${year}-${String(month).padStart(2, "0")}-01`;
@@ -222,13 +212,14 @@ export default function StudentMealsPage() {
   // shopping-responsible rotation list and the leaderboard below it.
   //
   // Meals are counted with the EXACT same gate as the hostel's actual meal rate
-  // (billing's mealRateFor / meals.getActualMealRate): a (day, meal) counts only
-  // when the manager has confirmed it was cooked, only for current non-banned
-  // boarders, and only from each member's join date on. Counting raw entries
-  // instead (including future/uncooked days) inflated the denominator and made
-  // the leaderboard's "৳/meal" disagree with the "Avg cost / meal" summary.
-  const cookedSlots = new Set(
-    allReports.filter((r) => r.status === "resolved_cooked").map((r) => `${r.date}|${r.meal}`)
+  // (billing's mealRateFor / meals.getActualMealRate): a (day, meal) counts by
+  // default, EXCEPT one the manager confirmed the cook was absent for, only for
+  // current non-banned boarders, and only from each member's join date on.
+  // Counting raw entries instead (including future/uncooked days) inflated the
+  // denominator and made the leaderboard's "৳/meal" disagree with the "Avg
+  // cost / meal" summary.
+  const absentSlots = new Set(
+    allReports.filter((r) => r.status === "confirmed_absent").map((r) => `${r.date}|${r.meal}`)
   );
   const boarderIds = new Set(users.filter((u) => !u.banned).map((u) => u.id));
   const joinedById = new Map(users.map((u) => [u.id, u.joinedAt?.slice(0, 10)]));
@@ -237,7 +228,7 @@ export default function StudentMealsPage() {
     if (!d) return 0;
     let sum = 0;
     for (const slot of ["breakfast", "lunch", "dinner"] as const) {
-      if (!cookedSlots.has(`${date}|${slot}`)) continue;
+      if (absentSlots.has(`${date}|${slot}`)) continue;
       for (const [userId, e] of Object.entries(d.entries)) {
         if (!boarderIds.has(userId)) continue;
         const joined = joinedById.get(userId);
@@ -292,9 +283,10 @@ export default function StudentMealsPage() {
   ).id;
 
   // This member's OWN eaten meals + guest meals for the selected month, counted
-  // on the same confirmed-cooked basis as their bill (so it reconciles with the
-  // meal rate above). Meal cost = those meals × the actual rate; paid/due comes
-  // from the selected month's bill once it's generated.
+  // on the same basis as their bill — every slot except one the cook was
+  // marked absent for (so it reconciles with the meal rate above). Meal cost
+  // = those meals × the actual rate; paid/due comes from the selected
+  // month's bill once it's generated.
   let myOwnMeals = 0;
   let myGuestMeals = 0;
   if (user) {
@@ -303,7 +295,7 @@ export default function StudentMealsPage() {
       const e = d.entries[user.id];
       if (!e || (jd && jd > d.date)) continue;
       for (const slot of ["breakfast", "lunch", "dinner"] as const) {
-        if (!cookedSlots.has(`${d.date}|${slot}`)) continue;
+        if (absentSlots.has(`${d.date}|${slot}`)) continue;
         myOwnMeals += e[slot].on ? 1 : 0;
         myGuestMeals += e[slot].guestCount;
       }
@@ -456,13 +448,6 @@ export default function StudentMealsPage() {
                   </div>
                   {!closed && !notYetJoined && selectedDate <= today() && (() => {
                     const cookReport = dayReports.find((r) => r.meal === meal);
-                    if (cookReport?.status === "resolved_cooked") {
-                      return (
-                        <div className="mt-0.5 text-[9px] font-bold text-primary">
-                          ✓ Confirmed cooked by manager
-                        </div>
-                      );
-                    }
                     if (cookReport?.status === "confirmed_absent") {
                       return (
                         <div className="mt-0.5 text-[9px] font-bold text-danger">
@@ -470,19 +455,7 @@ export default function StudentMealsPage() {
                         </div>
                       );
                     }
-                    return (
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold text-orange">Not confirmed by manager yet</span>
-                        <button
-                          type="button"
-                          disabled={askedMeals.has(meal)}
-                          onClick={() => askManagerToConfirm(meal)}
-                          className="text-[9px] font-extrabold text-primary underline disabled:cursor-not-allowed disabled:text-text-secondary disabled:no-underline"
-                        >
-                          {askedMeals.has(meal) ? "Asked" : "Ask manager"}
-                        </button>
-                      </div>
-                    );
+                    return null;
                   })()}
                 </div>
                 {notYetJoined ? (

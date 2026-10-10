@@ -265,14 +265,15 @@ function isMealOffered(hostelId: string, meal: MealSlot): boolean {
   return hostel?.settings.mealsOffered?.[meal] ?? true;
 }
 
-/** True only once a manager/owner has confirmed this exact (hostel, date,
- * meal) was actually cooked (cookAttendance.markCooked). Gates both the
- * cooking count and everything meal-rate/billing derives from it — a slot
- * nobody confirmed, or one confirmed as the cook being absent, contributes
- * zero no matter what any member's own on/off toggle says. */
-function isMealConfirmedCooked(hostelId: string, date: string, meal: MealSlot): boolean {
-  return store.data.cookAttendanceReports.some(
-    (r) => r.hostelId === hostelId && r.date === date && r.meal === meal && r.status === "resolved_cooked"
+/** True unless the manager has explicitly confirmed the cook was ABSENT for
+ * this exact (hostel, date, meal). Gates both the cooking count and
+ * everything meal-rate/billing derives from it — every slot counts by
+ * default, no daily confirmation needed; only an explicit "cook absent"
+ * (direct markAbsent, or a disputed report resolved via confirmAbsent)
+ * zeroes it out, no matter what any member's own on/off toggle says. */
+function isMealCounted(hostelId: string, date: string, meal: MealSlot): boolean {
+  return !store.data.cookAttendanceReports.some(
+    (r) => r.hostelId === hostelId && r.date === date && r.meal === meal && r.status === "confirmed_absent"
   );
 }
 
@@ -294,7 +295,7 @@ function actualMealRateFor(hostelId: string, month: string) {
   for (const day of store.data.mealDays) {
     if (day.hostelId !== hostelId || !day.date.startsWith(month)) continue;
     for (const slot of ["breakfast", "lunch", "dinner"] as const) {
-      if (!isMealConfirmedCooked(hostelId, day.date, slot)) continue;
+      if (!isMealCounted(hostelId, day.date, slot)) continue;
       for (const [userId, entry] of Object.entries(day.entries)) {
         if (!boarderIds.has(userId)) continue;
         const joined = joinedById.get(userId);
@@ -1147,7 +1148,7 @@ const meals: MealRepository = {
       for (const slot of ["breakfast", "lunch", "dinner"] as const) {
         const count = (entry[slot].on ? 1 : 0) + entry[slot].guestCount;
         mealsOn += count;
-        if (isMealConfirmedCooked(hostelId, day.date, slot)) billedMeals += count;
+        if (isMealCounted(hostelId, day.date, slot)) billedMeals += count;
       }
     }
     const { rate } = actualMealRateFor(hostelId, month);
@@ -2138,7 +2139,7 @@ const bills: BillRepository = {
           // Only a (day, meal) the manager confirmed was actually cooked
           // bills anyone for it — matches mealRateFor's denominator so the
           // rate and the sum of everyone's billed meals always reconcile.
-          if (!isMealConfirmedCooked(hostelId, day.date, slot)) continue;
+          if (!isMealCounted(hostelId, day.date, slot)) continue;
           // Guests are billed even when the HOST's own meal is off — an
           // approved guest ate regardless of whether the member did.
           if (entry[slot].on) ownMeals += 1;
@@ -2494,6 +2495,51 @@ const cookAttendance: CookAttendanceRepository = {
     store.emit(`cookAttendance:${report.hostelId}`);
     store.emit(`mealDay:${report.hostelId}`);
     store.emit(`announcements:${report.hostelId}`);
+  },
+  async markAbsent(hostelId, date, meal) {
+    // One direct tap — no report/vote step first. Same end state as
+    // confirmAbsent (cancels the meal, clears guest counts), just reachable
+    // immediately instead of only after a dispute is raised.
+    const decidedBy = actingUser?.id ?? "manager";
+    const now = new Date().toISOString();
+    const report = store.data.cookAttendanceReports.find(
+      (r) => r.hostelId === hostelId && r.date === date && r.meal === meal
+    );
+    if (report) {
+      report.status = "confirmed_absent";
+      report.reportedBy = decidedBy;
+      report.resolvedAt = now;
+    } else {
+      store.data.cookAttendanceReports.push({
+        id: nextId("cookattend"),
+        hostelId,
+        date,
+        meal,
+        status: "confirmed_absent",
+        reportedBy: decidedBy,
+        createdAt: now,
+        resolvedAt: now,
+      });
+    }
+    const day = ensureMealDay(hostelId, date);
+    Object.values(day.entries).forEach((entry) => {
+      entry[meal].on = false;
+      entry[meal].guestCount = 0;
+    });
+    // No prior poll to update here (unlike confirmAbsent) — post the notice
+    // fresh so members still see why the meal disappeared.
+    store.data.announcements.push({
+      id: nextId("ann"),
+      hostelId,
+      kind: "cook-absence-resolved",
+      title: "Meal cancelled — cook absent",
+      body: `${meal[0].toUpperCase()}${meal.slice(1)} on ${date} is cancelled for everyone.`,
+      payload: { meal, date },
+      createdAt: now,
+    });
+    store.emit(`cookAttendance:${hostelId}`);
+    store.emit(`mealDay:${hostelId}`);
+    store.emit(`announcements:${hostelId}`);
   },
   async askToConfirm(hostelId, date, meal) {
     const mname = `${meal[0].toUpperCase()}${meal.slice(1)}`;

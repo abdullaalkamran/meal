@@ -334,9 +334,9 @@ export const meals: MealRepository = {
     const totalShopping = Number(spend?.total ?? 0);
 
     // Only current, non-banned boarders count (cooks and platform roles never
-    // do) — AND only a (day, meal) the manager has confirmed was actually
-    // cooked. An unconfirmed or confirmed-absent slot contributes zero,
-    // regardless of any member's own on/off toggle.
+    // do) — AND every (day, meal) counts by default, EXCEPT one the manager
+    // has explicitly confirmed the cook was absent for, which contributes
+    // zero regardless of any member's own on/off toggle.
     const meals = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e
@@ -347,10 +347,10 @@ export const meals: MealRepository = {
           AND u.banned = 0
           AND u.role NOT IN ('cook','owner','superadmin','marketing','service')
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)
-          AND EXISTS (
+          AND NOT EXISTS (
             SELECT 1 FROM cook_attendance_reports r
              WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
-               AND r.status = 'resolved_cooked'
+               AND r.status = 'confirmed_absent'
           )`,
       [hostelId, mFrom, mTo, hostelId]
     );
@@ -373,17 +373,18 @@ export const meals: MealRepository = {
       [hostelId, userId, mFrom, mTo, today()]
     );
     const mealsOn = Number(on?.own ?? 0) + Number(on?.guests ?? 0);
-    // Of those, only the (day, meal) slots a manager confirmed cooked get
-    // billed — the same gate generateBills uses, so this equals the bill.
+    // Of those, every slot gets billed EXCEPT one the manager confirmed the
+    // cook was absent for — the same gate generateBills uses, so this
+    // equals the bill.
     const billed = await one<{ own: number | null; guests: number | null }>(
       `SELECT SUM(e.is_on) AS own, SUM(e.guest_count) AS guests
          FROM meal_entries e JOIN users u ON u.id = e.user_id
         WHERE e.hostel_id = ? AND e.user_id = ? AND e.day >= ? AND e.day < ?
           AND (u.joined_at IS NULL OR u.joined_at <= e.day)
-          AND EXISTS (
+          AND NOT EXISTS (
             SELECT 1 FROM cook_attendance_reports r
              WHERE r.hostel_id = e.hostel_id AND r.day = e.day AND r.meal = e.meal
-               AND r.status = 'resolved_cooked'
+               AND r.status = 'confirmed_absent'
           )`,
       [hostelId, userId, mFrom, mTo]
     );

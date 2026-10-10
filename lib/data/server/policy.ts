@@ -102,11 +102,12 @@ const ROLE_RULES: Record<string, Record<string, Role[]>> = {
   shoppingCosts: { decide: HOSTEL_STAFF, recordForMember: HOSTEL_STAFF, delete: HOSTEL_STAFF },
   // Manager requests the change; voting/withdrawing stays open to members.
   shoppingCostEdits: { request: HOSTEL_STAFF },
-  // markCooked/confirmAbsent are the gate that decides whether a slot counts
-  // toward cooking count AND billing (see mealRateFor/generateBills) —
-  // deliberately manager/owner only, never the cook confirming their own
-  // work. report/vote/listVotes stay open to any signed-in member.
-  cookAttendance: { markCooked: HOSTEL_STAFF, confirmAbsent: HOSTEL_STAFF },
+  // markCooked/confirmAbsent/markAbsent are the gate that decides whether a
+  // slot counts toward cooking count AND billing (see mealRateFor/
+  // generateBills) — deliberately manager/owner only, never the cook
+  // confirming their own work. report/vote/listVotes stay open to any
+  // signed-in member.
+  cookAttendance: { markCooked: HOSTEL_STAFF, confirmAbsent: HOSTEL_STAFF, markAbsent: HOSTEL_STAFF },
   cookLeave: { decide: HOSTEL_STAFF },
   shortages: { resolve: [...HOSTEL_STAFF, "cook"] },
   transfers: { advance: HOSTEL_STAFF },

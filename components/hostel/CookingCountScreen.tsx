@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Calendar, ChevronDown, FileText, SlidersHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileText } from "lucide-react";
 import { useSession } from "@/lib/auth/SessionProvider";
 import { useMealDay } from "@/hooks/useMealDay";
 import { useCookAttendanceForDate } from "@/hooks/useCookAttendance";
@@ -9,16 +9,22 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressRing } from "@/components/ui/ProgressRing";
+import { Sheet } from "@/components/ui/Sheet";
+import { MonthNav } from "@/components/ui/MonthNav";
 import { useToast } from "@/components/ui/Toast";
 import { ConfirmSheet } from "@/components/ui/ConfirmSheet";
-import { BulkConfirmCookedSheet } from "@/components/manager/BulkConfirmCookedSheet";
-import { CookingDetailsSheet } from "@/components/manager/CookingDetailsSheet";
 import { CookingPotIllustration } from "@/components/hostel/CookingPotIllustration";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
-import { repo, type CookAttendanceReport, type CookAttendanceVote, type MealDay, type MealSlot } from "@/lib/data";
-import { addDays, formatShortDate, today } from "@/lib/utils/date";
+import {
+  repo,
+  type CookAttendanceReport,
+  type CookAttendanceVote,
+  type MealDay,
+  type MealSlot,
+  type User,
+} from "@/lib/data";
+import { currentMonth, formatDayMonth, formatMonthLabel, formatShortDate, lastDayOfMonth, today } from "@/lib/utils/date";
 
-const HISTORY_DAYS = 14;
 const MEAL_SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner"];
 
 // Meal-branded colors for the ring/pill/border accents — same hues as
@@ -38,69 +44,174 @@ const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
 /** Every meal-count decision opens a confirm popup before it actually
- * applies — mistakes here affect billing/what everyone eats, and there's no
- * undo, so asking once up front is the safeguard. */
+ * applies — mistakes here affect billing/what everyone eats. */
 type PendingAction =
-  | { type: "markCooked"; meal: MealSlot }
+  | { type: "markAbsent"; date: string; meal: MealSlot }
+  | { type: "undoAbsent"; date: string; meal: MealSlot }
   | { type: "reportNotCooked"; meal: MealSlot }
+  | { type: "confirmCooked"; meal: MealSlot }
   | { type: "confirmAbsent"; meal: MealSlot; reportId: string };
 
-interface HistoryRow {
+interface MonthHistoryRow {
   date: string;
+  perMeal: Record<MealSlot, { offered: boolean; counted: boolean; count: number }>;
   total: number;
-  cancelledMeals: MealSlot[];
-  // Offered that day but never confirmed cooked, marked absent, or disputed —
-  // still zero everywhere (cooking count, meal rate, bills) until decided.
-  unconfirmedMeals: MealSlot[];
 }
 
-function buildHistory(days: MealDay[], reports: CookAttendanceReport[]): HistoryRow[] {
+/** Every offered meal counts by default now — only an explicit "cook absent"
+ * zeroes a slot out. This always matches what actually gets billed. */
+function buildMonthHistory(days: MealDay[], reports: CookAttendanceReport[], month: string): MonthHistoryRow[] {
   return days
+    .filter((d) => d.date.startsWith(month))
     .map((d) => {
       const entries = Object.values(d.entries);
-      // Same gate as billing: a slot nobody confirmed cooked contributes
-      // nothing to the history total either, so this number always matches
-      // what actually got billed.
-      const total = MEAL_SLOTS.reduce((sum, meal) => {
-        const confirmed = reports.some(
-          (r) => r.date === d.date && r.meal === meal && r.status === "resolved_cooked"
-        );
-        if (!confirmed) return sum;
-        return sum + entries.reduce((s, e) => s + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0);
-      }, 0);
-      const cancelledMeals = MEAL_SLOTS.filter((meal) =>
-        reports.some((r) => r.date === d.date && r.meal === meal && r.status === "confirmed_absent")
-      );
-      const unconfirmedMeals = MEAL_SLOTS.filter((meal) => {
+      const perMeal = {} as MonthHistoryRow["perMeal"];
+      let total = 0;
+      for (const meal of MEAL_SLOTS) {
         const offered = d.mealsOffered?.[meal] ?? true;
-        if (!offered) return false;
-        return !reports.some((r) => r.date === d.date && r.meal === meal);
-      });
-      return { date: d.date, total, cancelledMeals, unconfirmedMeals };
+        const absent = reports.some((r) => r.date === d.date && r.meal === meal && r.status === "confirmed_absent");
+        const counted = offered && !absent;
+        const count = counted ? entries.reduce((s, e) => s + ((e[meal].on ? 1 : 0) + e[meal].guestCount), 0) : 0;
+        perMeal[meal] = { offered, counted, count };
+        total += count;
+      }
+      return { date: d.date, perMeal, total };
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/** Today's cooking counts + attendance flow + 14-day history, shared by the
- * manager page and the owner's read-only view (`readOnly` hides the mark-
- * cooked / report / confirm actions but keeps counts and tallies visible). */
+/** One date's full breakdown — every meal, who was counted in it by name,
+ * and (unless read-only) a way to mark/undo "cook absent" for that specific
+ * past day without digging through a separate flow. */
+function HistoryDetailsSheet({
+  open,
+  onClose,
+  date,
+  day,
+  reports,
+  users,
+  readOnly,
+  onMarkAbsent,
+  onUndoAbsent,
+}: {
+  open: boolean;
+  onClose: () => void;
+  date: string;
+  day: MealDay | undefined;
+  reports: CookAttendanceReport[];
+  users: User[];
+  readOnly?: boolean;
+  onMarkAbsent: (meal: MealSlot) => void;
+  onUndoAbsent: (meal: MealSlot) => void;
+}) {
+  const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+  return (
+    <Sheet open={open} onClose={onClose} title={formatFullDate(date)}>
+      <div className="flex flex-col gap-4">
+        {MEAL_SLOTS.map((meal) => {
+          const offered = day?.mealsOffered?.[meal] ?? true;
+          const report = reports.find((r) => r.date === date && r.meal === meal);
+          const absent = report?.status === "confirmed_absent";
+          const entries = day ? Object.entries(day.entries) : [];
+          const onMembers = entries
+            .filter(([, e]) => e[meal].on)
+            .map(([userId, e]) => ({ name: nameById.get(userId) ?? "Member", guestCount: e[meal].guestCount }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          const c = MEAL_COLORS[meal];
+
+          return (
+            <div key={meal} className="rounded-btn border border-border p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className={`flex h-7 w-7 items-center justify-center rounded-full ${c.bg}`}>
+                    <Icon icon={c.icon} size={13} className={c.text} />
+                  </div>
+                  <div className="text-[12.5px] font-extrabold">{MEAL_LABEL[meal]}</div>
+                </div>
+                {!offered ? (
+                  <Chip>Not offered</Chip>
+                ) : absent ? (
+                  <Chip tone="danger" active>
+                    Cook absent
+                  </Chip>
+                ) : (
+                  <Chip tone="primary" active>
+                    Counted
+                  </Chip>
+                )}
+              </div>
+
+              {offered && !absent && (
+                <div className="flex flex-col gap-1 pl-9">
+                  {onMembers.length === 0 ? (
+                    <div className="text-[10.5px] font-semibold text-text-secondary">
+                      No one had this meal on.
+                    </div>
+                  ) : (
+                    onMembers.map((m, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] font-semibold">
+                        <div>{m.name}</div>
+                        {m.guestCount > 0 && (
+                          <div className="text-text-secondary">
+                            +{m.guestCount} guest{m.guestCount > 1 ? "s" : ""}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {!readOnly && offered && (
+                <div className="mt-2 pl-9">
+                  {absent ? (
+                    <button
+                      type="button"
+                      onClick={() => onUndoAbsent(meal)}
+                      className="text-[10.5px] font-extrabold text-primary"
+                    >
+                      Undo — count this meal
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onMarkAbsent(meal)}
+                      className="text-[10.5px] font-extrabold text-danger"
+                    >
+                      Cook absent
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
+
+/** Today's live cooking counts + a month-browsable history. Every offered
+ * meal counts toward billing by default — no daily confirmation needed; the
+ * only decision a manager makes is "cook absent" for the rare day nothing
+ * was cooked (shared by the manager page and the owner's read-only view,
+ * which hides every action but keeps counts/history visible). */
 export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   const { user, activeHostelId } = useSession();
-  // Defaults to today, but any earlier date can be opened so a day whose
-  // cooking was never confirmed isn't lost when the date rolls over.
-  const [date, setDate] = useState(today());
-  const isToday = date === today();
-  const { day } = useMealDay(activeHostelId, date);
-  const reports = useCookAttendanceForDate(activeHostelId, date);
+  const todayDate = today();
+  const { day } = useMealDay(activeHostelId, todayDate);
+  const reports = useCookAttendanceForDate(activeHostelId, todayDate);
   const [votesByReport, setVotesByReport] = useState<Record<string, CookAttendanceVote[]>>({});
-  const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [historyKey, setHistoryKey] = useState(0);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const [detailsMeal, setDetailsMeal] = useState<MealSlot | null>(null);
-  // The action awaiting confirmation in the popup — null means no popup open.
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { toast } = useToast();
-  const historyRef = useRef<HTMLDivElement>(null);
+
+  const [historyMonth, setHistoryMonth] = useState(currentMonth());
+  const [monthDays, setMonthDays] = useState<MealDay[]>([]);
+  const [monthReports, setMonthReports] = useState<CookAttendanceReport[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [detailsDate, setDetailsDate] = useState<string | null>(null);
 
   useEffect(() => {
     const reported = reports.filter((r) => r.status === "reported");
@@ -111,20 +222,24 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
 
   useEffect(() => {
     if (!activeHostelId) return;
-    const from = addDays(date, -HISTORY_DAYS);
-    const to = addDays(date, -1);
+    const from = `${historyMonth}-01`;
+    const to = lastDayOfMonth(historyMonth);
     Promise.all([
       repo.meals.listMealDays(activeHostelId, { from, to }),
       repo.cookAttendance.listByHostel(activeHostelId),
-    ]).then(([days, allReports]) => setHistory(buildHistory(days, allReports)));
-  }, [activeHostelId, date, historyKey]);
+      repo.users.listByHostel(activeHostelId),
+    ]).then(([days, allReports, allUsers]) => {
+      setMonthDays(days);
+      setMonthReports(allReports);
+      setUsers(allUsers);
+    });
+  }, [activeHostelId, historyMonth]);
 
-  const unconfirmedDayCount = history.filter((h) => h.unconfirmedMeals.length > 0).length;
+  const history = buildMonthHistory(monthDays, monthReports, historyMonth);
 
-  // Live head-count per slot — how many to actually cook for, right now,
-  // independent of confirmation status (confirmation is a separate,
-  // after-the-fact "yes this really happened" step used for billing). A
-  // manager needs the live number BEFORE cooking, not just after confirming.
+  // Live head-count per slot — how many to actually cook for, right now.
+  // Meals count toward billing by default, so this already matches the
+  // billed count unless the slot's marked cook-absent.
   const mealCounts = MEAL_SLOTS.map((meal) => {
     const entries = day ? Object.values(day.entries) : [];
     const offered = day?.mealsOffered?.[meal] ?? true;
@@ -138,12 +253,6 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
   });
   const totalToCook = mealCounts.reduce((sum, c) => sum + c.count, 0);
 
-  const yesterdayTotal = history.find((h) => h.date === addDays(date, -1))?.total;
-  const vsYesterdayPct =
-    yesterdayTotal != null && yesterdayTotal > 0
-      ? Math.round(((totalToCook - yesterdayTotal) / yesterdayTotal) * 100)
-      : null;
-
   return (
     <div className="flex flex-col gap-5">
       <div className="text-[17.5px] font-extrabold tracking-tight">
@@ -155,87 +264,18 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
         )}
       </div>
 
-      {/* Date picker pill (native date input overlaid, invisible, so any
-          past/future-up-to-today date can be jumped to directly) + a shortcut
-          to the history list below. */}
-      <div className="flex items-center gap-2.5">
-        <div className="relative flex flex-1 items-center gap-2 rounded-pill border border-border bg-card px-4 py-3 shadow-chip">
-          <Icon icon={Calendar} size={15} className="shrink-0 text-text-secondary" />
-          <span className="flex-1 truncate text-[12.5px] font-extrabold">{formatFullDate(date)}</span>
-          <Icon icon={ChevronDown} size={14} className="shrink-0 text-text-secondary" />
-          <input
-            type="date"
-            value={date}
-            max={today()}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            aria-label="Pick a date"
-            className="absolute inset-0 cursor-pointer opacity-0"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => historyRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          title="Jump to cooking history"
-          className="flex h-[46px] w-[46px] shrink-0 cursor-pointer items-center justify-center rounded-btn border border-border bg-card text-text-secondary shadow-chip"
-        >
-          <Icon icon={SlidersHorizontal} size={16} />
-        </button>
-      </div>
-
-      {!isToday && (
-        <button
-          type="button"
-          onClick={() => setDate(today())}
-          className="-mt-3 self-start text-[10.5px] font-bold text-primary"
-        >
-          Back to today
-        </button>
-      )}
-
-      {!readOnly && unconfirmedDayCount > 0 && (
-        <Card className="flex items-center gap-3 border border-orange/30 bg-orange-soft">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card text-orange">
-            <Icon icon={AlertTriangle} size={18} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-extrabold text-orange">
-              {unconfirmedDayCount} day{unconfirmedDayCount === 1 ? "" : "s"} in the last {HISTORY_DAYS} need
-              confirmation
-            </div>
-            <div className="text-[9.5px] font-semibold text-orange/80">
-              Unconfirmed meals count as zero everywhere — cooking count, meal rate, and bills.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setBulkOpen(true)}
-            className="shrink-0 rounded-btn bg-orange px-3 py-2 text-[10.5px] font-extrabold text-white"
-          >
-            Bulk confirm
-          </button>
-        </Card>
-      )}
-
-      {/* Hero: total to cook + per-meal breakdown */}
+      {/* Hero: total to cook today + per-meal breakdown */}
       <Card
         className="overflow-hidden"
         style={{ background: "linear-gradient(135deg, var(--color-primary-soft), var(--color-bg) 70%)" }}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-bold text-text-secondary">
-              Total to cook {isToday ? "today" : `on ${formatShortDate(date)}`}
-            </div>
+            <div className="text-[11px] font-bold text-text-secondary">Total to cook today</div>
             <div className="mt-1 flex items-baseline gap-1.5">
               <span className="text-[30px] font-extrabold leading-none">{totalToCook}</span>
               <span className="text-[13px] font-bold text-text-secondary">Meals</span>
             </div>
-            {vsYesterdayPct !== null && vsYesterdayPct !== 0 && (
-              <div className={`mt-1 text-[10.5px] font-extrabold ${vsYesterdayPct > 0 ? "text-primary" : "text-danger"}`}>
-                {vsYesterdayPct > 0 ? "↑" : "↓"} {Math.abs(vsYesterdayPct)}% {vsYesterdayPct > 0 ? "more" : "less"} than
-                yesterday
-              </div>
-            )}
           </div>
           <CookingPotIllustration size={80} />
         </div>
@@ -264,8 +304,8 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
         const yes = votes.filter((v) => v.choice === "yes").length;
         const no = votes.filter((v) => v.choice === "no").length;
         const dk = votes.filter((v) => v.choice === "dk").length;
-        const accent = report?.status === "confirmed_absent" ? "var(--color-danger)" : MEAL_ACCENT[meal];
-        const completed = report?.status === "resolved_cooked";
+        const absent = report?.status === "confirmed_absent";
+        const accent = absent ? "var(--color-danger)" : MEAL_ACCENT[meal];
 
         return (
           <Card key={meal} className="border-l-4" style={{ borderLeftColor: accent }}>
@@ -284,18 +324,12 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                 </div>
 
                 {!offered && <div className="mt-1 text-[10px] font-semibold text-text-secondary">Doesn&rsquo;t count</div>}
-                {offered && !report && (
-                  <div className="mt-1 text-[10px] font-semibold text-text-secondary">Not counted yet</div>
-                )}
                 {report?.status === "reported" && (
                   <div className="mt-1 text-[10px] font-semibold text-text-secondary">
-                    {yes} yes · {no} no · {dk} unsure
+                    Still counts while under review — {yes} yes · {no} no · {dk} unsure
                   </div>
                 )}
-                {completed && report?.resolvedAt && (
-                  <div className="mt-1 text-[10px] font-semibold text-text-secondary">All meals counted</div>
-                )}
-                {report?.status === "confirmed_absent" && (
+                {absent && (
                   <div className="mt-1 text-[10px] font-semibold text-text-secondary">Not counted — nothing cooked</div>
                 )}
               </div>
@@ -310,23 +344,21 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
               </button>
             </div>
 
-            {offered && !report && !readOnly && (
-              <div className="mt-3 flex gap-2">
+            {offered && !readOnly && !absent && report?.status !== "reported" && (
+              <div className="mt-3 flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setPendingAction({ type: "markCooked", meal })}
-                  className="min-h-11 flex-1 cursor-pointer rounded-btn text-[12.5px] font-extrabold text-white"
-                  style={{ background: accent }}
+                  onClick={() => setPendingAction({ type: "markAbsent", date: todayDate, meal })}
+                  className="min-h-11 flex-1 cursor-pointer rounded-btn bg-danger text-[12.5px] font-extrabold text-white"
                 >
-                  Mark as Cooked
+                  Cook absent
                 </button>
                 <button
                   type="button"
                   onClick={() => setPendingAction({ type: "reportNotCooked", meal })}
-                  className="min-h-11 flex-1 cursor-pointer rounded-btn border text-[12.5px] font-extrabold"
-                  style={{ borderColor: accent, color: accent }}
+                  className="shrink-0 text-[10.5px] font-bold text-text-secondary underline"
                 >
-                  Report Not Cooked
+                  Report for a vote instead
                 </button>
               </div>
             )}
@@ -335,7 +367,7 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setPendingAction({ type: "markCooked", meal })}
+                  onClick={() => setPendingAction({ type: "confirmCooked", meal })}
                   className="min-h-11 flex-1 cursor-pointer rounded-btn text-[12.5px] font-extrabold text-white"
                   style={{ background: accent }}
                 >
@@ -350,65 +382,60 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
                 </button>
               </div>
             )}
+
+            {offered && absent && !readOnly && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setPendingAction({ type: "undoAbsent", date: todayDate, meal })}
+                  className="min-h-11 w-full cursor-pointer rounded-btn border border-border text-[12.5px] font-extrabold text-primary"
+                >
+                  Undo — count this meal after all
+                </button>
+              </div>
+            )}
           </Card>
         );
       })}
 
-      <div ref={historyRef}>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-[13.5px] font-extrabold">Cooking history</div>
-          {!readOnly && (
-            <button
-              type="button"
-              onClick={() => setBulkOpen(true)}
-              className="text-[11px] font-extrabold text-primary"
-            >
-              Bulk confirm
-            </button>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
+      <div>
+        <div className="mb-2 text-[13.5px] font-extrabold">Cooking history</div>
+        <MonthNav value={historyMonth} onChange={setHistoryMonth} />
+        <div className="mt-2 flex flex-col gap-2">
           {history.length === 0 && (
             <Card className="text-center text-[11.5px] font-semibold text-text-secondary">
-              No past records yet.
+              No records for {formatMonthLabel(historyMonth)} yet.
             </Card>
           )}
-          {history.map((h) => (
-            <Card key={h.date} className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[12px] font-bold">{formatShortDate(h.date)}</div>
-                {(h.cancelledMeals.length > 0 || h.unconfirmedMeals.length > 0) && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {h.cancelledMeals.map((m) => (
-                      <Chip key={m} tone="danger" active>
-                        {MEAL_LABEL[m]} cancelled
-                      </Chip>
-                    ))}
-                    {h.unconfirmedMeals.map((m) => (
-                      <Chip key={m} tone="orange" active>
-                        {MEAL_LABEL[m]} unconfirmed
-                      </Chip>
-                    ))}
+          {history.map((h) => {
+            const absentMeals = MEAL_SLOTS.filter((m) => h.perMeal[m].offered && !h.perMeal[m].counted);
+            return (
+              <button
+                key={h.date}
+                type="button"
+                onClick={() => setDetailsDate(h.date)}
+                className="w-full cursor-pointer text-left"
+              >
+                <Card className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-bold">{formatShortDate(h.date)}</div>
+                    {absentMeals.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {absentMeals.map((m) => (
+                          <Chip key={m} tone="danger" active>
+                            {MEAL_LABEL[m]} absent
+                          </Chip>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <div className="shrink-0 text-[12px] font-extrabold">{h.total} meals</div>
-            </Card>
-          ))}
+                  <div className="shrink-0 text-[12px] font-extrabold">{h.total} meals</div>
+                </Card>
+              </button>
+            );
+          })}
         </div>
       </div>
-
-      {!readOnly && (
-        <BulkConfirmCookedSheet
-          open={bulkOpen}
-          onClose={() => setBulkOpen(false)}
-          hostelId={activeHostelId}
-          onConfirmed={(count) => {
-            toast(count > 0 ? `${count} meal${count === 1 ? "" : "s"} confirmed cooked` : "Nothing new to confirm");
-            setHistoryKey((k) => k + 1);
-          }}
-        />
-      )}
 
       {detailsMeal &&
         (() => {
@@ -416,11 +443,11 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
           const report = reports.find((r) => r.meal === detailsMeal);
           const votes = report ? votesByReport[report.id] ?? [] : [];
           return (
-            <CookingDetailsSheet
+            <CookingDetailsVoteSheet
               open
               onClose={() => setDetailsMeal(null)}
               meal={detailsMeal}
-              date={date}
+              date={todayDate}
               offered={m.offered}
               report={report}
               votes={{
@@ -434,47 +461,79 @@ export function CookingCountScreen({ readOnly }: { readOnly?: boolean }) {
           );
         })()}
 
+      {detailsDate && (
+        <HistoryDetailsSheet
+          open
+          onClose={() => setDetailsDate(null)}
+          date={detailsDate}
+          day={monthDays.find((d) => d.date === detailsDate)}
+          reports={monthReports.filter((r) => r.date === detailsDate)}
+          users={users}
+          readOnly={readOnly}
+          onMarkAbsent={(meal) => setPendingAction({ type: "markAbsent", date: detailsDate, meal })}
+          onUndoAbsent={(meal) => setPendingAction({ type: "undoAbsent", date: detailsDate, meal })}
+        />
+      )}
+
       {pendingAction && (
         <ConfirmSheet
           open
           onClose={() => setPendingAction(null)}
-          tone={pendingAction.type === "confirmAbsent" ? "danger" : "primary"}
+          tone={pendingAction.type === "markAbsent" || pendingAction.type === "confirmAbsent" ? "danger" : "primary"}
           title={
-            pendingAction.type === "markCooked"
-              ? "Confirm cooked?"
-              : pendingAction.type === "reportNotCooked"
-                ? "Report not cooked?"
-                : "Confirm cook absent?"
+            pendingAction.type === "markAbsent"
+              ? "Cook absent?"
+              : pendingAction.type === "undoAbsent"
+                ? "Undo cook absent?"
+                : pendingAction.type === "reportNotCooked"
+                  ? "Report not cooked?"
+                  : pendingAction.type === "confirmCooked"
+                    ? "Confirm cooked?"
+                    : "Confirm cook absent?"
           }
           message={
-            pendingAction.type === "markCooked"
-              ? `Mark ${MEAL_LABEL[pendingAction.meal]} as cooked for ${formatFullDate(date)}? This counts toward the meal rate and bills.`
-              : pendingAction.type === "reportNotCooked"
-                ? `Flag ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(date)} as not yet cooked? Members will be asked to vote so you can decide.`
-                : `Confirm the cook was absent for ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(date)}? This cancels the meal for everyone — guest counts are cleared and it won't count toward the meal rate.`
+            pendingAction.type === "markAbsent"
+              ? `Mark ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(pendingAction.date)} as cook absent? This cancels the meal for everyone — guest counts are cleared and it won't count toward the meal rate.`
+              : pendingAction.type === "undoAbsent"
+                ? `Count ${MEAL_LABEL[pendingAction.meal]} on ${formatFullDate(pendingAction.date)} after all? It'll count toward the meal rate and bills again.`
+                : pendingAction.type === "reportNotCooked"
+                  ? `Flag ${MEAL_LABEL[pendingAction.meal]} today as not yet cooked? Members will be asked to vote so you can decide.`
+                  : pendingAction.type === "confirmCooked"
+                    ? `Confirm ${MEAL_LABEL[pendingAction.meal]} today was cooked? It stays counted.`
+                    : `Confirm the cook was absent for ${MEAL_LABEL[pendingAction.meal]} today? This cancels the meal for everyone — guest counts are cleared and it won't count toward the meal rate.`
           }
           confirmLabel={
-            pendingAction.type === "markCooked"
-              ? "Confirm cooked"
-              : pendingAction.type === "reportNotCooked"
-                ? "Report"
-                : "Confirm absent"
+            pendingAction.type === "markAbsent"
+              ? "Cook absent"
+              : pendingAction.type === "undoAbsent"
+                ? "Count it"
+                : pendingAction.type === "reportNotCooked"
+                  ? "Report"
+                  : pendingAction.type === "confirmCooked"
+                    ? "Confirm cooked"
+                    : "Confirm absent"
           }
           onConfirm={async () => {
             if (!activeHostelId) return;
-            if (pendingAction.type === "markCooked") {
-              await repo.cookAttendance.markCooked(activeHostelId, date, pendingAction.meal);
-              toast(`${MEAL_LABEL[pendingAction.meal]} confirmed cooked.`);
+            if (pendingAction.type === "markAbsent") {
+              await repo.cookAttendance.markAbsent(activeHostelId, pendingAction.date, pendingAction.meal);
+              toast(`${MEAL_LABEL[pendingAction.meal]} marked cook absent.`);
+            } else if (pendingAction.type === "undoAbsent") {
+              await repo.cookAttendance.markCooked(activeHostelId, pendingAction.date, pendingAction.meal);
+              toast(`${MEAL_LABEL[pendingAction.meal]} counted again.`);
             } else if (pendingAction.type === "reportNotCooked") {
               if (!user) return;
               await repo.cookAttendance.report({
                 hostelId: activeHostelId,
-                date,
+                date: todayDate,
                 meal: pendingAction.meal,
                 status: "reported",
                 reportedBy: user.id,
               });
               toast(`${MEAL_LABEL[pendingAction.meal]} reported — members can vote now.`);
+            } else if (pendingAction.type === "confirmCooked") {
+              await repo.cookAttendance.markCooked(activeHostelId, todayDate, pendingAction.meal);
+              toast(`${MEAL_LABEL[pendingAction.meal]} confirmed cooked.`);
             } else {
               await repo.cookAttendance.confirmAbsent(pendingAction.reportId);
               toast(`${MEAL_LABEL[pendingAction.meal]} confirmed absent — cancelled for everyone.`);
@@ -496,40 +555,116 @@ function StatusPill({
   accent: string;
 }) {
   if (!offered) return <Chip>Not offered</Chip>;
-  if (!report) {
+  if (report?.status === "confirmed_absent") {
+    return (
+      <Chip tone="danger" active>
+        Cook absent
+      </Chip>
+    );
+  }
+  if (report?.status === "reported") {
     return (
       <span
         className="rounded-pill px-2 py-0.5 text-[9.5px] font-extrabold"
         style={{ background: "var(--color-orange-soft)", color: "var(--color-orange)" }}
       >
-        Pending
+        Under review
       </span>
     );
   }
-  if (report.status === "resolved_cooked") {
-    return (
-      <span
-        className="rounded-pill px-2 py-0.5 text-[9.5px] font-extrabold"
-        style={{ background: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent }}
-      >
-        Completed{report.resolvedAt ? ` at ${formatTime(report.resolvedAt)}` : ""}
-      </span>
-    );
-  }
-  if (report.status === "confirmed_absent") {
-    return (
-      <Chip tone="danger" active>
-        Cancelled
-      </Chip>
-    );
-  }
-  // status === "reported" — still being disputed/voted on.
   return (
     <span
       className="rounded-pill px-2 py-0.5 text-[9.5px] font-extrabold"
-      style={{ background: "var(--color-orange-soft)", color: "var(--color-orange)" }}
+      style={{ background: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent }}
     >
-      Pending
+      Counted{report?.resolvedAt ? ` · confirmed ${formatTime(report.resolvedAt)}` : ""}
     </span>
+  );
+}
+
+/** Per-meal drill-down for TODAY's dispute vote tally — read-only. */
+function CookingDetailsVoteSheet({
+  open,
+  onClose,
+  meal,
+  date,
+  offered,
+  report,
+  votes,
+  count,
+  totalBoarders,
+}: {
+  open: boolean;
+  onClose: () => void;
+  meal: MealSlot;
+  date: string;
+  offered: boolean;
+  report: CookAttendanceReport | undefined;
+  votes: { yes: number; no: number; dk: number };
+  count: number;
+  totalBoarders: number;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title={`${MEAL_LABEL[meal]} · ${formatDayMonth(date)}`}>
+      <div className="flex flex-col gap-3">
+        {!offered && <Chip>Not offered — doesn&rsquo;t count</Chip>}
+
+        {offered && !report && (
+          <Chip tone="primary" active>
+            Counted — no confirmation needed
+          </Chip>
+        )}
+
+        {report?.status === "reported" && (
+          <div>
+            <div className="mb-2 text-[11px] font-bold text-text-secondary">
+              Was it cooked? — live tally (still counts while under review)
+            </div>
+            <div className="flex gap-2">
+              <Chip tone="primary" active>
+                Yes {votes.yes}
+              </Chip>
+              <Chip tone="danger" active>
+                No {votes.no}
+              </Chip>
+              <Chip>Don&rsquo;t know {votes.dk}</Chip>
+            </div>
+          </div>
+        )}
+
+        {report?.status === "confirmed_absent" && (
+          <div>
+            <Chip tone="danger" active>
+              Cancelled — cook absent
+            </Chip>
+            {report.resolvedAt && (
+              <div className="mt-2 text-[10.5px] font-semibold text-text-secondary">
+                Confirmed at {formatTime(report.resolvedAt)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {report?.status === "resolved_cooked" && (
+          <div>
+            <Chip tone="primary" active>
+              Cooked ✓
+            </Chip>
+            {report.resolvedAt && (
+              <div className="mt-2 text-[10.5px] font-semibold text-text-secondary">
+                Confirmed at {formatTime(report.resolvedAt)}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-t border-border pt-3 text-[11.5px] font-bold">
+          <div className="text-text-secondary">Heads to cook for</div>
+          <div>
+            {count} of {totalBoarders} boarders{count > totalBoarders ? " (incl. guests)" : ""}
+          </div>
+        </div>
+      </div>
+    </Sheet>
   );
 }

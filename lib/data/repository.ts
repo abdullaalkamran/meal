@@ -420,16 +420,29 @@ export interface CookLeaveRepository {
 export interface CookAttendanceRepository {
   listForDate(hostelId: string, date: string): Promise<CookAttendanceReport[]>;
   listByHostel(hostelId: string): Promise<CookAttendanceReport[]>;
+  /** Opens a hostel-wide vote on whether this (date, meal) was actually
+   * cooked — the DISPUTE path, kept alongside the direct markAbsent for when
+   * the manager wants member input rather than deciding alone. */
   report(req: Omit<CookAttendanceReport, "id" | "createdAt">): Promise<CookAttendanceReport>;
+  /** Resolves a disputed ("reported") slot back to counted, or reverses a
+   * mistaken markAbsent — never required for a slot that was never touched,
+   * since every slot counts by default. */
   markCooked(hostelId: string, date: string, meal: MealSlot): Promise<void>;
   /** Confirms every OFFERED, not-yet-decided (date, meal) slot in the range
    * (clamped to today) as cooked in one action — catches up a backlog
    * without re-litigating days already explicitly resolved (cooked or
-   * confirmed-absent) or disputed (reported). Returns how many it touched. */
+   * confirmed-absent) or disputed (reported). Returns how many it touched.
+   * No longer needed day-to-day now that every slot counts by default; kept
+   * for bulk-undoing a run of mistaken markAbsent calls if ever needed. */
   markCookedRange(hostelId: string, from: string, to: string): Promise<{ confirmed: number }>;
   vote(reportId: string, userId: string, choice: CookAttendanceVote["choice"]): Promise<void>;
   listVotes(reportId: string): Promise<CookAttendanceVote[]>;
   confirmAbsent(reportId: string): Promise<void>;
+  /** The DIRECT "cook absent" action — one tap, no vote, no prior report
+   * needed. Immediately excludes this (date, meal) from the cooking count
+   * and everything meal-rate/billing derives from it, and clears everyone's
+   * on/guestCount for the slot so it stops showing up as "to cook" too. */
+  markAbsent(hostelId: string, date: string, meal: MealSlot): Promise<void>;
   /** A member nudging the manager/owner that this (date, meal) hasn't been
    * confirmed cooked or not yet — just a notification, no report/announcement
    * is created or changed. */

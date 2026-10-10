@@ -607,6 +607,35 @@ export const cookAttendance: CookAttendanceRepository = {
     });
   },
 
+  async markAbsent(hostelId, date, meal) {
+    // One direct tap — no report/vote step first. Same end state as
+    // confirmAbsent (cancels the meal, clears guest counts), just reachable
+    // immediately instead of only after a dispute is raised.
+    const decidedBy = currentActor()?.id ?? "manager";
+    const ts = now();
+    await transaction(async (tx) => {
+      await run(
+        `INSERT INTO cook_attendance_reports (id, hostel_id, day, meal, status, reported_by, created_at, resolved_at)
+         VALUES (?, ?, ?, ?, 'confirmed_absent', ?, ?, ?)
+         ON DUPLICATE KEY UPDATE status = 'confirmed_absent', reported_by = VALUES(reported_by), resolved_at = VALUES(resolved_at)`,
+        [newId("cookattend"), hostelId, date, meal, decidedBy, ts, ts],
+        tx
+      );
+      await run(
+        "UPDATE meal_entries SET is_on = 0, guest_count = 0 WHERE hostel_id = ? AND day = ? AND meal = ?",
+        [hostelId, date, meal],
+        tx
+      );
+      // No prior poll to update here (unlike confirmAbsent) — post the
+      // notice fresh so members still see why the meal disappeared.
+      await postAnnouncement(
+        hostelId, "cook-absence-resolved", "Meal cancelled — cook absent",
+        `${meal[0].toUpperCase()}${meal.slice(1)} on ${date} is cancelled for everyone.`,
+        { meal, date }, tx
+      );
+    });
+  },
+
   async askToConfirm(hostelId, date, meal) {
     const mname = `${meal[0].toUpperCase()}${meal.slice(1)}`;
     await notifyHostelStaff(

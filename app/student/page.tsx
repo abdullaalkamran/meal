@@ -16,7 +16,6 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Avatar } from "@/components/ui/Avatar";
-import { useToast } from "@/components/ui/Toast";
 import { MealRequestSheet } from "@/components/student/MealRequestSheet";
 import { GuestMealSheet } from "@/components/student/GuestMealSheet";
 import { LeaveRequestSheet } from "@/components/student/LeaveRequestSheet";
@@ -37,27 +36,18 @@ import { isAvailableAt } from "@/lib/geo/bangladesh";
 
 export default function StudentHomePage() {
   const { user, hostel, activeHostelId } = useSession();
-  const { toast } = useToast();
   const actualRate = useActualMealRate(activeHostelId);
   const { day } = useMealDay(activeHostelId, today());
-  // Meals offered today that the manager hasn't confirmed cooked or not yet —
-  // live, so the banner clears the moment the manager decides.
+  // Meals offered today that the cook was marked absent for — every other
+  // offered meal counts by default, no manager confirmation needed, so this
+  // is the only "something's off today" case worth flagging to members.
   const todayReports = useCookAttendanceForDate(activeHostelId, today());
-  const unconfirmedMeals = (["breakfast", "lunch", "dinner"] as MealSlot[]).filter((meal) => {
+  const cookAbsentMeals = (["breakfast", "lunch", "dinner"] as MealSlot[]).filter((meal) => {
     const offered = day?.mealsOffered?.[meal] ?? hostel?.settings.mealsOffered?.[meal] ?? true;
     if (!offered) return false;
     const report = todayReports.find((r) => r.meal === meal);
-    return report?.status !== "resolved_cooked" && report?.status !== "confirmed_absent";
+    return report?.status === "confirmed_absent";
   });
-  const [askedToday, setAskedToday] = useState(false);
-  const askManagerToConfirmToday = async () => {
-    if (!activeHostelId) return;
-    setAskedToday(true);
-    await Promise.all(
-      unconfirmedMeals.map((meal) => repo.cookAttendance.askToConfirm(activeHostelId, today(), meal))
-    );
-    toast("Asked the manager to confirm today's meals.");
-  };
   // Only what still needs THIS user's attention — voted polls and
   // resolved shortages/swaps drop out here but stay visible in the full
   // history on the notifications page.
@@ -226,30 +216,23 @@ export default function StudentHomePage() {
         </div>
       )}
 
-      {/* Manager hasn't confirmed whether today's meal(s) were cooked yet */}
-      {unconfirmedMeals.length > 0 && (
-        <Card className="border border-orange/30 bg-orange-soft">
-          <div className="mb-1 flex items-center gap-2">
-            <Icon icon={AlertTriangle} size={16} className="text-orange" />
-            <div className="text-[12.5px] font-extrabold text-orange">
-              {unconfirmedMeals.length === 1
-                ? `${MEAL_LABEL[unconfirmedMeals[0]]} not confirmed yet`
-                : "Today's meals not confirmed yet"}
+      {/* Cook was marked absent for a meal offered today — every other
+          offered meal counts automatically, so this is the only thing worth
+          flagging here. */}
+      {cookAbsentMeals.length > 0 && (
+        <Card className="border border-danger/30 bg-danger-soft">
+          <div className="flex items-center gap-2">
+            <Icon icon={AlertTriangle} size={16} className="text-danger" />
+            <div className="text-[12.5px] font-extrabold text-danger">
+              {cookAbsentMeals.length === 1
+                ? `${MEAL_LABEL[cookAbsentMeals[0]]} cancelled today — cook absent`
+                : "Some meals cancelled today — cook absent"}
             </div>
           </div>
-          <div className="mb-3 text-[11px] font-semibold text-text-secondary">
-            The manager hasn&rsquo;t confirmed whether {unconfirmedMeals.map((m) => MEAL_LABEL[m].toLowerCase()).join(", ")}{" "}
-            {unconfirmedMeals.length === 1 ? "was" : "were"}{" "}
-            actually cooked yet — unconfirmed meals don&rsquo;t count toward the meal rate or bills.
+          <div className="mt-1 text-[11px] font-semibold text-text-secondary">
+            {cookAbsentMeals.map((m) => MEAL_LABEL[m]).join(", ")}{" "}
+            {cookAbsentMeals.length === 1 ? "isn't" : "aren't"} being cooked today.
           </div>
-          <button
-            type="button"
-            disabled={askedToday}
-            onClick={askManagerToConfirmToday}
-            className="flex min-h-10 w-full items-center justify-center rounded-btn bg-orange text-[12px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {askedToday ? "Manager asked" : "Ask manager to confirm"}
-          </button>
         </Card>
       )}
 
