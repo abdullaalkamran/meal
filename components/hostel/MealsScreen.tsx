@@ -19,9 +19,9 @@ import { useToast } from "@/components/ui/Toast";
 import { RequestMealEditSheet } from "@/components/manager/RequestMealEditSheet";
 import { AddGuestMealSheet } from "@/components/manager/AddGuestMealSheet";
 import { MEAL_COLORS, MEAL_LABEL } from "@/lib/mealColors";
-import { repo, type CookAttendanceReport, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
+import { repo, type MealDay, type MealSlot, type Rating, type ShoppingCost, type User } from "@/lib/data";
 import { formatBDT } from "@/lib/utils/currency";
-import { formatDayMonth, formatMonthLabel, today } from "@/lib/utils/date";
+import { formatMonthLabel, today } from "@/lib/utils/date";
 
 /** Master meal on/off — which slots this hostel cooks at all. Available to
  * BOTH the manager and the owner (even on the owner's otherwise read-only
@@ -124,8 +124,6 @@ export function MealsScreen({
   const [monthDays, setMonthDays] = useState<MealDay[]>([]);
   const [allCosts, setAllCosts] = useState<ShoppingCost[]>([]);
   const [allRatings, setAllRatings] = useState<Rating[]>([]);
-  const [attendance, setAttendance] = useState<CookAttendanceReport[]>([]);
-  const [attendanceBusy, setAttendanceBusy] = useState<string | null>(null);
   const [editRequestTarget, setEditRequestTarget] = useState<User | null>(null);
   const [guestTarget, setGuestTarget] = useState<User | null>(null);
   const { toast } = useToast();
@@ -188,31 +186,6 @@ export function MealsScreen({
     load();
     return repo.meals.subscribe(activeHostelId, load);
   }, [activeHostelId, year, month]);
-
-  useEffect(() => {
-    if (!activeHostelId) return;
-    const load = () => repo.cookAttendance.listByHostel(activeHostelId).then(setAttendance);
-    load();
-    return repo.cookAttendance.subscribe(activeHostelId, load);
-  }, [activeHostelId]);
-
-  const isCookAbsent = (date: string, meal: MealSlot) =>
-    attendance.some((r) => r.date === date && r.meal === meal && r.status === "confirmed_absent");
-
-  const toggleCookAbsent = async (date: string, meal: MealSlot) => {
-    if (!activeHostelId || readOnly) return;
-    const key = `${date}:${meal}`;
-    setAttendanceBusy(key);
-    try {
-      if (isCookAbsent(date, meal)) await repo.cookAttendance.markCooked(activeHostelId, date, meal);
-      else await repo.cookAttendance.markAbsent(activeHostelId, date, meal);
-      setAttendance(await repo.cookAttendance.listByHostel(activeHostelId));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not update cook attendance.");
-    } finally {
-      setAttendanceBusy(null);
-    }
-  };
 
   useEffect(() => {
     if (!activeHostelId) return;
@@ -366,48 +339,6 @@ export function MealsScreen({
             return anyOn ? <span className="mt-0.5 h-1 w-1 rounded-full bg-primary" /> : null;
           }}
         />
-      </Card>
-
-      <Card>
-        <div className="mb-1 text-[13.5px] font-extrabold">Cook attendance &middot; {formatMonthLabel(`${year}-${String(month).padStart(2, "0")}`)}</div>
-        <div className="mb-3 text-[10px] font-semibold text-text-secondary">
-          {readOnly ? "Whether the cook cooked each meal." : "Tap a meal to switch it between Cooked and Absent. Absent meals don't count toward the meal rate or bills."}
-        </div>
-        <div className="flex flex-col divide-y divide-border">
-          {Array.from({ length: new Date(year, month, 0).getDate() }, (_, i) => {
-            const date = `${year}-${String(month).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
-            return (
-              <div key={date} className="flex items-center gap-2 py-2">
-                <div className="w-[74px] shrink-0 text-[10.5px] font-extrabold">{formatDayMonth(date)}</div>
-                <div className="grid flex-1 grid-cols-3 gap-1.5">
-                  {(["breakfast", "lunch", "dinner"] as MealSlot[]).map((meal) => {
-                    const offered = hostel?.settings.mealsOffered?.[meal] ?? true;
-                    const absent = isCookAbsent(date, meal);
-                    return (
-                      <button
-                        key={meal}
-                        type="button"
-                        disabled={readOnly || !offered || attendanceBusy === `${date}:${meal}`}
-                        onClick={() => toggleCookAbsent(date, meal)}
-                        className={`min-h-9 rounded-btn px-1 text-[9.5px] font-extrabold disabled:cursor-default ${
-                          !offered
-                            ? "bg-bg text-text-secondary opacity-50"
-                            : absent
-                              ? "bg-danger text-white"
-                              : "bg-primary/10 text-primary"
-                        }`}
-                      >
-                        {MEAL_LABEL[meal]}
-                        <br />
-                        {!offered ? "Closed" : absent ? "Absent" : "Cooked"}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </Card>
 
       <Card>
